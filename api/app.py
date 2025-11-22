@@ -94,7 +94,18 @@ def handle_exception(e):
         return f"Error: {error_msg} (Type: {error_type})", 500
 
 # Configure session for serverless environment
-if IS_VERCEL:
+# On Render, sessions should persist across requests within the same server instance
+# On Vercel, sessions won't persist across function invocations (stateless)
+if IS_RENDER:
+    # On Render, use file-based session storage for persistence
+    app.config['SESSION_TYPE'] = 'filesystem'
+    app.config['SESSION_FILE_DIR'] = '/tmp/flask_session'
+    app.config['SESSION_PERMANENT'] = True
+    app.config['SESSION_USE_SIGNER'] = True
+    app.config['SESSION_KEY_PREFIX'] = 'smartpantry:'
+    # Ensure session directory exists
+    os.makedirs(app.config['SESSION_FILE_DIR'], exist_ok=True)
+elif IS_VERCEL:
     # For serverless, we'll use Flask's default in-memory sessions
     # Note: Sessions won't persist across function invocations in serverless
     # For production, consider using external session storage (Redis, database, etc.)
@@ -123,10 +134,18 @@ api_key = os.getenv("OPENAI_API_KEY")
 if not api_key:
     print("⚠️  WARNING: OPENAI_API_KEY not found in environment variables")
     print("   Some features (photo recognition, recipe suggestions) will not work.")
-    print("   Create a .env file with: OPENAI_API_KEY=your_api_key_here")
+    if IS_RENDER:
+        print("   On Render: Go to Dashboard → Your Service → Environment → Add OPENAI_API_KEY")
+    else:
+        print("   Create a .env file with: OPENAI_API_KEY=your_api_key_here")
     client = None
 else:
-    client = OpenAI(api_key=api_key)
+    try:
+        client = OpenAI(api_key=api_key)
+        print("✅ OpenAI client initialized successfully")
+    except Exception as e:
+        print(f"⚠️  ERROR: Failed to initialize OpenAI client: {e}")
+        client = None
 
  
 
@@ -426,7 +445,13 @@ def add_items():
             user_id = session['user_id']
             print(f"Adding item '{item}' to pantry for user {user_id}")
             user_pantry = get_user_pantry(user_id)
-            print(f"Current pantry before add: {user_pantry}")
+            print(f"Current pantry before add: {user_pantry} (type: {type(user_pantry)})")
+            
+            # Ensure pantry is a list
+            if not isinstance(user_pantry, list):
+                print(f"WARNING: Pantry is not a list, resetting to empty list")
+                user_pantry = []
+            
             if item not in user_pantry:  # Prevent duplicates
                 user_pantry.append(item)
                 print(f"Pantry after append: {user_pantry}")
@@ -434,7 +459,10 @@ def add_items():
                 # Verify it was saved
                 verify_pantry = get_user_pantry(user_id)
                 print(f"Verified pantry after save: {verify_pantry}")
-                flash(f"{item} added to pantry.", "success")
+                if item in verify_pantry:
+                    flash(f"{item} added to pantry.", "success")
+                else:
+                    flash(f"Warning: {item} may not have been saved correctly.", "warning")
             else:
                 flash(f"{item} is already in your pantry.", "warning")
         else:
