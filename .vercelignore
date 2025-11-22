@@ -1,5 +1,4 @@
-# Prevent Vercel from auto-detecting app.py files
-**/app.py
-!api/index.py
-SmartPantryWeb/app.py
+# Prevent Vercel from auto-detecting app.py files at root level
+# But allow SmartPantryWeb/app.py (needed by api/index.py)
+/app.py
 USACO/app.py
