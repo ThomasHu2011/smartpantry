@@ -41,36 +41,12 @@ USACO/
 veiloe-app-web/
 Smart_pantry/
 hoco-proposal/
-COMPLETE_FIX_ALL_ISSUES.md
-ALTERNATIVE_HOSTING_OPTIONS.md
-COMPLETE_FIX.md
-DEPLOY_FIX_NOW.md
-FINAL_FIX_ALL_ERRORS.md
-GITHUB_RELEASES_GUIDE.md
-RENDER_DEPLOY_NOW.md
-RENDER_FIX_COMMIT.md
-RENDER_GUNICORN_FIX.md
-RENDER_SETUP.md
-RUNTIME_ERROR_FIX.md
-GITHUB_COMMIT_ISSUE.md
-VERCEL_FINAL_FIX.md
-VERIFICATION_SUMMARY.md
-URGENT_FIX.md
-FIX_REPOSITORY_MISMATCH.md
-PUSH_TO_CORRECT_REPO.md
-SmartPantryWeb/API_INDEX_FIX.md
-SmartPantryWeb/COMMIT_NOT_FOUND_FIX.md
-SmartPantryWeb/CRITICAL_DEPLOYMENT.md
-SmartPantryWeb/CRITICAL_FIX.md
-SmartPantryWeb/CRITICAL_STEPS.md
-SmartPantryWeb/DEPLOYMENT_REFERENCE.md
-SmartPantryWeb/FINAL_DEPLOYMENT_STEPS.md
-SmartPantryWeb/FIX_ROOT_DIRECTORY.md
-SmartPantryWeb/GITHUB_SYNC_FIX.md
-SmartPantryWeb/GITHUB_VISIBILITY_FIX.md
-SmartPantryWeb/SUCCESS_CHECKLIST.md
-SmartPantryWeb/VERCEL_COMMIT_FIX.md
-SmartPantryWeb/WHAT_TO_ENTER.md
+
+# Hide all .md files except README.md
+*.md
+!README.md
+**/*.md
+!**/README.md
 
 # Keep only SmartPantryWeb and api/ directory
 # Everything else is personal and should be excluded
