@@ -369,7 +369,9 @@ def logout():
 def index():
     # Check if user is logged in
     if 'user_id' in session:
-        user_pantry = get_user_pantry(session['user_id'])
+        user_id = session['user_id']
+        user_pantry = get_user_pantry(user_id)
+        print(f"Loading index page for user {user_id}, pantry has {len(user_pantry)} items: {user_pantry}")
         return render_template("index.html", items=user_pantry, username=session.get('username'))
     else:
         # For anonymous users, use session to persist pantry across server restarts
