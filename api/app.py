@@ -639,9 +639,10 @@ def upload_photo():
             user_pantry.extend(detected_items)
             update_user_pantry(session['user_id'], user_pantry)
         else:
-            # Add to anonymous web pantry
-            global web_pantry
-            web_pantry.extend(detected_items)
+            # Add to anonymous web pantry (stored in session)
+            if 'web_pantry' not in session:
+                session['web_pantry'] = []
+            session['web_pantry'].extend(detected_items)
         
         flash(f"Successfully analyzed photo! Added {len(detected_items)} items: {', '.join(detected_items)}", "success")
         
