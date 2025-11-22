@@ -1,0 +1,24 @@
+<div class="row justify-content-center">
+    <div class="col-md-6">
+        <div class="card p-4">
+            <h3 class="text-center mb-3">
+                <i class="bi bi-camera"></i> Upload Pantry Photo
+            </h3>
+            <p class="text-muted text-center">
+                Take or upload a photo of your pantry. We’ll detect items and add them for you!
+            </p>
+            <form action="{{ url_for('upload_photo') }}" method="post" enctype="multipart/form-data">
+                <div class="mb-3">
+                    <label for="photo" class="form-label">
+                        <i class="bi bi-file-image"></i> Choose a photo
+                    </label>
+                    <input class="form-control" type="file" id="photo" name="photo" accept="image/*" required>
+                </div>
+                <button type="submit" class="btn btn-primary w-100">
+                    <i class="bi bi-cloud-upload"></i> Upload
+                </button>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,766 @@
+{% extends "base.html" %}
+
+{% block title %}{{ recipe.name }} - SmartPantry{% endblock %}
+
+{% block content %}
+<div class="container py-4" data-recipe-title="{{ recipe.name }}">
+    <!-- Print Title (hidden on screen, visible in print) -->
+    <div class="print-title" style="display: none;">RECIPE: {{ recipe.name }}</div>
+    
+    <!-- Recipe Header -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <nav aria-label="breadcrumb">
+                <ol class="breadcrumb">
+                    <li class="breadcrumb-item"><a href="{{ url_for('index') }}">Home</a></li>
+                    <li class="breadcrumb-item"><a href="{{ url_for('suggest_recipe') }}">Recipes</a></li>
+                    <li class="breadcrumb-item active" aria-current="page">{{ recipe.name }}</li>
+                </ol>
+            </nav>
+            
+            <!-- 1. Recipe Name -->
+            <div class="card shadow-sm border-0 mb-4">
+                <div class="card-header bg-gradient-primary text-white border-0">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <h1 class="mb-0">{{ recipe.name }}</h1>
+                        <button class="btn btn-light btn-lg" onclick="startCooking()">
+                            <i class="bi bi-play-circle me-2"></i>Start Cooking
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 2. Timing Information -->
+            <div class="card shadow-sm border-0 mb-4">
+                <div class="card-body">
+                    <div class="row text-center">
+                        <div class="col-md-3">
+                            <div class="bg-light rounded p-3">
+                                <i class="bi bi-stopwatch text-primary fs-1"></i>
+                                <h5 class="mt-2 mb-1">Prep Time</h5>
+                                <p class="text-muted mb-0 fw-bold">{{ detailed_recipe.prep_time }}</p>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="bg-light rounded p-3">
+                                <i class="bi bi-fire text-danger fs-1"></i>
+                                <h5 class="mt-2 mb-1">Cook Time</h5>
+                                <p class="text-muted mb-0 fw-bold">{{ detailed_recipe.cook_time }}</p>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="bg-light rounded p-3">
+                                <i class="bi bi-check-circle text-success fs-1"></i>
+                                <h5 class="mt-2 mb-1">Total Time</h5>
+                                <p class="text-muted mb-0 fw-bold">{{ detailed_recipe.total_time }}</p>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="bg-light rounded p-3">
+                                <i class="bi bi-star text-warning fs-1"></i>
+                                <h5 class="mt-2 mb-1">Difficulty</h5>
+                                <p class="text-muted mb-0 fw-bold">{{ recipe.difficulty if recipe.difficulty else 'Medium' }}</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 3. Servings -->
+            <div class="card shadow-sm border-0 mb-4">
+                <div class="card-body">
+                    <div class="d-flex align-items-center justify-content-center">
+                        <i class="bi bi-people-fill text-primary fs-1 me-3"></i>
+                        <div>
+                            <h5 class="mb-0">Serves</h5>
+                            <p class="text-muted mb-0 fs-4 fw-bold">2-4 People</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 4. Ingredients -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card shadow-sm border-0">
+                <div class="card-header bg-gradient-success text-white border-0">
+                    <h3 class="mb-0">
+                        <i class="bi bi-list-ul me-2"></i>Ingredients
+                    </h3>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        {% for ingredient in recipe.ingredients %}
+                        <div class="col-md-6 mb-2">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="ingredient{{ loop.index }}">
+                                <label class="form-check-label" for="ingredient{{ loop.index }}">
+                                    {{ ingredient }}
+                                </label>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 5. Cooking Tips -->
+    {% if detailed_recipe.cooking_tips %}
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card shadow-sm border-0">
+                <div class="card-header bg-gradient-info text-white border-0">
+                    <h3 class="mb-0">
+                        <i class="bi bi-lightbulb me-2"></i>Cooking Tips
+                    </h3>
+                </div>
+                <div class="card-body">
+                    <ul class="mb-0">
+                        {% for tip in detailed_recipe.cooking_tips %}
+                        <li class="mb-2">
+                            <i class="bi bi-check-circle text-success me-2"></i>{{ tip }}
+                        </li>
+                        {% endfor %}
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- 6. Cooking Steps -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card shadow-sm border-0">
+                <div class="card-header bg-gradient-warning text-dark border-0">
+                    <h3 class="mb-0">
+                        <i class="bi bi-list-ol me-2"></i>Cooking Instructions
+                    </h3>
+                </div>
+                <div class="card-body">
+                    {% for step in detailed_recipe.detailed_steps %}
+                    <div class="cooking-step mb-4 p-3 border rounded" id="step{{ step.step }}">
+                        <div class="d-flex justify-content-between align-items-start mb-3">
+                            <div class="d-flex align-items-center">
+                                <span class="badge bg-primary fs-5 me-3">{{ step.step }}</span>
+                                <div>
+                                    <h6 class="mb-1">Step {{ step.step }}</h6>
+                                    <p class="text-muted mb-0">{{ step.instruction }}</p>
+                                </div>
+                            </div>
+                            <div class="text-end">
+                                <button class="btn btn-outline-primary btn-sm timer-btn" 
+                                        data-timer="{{ step.timer }}" 
+                                        data-step="{{ step.step }}"
+                                        onclick="startTimer({{ step.step }}, '{{ step.timer }}')">
+                                    <i class="bi bi-stopwatch me-1"></i>{{ step.timer }}
+                                </button>
+                            </div>
+                        </div>
+                        
+                        {% if step.tips %}
+                        <div class="alert alert-info mb-0">
+                            <i class="bi bi-lightbulb me-2"></i><strong>Tip:</strong> {{ step.tips }}
+                        </div>
+                        {% endif %}
+                        
+                        <!-- Timer Display -->
+                        <div class="timer-display mt-3" id="timer{{ step.step }}" style="display: none;">
+                            <div class="progress mb-2">
+                                <div class="progress-bar bg-success" role="progressbar" style="width: 0%"></div>
+                            </div>
+                            <div class="text-center">
+                                <h4 class="timer-text" id="timerText{{ step.step }}">00:00</h4>
+                                <button class="btn btn-danger btn-sm" onclick="stopTimer({{ step.step }})">
+                                    <i class="bi bi-stop me-1"></i>Stop Timer
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 7. Health Assessment -->
+    {% if recipe.health_rating and recipe.health_explanation %}
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card shadow-sm border-0">
+                <div class="card-header bg-gradient-warning text-dark border-0">
+                    <h3 class="mb-0">
+                        {% if recipe.health_rating == "Healthy" %}
+                        <i class="bi bi-heart-fill text-success me-2"></i>Health Assessment
+                        {% elif recipe.health_rating == "Moderately Healthy" %}
+                        <i class="bi bi-heart text-warning me-2"></i>Health Assessment
+                        {% else %}
+                        <i class="bi bi-exclamation-triangle text-danger me-2"></i>Health Assessment
+                        {% endif %}
+                        <span class="badge bg-light text-dark ms-2">{{ recipe.health_rating }}</span>
+                    </h3>
+                </div>
+                <div class="card-body">
+                    <div class="d-flex align-items-start">
+                        {% if recipe.health_rating == "Healthy" %}
+                        <i class="bi bi-check-circle-fill text-success fs-2 me-3"></i>
+                        {% elif recipe.health_rating == "Moderately Healthy" %}
+                        <i class="bi bi-exclamation-circle-fill text-warning fs-2 me-3"></i>
+                        {% else %}
+                        <i class="bi bi-x-circle-fill text-danger fs-2 me-3"></i>
+                        {% endif %}
+                        <div>
+                            <h6 class="mb-2">
+                                {% if recipe.health_rating == "Healthy" %}
+                                <span class="text-success fw-bold">This dish is healthy!</span>
+                                {% elif recipe.health_rating == "Moderately Healthy" %}
+                                <span class="text-warning fw-bold">This dish is moderately healthy</span>
+                                {% else %}
+                                <span class="text-danger fw-bold">This dish may not be the healthiest choice</span>
+                                {% endif %}
+                            </h6>
+                            <p class="text-muted mb-0">{{ recipe.health_explanation }}</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- 8. Nutrition Facts -->
+    {% if nutrition %}
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card shadow-sm border-0">
+                <div class="card-header bg-gradient-success text-white border-0">
+                    <h3 class="mb-0">
+                        <i class="bi bi-bar-chart me-2"></i>Nutrition Facts
+                        <small class="opacity-75">(per serving)</small>
+                    </h3>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <table class="table table-sm table-bordered mb-0">
+                                <tr><th>Calories</th><td class="text-primary fw-bold">{{ nutrition.calories }}</td></tr>
+                                <tr><th>Carbohydrates</th><td>{{ nutrition.carbs }}</td></tr>
+                                <tr><th>Protein</th><td>{{ nutrition.protein }}</td></tr>
+                                <tr><th>Total Fat</th><td>{{ nutrition.fat }}</td></tr>
+                            </table>
+                        </div>
+                        <div class="col-md-6">
+                            <table class="table table-sm table-bordered mb-0">
+                                <tr><th>Fiber</th><td>{{ nutrition.fiber }}</td></tr>
+                                <tr><th>Sugar</th><td>{{ nutrition.sugar }}</td></tr>
+                                <tr><th>Sodium</th><td>{{ nutrition.sodium }}</td></tr>
+                                <tr><th>Servings</th><td>2-4 people</td></tr>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Action Buttons -->
+    <div class="row mt-4">
+        <div class="col-12 text-center">
+            <a href="{{ url_for('suggest_recipe') }}" class="btn btn-primary me-3">
+                <i class="bi bi-arrow-left me-2"></i>Back to Recipes
+            </a>
+            <button class="btn btn-outline-secondary me-3" onclick="printRecipe()">
+                <i class="bi bi-printer me-2"></i>Print Recipe
+            </button>
+            <button class="btn btn-outline-info" onclick="printPreview()">
+                <i class="bi bi-eye me-2"></i>Print Preview
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Timer Modal -->
+<div class="modal fade" id="timerModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Cooking Timer</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body text-center">
+                <h2 class="mb-3" id="modalTimerText">00:00</h2>
+                <div class="progress mb-3">
+                    <div class="progress-bar bg-warning" id="modalProgress" role="progressbar" style="width: 0%"></div>
+                </div>
+                <p id="modalStepInfo">Step 1: Preparing ingredients</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-danger" onclick="stopModalTimer()">Stop Timer</button>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+let timers = {};
+let currentStep = 0;
+
+function startCooking() {
+    // Scroll to first step
+    document.getElementById('step1').scrollIntoView({ behavior: 'smooth' });
+    // Start first timer
+    startTimer(1, '{{ detailed_recipe.detailed_steps[0].timer if detailed_recipe.detailed_steps else "5 minutes" }}');
+}
+
+function startTimer(step, duration) {
+    // Stop any existing timer for this step
+    if (timers[step]) {
+        clearInterval(timers[step]);
+    }
+    
+    // Parse duration (e.g., "5 minutes" -> 5)
+    const minutes = parseInt(duration.split(' ')[0]);
+    const totalSeconds = minutes * 60;
+    let remainingSeconds = totalSeconds;
+    
+    // Show timer display
+    const timerDisplay = document.getElementById(`timer${step}`);
+    const timerText = document.getElementById(`timerText${step}`);
+    const progressBar = timerDisplay.querySelector('.progress-bar');
+    
+    timerDisplay.style.display = 'block';
+    
+    // Update timer every second
+    timers[step] = setInterval(() => {
+        const mins = Math.floor(remainingSeconds / 60);
+        const secs = remainingSeconds % 60;
+        timerText.textContent = `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+        
+        // Update progress bar
+        const progress = ((totalSeconds - remainingSeconds) / totalSeconds) * 100;
+        progressBar.style.width = `${progress}%`;
+        
+        remainingSeconds--;
+        
+        if (remainingSeconds < 0) {
+            clearInterval(timers[step]);
+            timerText.textContent = "Time's up!";
+            progressBar.className = 'progress-bar bg-danger';
+            
+            // Show notification
+            alert(`Step ${step} timer finished!`);
+        }
+    }, 1000);
+}
+
+function stopTimer(step) {
+    if (timers[step]) {
+        clearInterval(timers[step]);
+        delete timers[step];
+    }
+    
+    const timerDisplay = document.getElementById(`timer${step}`);
+    timerDisplay.style.display = 'none';
+}
+
+function printRecipe() {
+    window.print();
+}
+
+function printPreview() {
+    // Add print preview class to body
+    document.body.classList.add('print-preview');
+    
+    // Show print preview modal or overlay
+    alert('Print Preview Mode Activated! The page now shows how it will look when printed. Press Ctrl+P (Cmd+P on Mac) to print or refresh the page to exit preview mode.');
+}
+
+
+// Auto-check ingredients as you scroll
+window.addEventListener('scroll', () => {
+    const checkboxes = document.querySelectorAll('input[type="checkbox"]');
+    checkboxes.forEach((checkbox, index) => {
+        if (index < Math.floor(window.scrollY / 200)) {
+            checkbox.checked = true;
+        }
+    });
+});
+</script>
+
+<style>
+@media print {
+    /* Hide interactive elements */
+    .btn, .modal, .breadcrumb, .timer-display, .timer-btn, .form-check-input, nav, .navbar {
+        display: none !important;
+    }
+    
+    /* Clean print layout */
+    * {
+        box-shadow: none !important;
+        text-shadow: none !important;
+    }
+    
+    body {
+        font-family: "Georgia", "Times New Roman", serif !important;
+        font-size: 12pt !important;
+        line-height: 1.6 !important;
+        color: #000 !important;
+        background: white !important;
+        margin: 0 !important;
+        padding: 0 !important;
+    }
+    
+    .container {
+        max-width: 100% !important;
+        padding: 0 !important;
+        margin: 0 !important;
+        width: 100% !important;
+    }
+    
+    /* Recipe title header - Show prominently */
+    .print-title {
+        display: block !important;
+        font-family: "Arial Black", "Arial", sans-serif !important;
+        font-size: 24pt !important;
+        font-weight: bold !important;
+        text-align: center !important;
+        margin: 0 0 20pt 0 !important;
+        padding: 15pt 0 !important;
+        border-bottom: 4px double #000 !important;
+        text-transform: uppercase !important;
+        letter-spacing: 2pt !important;
+        page-break-after: avoid !important;
+    }
+    
+    /* Main recipe header */
+    .card-header.bg-gradient-primary {
+        background: white !important;
+        color: #000 !important;
+        border: none !important;
+        border-bottom: 2px solid #333 !important;
+        padding: 12pt 0 !important;
+        margin-bottom: 15pt !important;
+        page-break-after: avoid !important;
+    }
+    
+    .card-header h1 {
+        font-family: "Arial", sans-serif !important;
+        font-size: 18pt !important;
+        margin: 0 0 8pt 0 !important;
+        font-weight: bold !important;
+        text-align: left !important;
+        page-break-after: avoid !important;
+    }
+    
+    .card-header .badge {
+        display: inline-block !important;
+        background: #f0f0f0 !important;
+        color: #000 !important;
+        border: 1px solid #999 !important;
+        padding: 3pt 8pt !important;
+        margin-right: 6pt !important;
+        font-size: 9pt !important;
+    }
+    
+    /* Timing overview */
+    .card-body .row.text-center {
+        display: flex !important;
+        margin: 12pt 0 !important;
+        page-break-inside: avoid !important;
+    }
+    
+    .card-body .col-md-4 {
+        width: 33.33% !important;
+        float: left !important;
+        text-align: center !important;
+        padding: 8pt !important;
+    }
+    
+    .card-body .bg-light {
+        background: #f9f9f9 !important;
+        border: 1px solid #ddd !important;
+        padding: 10pt !important;
+        border-radius: 0 !important;
+    }
+    
+    .card-body h5 {
+        font-size: 11pt !important;
+        font-weight: bold !important;
+        margin: 5pt 0 3pt 0 !important;
+    }
+    
+    .card-body p {
+        font-size: 10pt !important;
+        margin: 0 !important;
+    }
+    
+    .card-body .bi {
+        display: none !important;
+    }
+    
+    /* Two-column layout for ingredients and instructions */
+    .row {
+        display: block !important;
+        margin: 0 !important;
+        page-break-inside: avoid !important;
+    }
+    
+    .col-lg-4 {
+        width: 35% !important;
+        float: left !important;
+        padding-right: 15pt !important;
+    }
+    
+    .col-lg-8 {
+        width: 65% !important;
+        float: left !important;
+    }
+    
+    /* Ingredients section */
+    .card.shadow-sm {
+        border: 2px solid #000 !important;
+        margin-bottom: 15pt !important;
+        page-break-inside: avoid !important;
+        background: white !important;
+    }
+    
+    .card.sticky-top {
+        position: static !important;
+    }
+    
+    .card-header.bg-gradient-success,
+    .card-header.bg-gradient-warning,
+    .card-header.bg-gradient-info {
+        background: #e9ecef !important;
+        color: #000 !important;
+        border-bottom: 2px solid #000 !important;
+        padding: 10pt !important;
+        page-break-after: avoid !important;
+    }
+    
+    .card-header h5 {
+        font-size: 13pt !important;
+        font-weight: bold !important;
+        margin: 0 !important;
+    }
+    
+    .card-header .bi {
+        display: none !important;
+    }
+    
+    .card-body {
+        padding: 12pt !important;
+    }
+    
+    .form-check {
+        margin-bottom: 4pt !important;
+    }
+    
+    .form-check-label {
+        font-weight: normal !important;
+        display: block !important;
+        margin-bottom: 3pt !important;
+        font-size: 11pt !important;
+        padding-left: 0 !important;
+    }
+    
+    .form-check-label::before {
+        content: "□ " !important;
+        font-weight: bold !important;
+        margin-right: 5pt !important;
+    }
+    
+    /* Cooking instructions */
+    .cooking-step {
+        border: 1px solid #ddd !important;
+        margin-bottom: 10pt !important;
+        padding: 10pt !important;
+        background: white !important;
+        border-left: 4px solid #333 !important;
+        page-break-inside: avoid !important;
+    }
+    
+    .cooking-step .d-flex {
+        display: block !important;
+    }
+    
+    .cooking-step .badge {
+        background: #333 !important;
+        color: white !important;
+        font-size: 10pt !important;
+        padding: 4pt 8pt !important;
+        border-radius: 3pt !important;
+        display: inline-block !important;
+        margin-right: 8pt !important;
+    }
+    
+    .cooking-step h6 {
+        font-size: 11pt !important;
+        font-weight: bold !important;
+        margin: 0 0 5pt 0 !important;
+        display: inline !important;
+    }
+    
+    .cooking-step p {
+        font-size: 11pt !important;
+        margin: 5pt 0 !important;
+        line-height: 1.5 !important;
+    }
+    
+    .cooking-step .text-end {
+        display: none !important;
+    }
+    
+    /* Health assessment */
+    .alert {
+        border: 1px solid #999 !important;
+        background: #f9f9f9 !important;
+        margin: 8pt 0 !important;
+        padding: 10pt !important;
+        border-radius: 0 !important;
+        page-break-inside: avoid !important;
+    }
+    
+    .alert .bi {
+        display: none !important;
+    }
+    
+    .alert h6 {
+        font-size: 11pt !important;
+        font-weight: bold !important;
+        margin: 0 0 5pt 0 !important;
+    }
+    
+    .alert p, .alert small {
+        font-size: 10pt !important;
+        margin: 0 !important;
+    }
+    
+    /* Nutrition table */
+    .table {
+        font-size: 10pt !important;
+        width: 100% !important;
+        border-collapse: collapse !important;
+        margin: 0 !important;
+    }
+    
+    .table th, .table td {
+        border: 1px solid #333 !important;
+        padding: 6pt !important;
+        text-align: left !important;
+    }
+    
+    .table th {
+        background: #e9ecef !important;
+        font-weight: bold !important;
+    }
+    
+    .table-sm th, .table-sm td {
+        padding: 5pt !important;
+    }
+    
+    .table td.text-primary,
+    .table td.fw-bold {
+        color: #000 !important;
+        font-weight: bold !important;
+    }
+    
+    /* Remove all gradients and colors */
+    .bg-gradient-primary, .bg-gradient-success, .bg-gradient-info, .bg-gradient-warning, .bg-gradient-light {
+        background: #f5f5f5 !important;
+        color: #000 !important;
+    }
+    
+    .text-white {
+        color: #000 !important;
+    }
+    
+    .text-primary, .text-success, .text-warning, .text-danger, .text-info {
+        color: #000 !important;
+    }
+    
+    /* Hide icons */
+    .bi {
+        display: none !important;
+    }
+    
+    /* Page breaks and layout */
+    .card {
+        page-break-inside: avoid !important;
+        margin-bottom: 12pt !important;
+    }
+    
+    h1, h2, h3, h4, h5, h6 {
+        page-break-after: avoid !important;
+        page-break-inside: avoid !important;
+    }
+    
+    /* Clear floats */
+    .clearfix::after {
+        content: "" !important;
+        display: table !important;
+        clear: both !important;
+    }
+    
+    /* Print margins and page setup */
+    @page {
+        margin: 0.75in 0.5in;
+        size: letter portrait;
+    }
+    
+    /* Add page numbers */
+    @page {
+        @bottom-right {
+            content: "Page " counter(page) " of " counter(pages);
+            font-size: 9pt;
+        }
+    }
+}
+
+/* Print preview mode */
+.print-preview {
+    background: white !important;
+}
+
+.print-preview .btn, .print-preview .modal, .print-preview .breadcrumb, .print-preview .timer-display, .print-preview .timer-btn, .print-preview .form-check-input {
+    display: none !important;
+}
+
+.print-preview .card {
+    border: 2px solid #000 !important;
+    box-shadow: none !important;
+}
+
+.print-preview .card-header {
+    background: #f8f9fa !important;
+    color: #000 !important;
+}
+
+.print-preview .bg-gradient-primary, .print-preview .bg-gradient-success, .print-preview .bg-gradient-info, .print-preview .bg-gradient-warning {
+    background: #f8f9fa !important;
+    color: #000 !important;
+}
+
+/* Screen styles */
+.cooking-step {
+    transition: all 0.3s ease;
+}
+
+.cooking-step:hover {
+    background-color: #f8f9fa;
+    transform: translateY(-2px);
+}
+
+.sticky-top {
+    position: sticky;
+    top: 20px;
+}
+</style>
+{% endblock %}
+

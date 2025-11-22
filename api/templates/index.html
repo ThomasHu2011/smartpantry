@@ -1,0 +1,510 @@
+{% extends "base.html" %}
+
+{% block title %}Home - SmartPantry{% endblock %}
+
+{% block content %}
+<!-- Hero Section -->
+<div class="hero-section text-white py-5 mb-5">
+    <div class="container">
+        <div class="row align-items-center">
+            <div class="col-lg-8">
+                <div class="d-flex align-items-center mb-4">
+                    <div class="me-3" style="width: 60px; height: 60px; background: linear-gradient(135deg, #8B5CF6 0%, #3B82F6 100%); border-radius: 16px; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 12px rgba(139, 92, 246, 0.3);">
+                        <img src="{{ url_for('static', filename='logo.png') }}" alt="Smart Pantry" height="40" style="filter: brightness(0) invert(1);">
+                    </div>
+                    <h1 class="display-4 fw-bold mb-0">SmartPantry</h1>
+                </div>
+                {% if username %}
+                    <p class="lead mb-2">Welcome back, <strong>{{ username }}</strong>!</p>
+                    <p class="mb-4 opacity-90">Your intelligent kitchen companion is ready to help.</p>
+                {% else %}
+                    <p class="lead mb-4 opacity-90">Transform your kitchen with AI-powered food tracking, photo recognition, and personalized recipe suggestions.</p>
+                {% endif %}
+                <div class="d-flex flex-wrap gap-3">
+                    <span class="badge fs-6 px-4 py-2 rounded-pill border-0" style="background: linear-gradient(135deg, #8B5CF6 0%, #3B82F6 100%); color: white;">
+                        <i class="bi bi-camera-fill me-2"></i>Photo Recognition
+                    </span>
+                    <span class="badge fs-6 px-4 py-2 rounded-pill border-0" style="background: linear-gradient(135deg, #10B981 0%, #059669 100%); color: white;">
+                        <i class="bi bi-lightbulb-fill me-2"></i>Smart Recipes
+                    </span>
+                    <span class="badge fs-6 px-4 py-2 rounded-pill border-0" style="background: linear-gradient(135deg, #06B6D4 0%, #0891B2 100%); color: white;">
+                        <i class="bi bi-graph-up me-2"></i>Nutrition Tracking
+                    </span>
+                </div>
+            </div>
+            <div class="col-lg-4 text-center">
+                <div style="width: 120px; height: 120px; background: linear-gradient(135deg, #8B5CF6 0%, #3B82F6 100%); border-radius: 30px; display: flex; align-items: center; justify-content: center; margin: 0 auto; box-shadow: 0 8px 20px rgba(139, 92, 246, 0.3);">
+                    <i class="bi bi-house-heart display-1 opacity-75"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="container py-4">
+    <div class="row">
+        <!-- Main Content -->
+        <div class="col-lg-8">
+            <!-- Quick Actions Card -->
+            <div class="card shadow-sm border-0 mb-4">
+                <div class="card-header bg-white border-0 pb-0">
+                    <h4 class="text-primary mb-0">
+                        <i class="bi bi-lightning-charge-fill me-2"></i>Quick Actions
+                    </h4>
+                </div>
+                <div class="card-body pt-3">
+                    <div class="row g-4">
+                        <!-- Manual Add Item -->
+                        <div class="col-md-6">
+                            <div class="h-100">
+                                <h6 class="text-muted mb-3">
+                                    <i class="bi bi-pencil-square me-2"></i>Add Items Manually
+                                </h6>
+                                <form action="{{ url_for('add_items') }}" method="post">
+                                    <div class="input-group mb-2">
+                                        <input type="text" name="item" class="form-control form-control-lg" 
+                                               placeholder="Enter food item..." required>
+                                        <button type="submit" class="btn btn-primary btn-lg">
+                                            <i class="bi bi-plus-circle"></i>
+                                        </button>
+                                    </div>
+                                </form>
+                                <small class="text-muted">Type and add individual items to your pantry</small>
+                            </div>
+                        </div>
+                        
+                        <!-- Photo Upload -->
+                        <div class="col-md-6">
+                            <div class="h-100">
+                                <h6 class="text-muted mb-3">
+                                    <i class="bi bi-camera-fill me-2"></i>Smart Photo Upload
+                                </h6>
+                                <div class="d-flex gap-2">
+                                    <button type="button" class="btn btn-success flex-fill" data-bs-toggle="modal" data-bs-target="#photoModal">
+                                        <i class="bi bi-camera-fill me-2"></i>Take/Upload Photo
+                                    </button>
+                                </div>
+                                <small class="text-muted d-block mt-2">AI will automatically detect and add food items</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Pantry Overview -->
+            <div class="card shadow-sm border-0">
+                <div class="card-header bg-gradient-light border-0">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0 text-primary">
+                            <i class="bi bi-box-seam me-2"></i>Your Pantry
+                        </h5>
+                        {% if items %}
+                        <span class="badge fs-6" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">{{ items|length }} items</span>
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="card-body p-0">
+                    {% if items %}
+                    <div class="row g-2 p-3">
+                        {% for item in items %}
+                        <div class="col-md-6 col-lg-4">
+                            <div class="card border-0 bg-light h-100">
+                                <div class="card-body d-flex justify-content-between align-items-center py-2">
+                                    <div class="d-flex align-items-center">
+                                        <i class="bi bi-circle-fill text-success me-2" style="font-size: 0.5rem;"></i>
+                                        <span class="fw-semibold text-dark">{{ item }}</span>
+                                    </div>
+                                    <a href="{{ url_for('delete_item', item_name=item) }}" 
+                                       class="btn btn-sm btn-outline-danger btn-circle" 
+                                       title="Remove item"
+                                       onclick="return confirm('Remove {{ item }} from pantry?')">
+                                        <i class="bi bi-x"></i>
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% else %}
+                    <div class="text-center text-muted py-5">
+                        <i class="bi bi-box-seam display-1 opacity-25"></i>
+                        <h5 class="mt-3 mb-2">Your pantry is empty</h5>
+                        <p class="mb-4">Start by adding items manually or upload a photo to automatically detect food items!</p>
+                        <div class="d-flex justify-content-center gap-3">
+                            <button class="btn btn-primary" onclick="document.querySelector('input[name=\"item\"]').focus()">
+                                <i class="bi bi-plus-circle me-2"></i>Add Item
+                            </button>
+                            <button class="btn btn-success" data-bs-toggle="modal" data-bs-target="#photoModal">
+                                <i class="bi bi-camera me-2"></i>Upload Photo
+                            </button>
+                        </div>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Sidebar -->
+        <div class="col-lg-4">
+            <!-- Recipe Suggestions Card -->
+            <div class="card shadow-sm border-0 mb-4">
+                <div class="card-header bg-gradient-success text-white border-0">
+                    <h5 class="mb-0">
+                        <i class="bi bi-lightbulb-fill me-2"></i>Smart Recipes
+                    </h5>
+                </div>
+                <div class="card-body text-center">
+                    <div class="mb-3">
+                        <i class="bi bi-robot display-4 text-success opacity-75"></i>
+                    </div>
+                    <a href="{{ url_for('suggest_recipe') }}" class="btn btn-success btn-lg w-100 mb-3">
+                        <i class="bi bi-magic me-2"></i>Get Recipe Ideas
+                    </a>
+                    <p class="text-muted small">
+                        AI-powered recipe suggestions based on your pantry items
+                    </p>
+                </div>
+            </div>
+
+            <!-- Quick Stats -->
+            <div class="card shadow-sm border-0 mb-4">
+                <div class="card-header bg-gradient-info text-white border-0">
+                    <h5 class="mb-0">
+                        <i class="bi bi-graph-up me-2"></i>Pantry Stats
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="row text-center">
+                        <div class="col-6">
+                            <div class="border-end">
+                                <h3 class="text-primary mb-1">{{ items|length }}</h3>
+                                <small class="text-muted">Total Items</small>
+                            </div>
+                        </div>
+                        <div class="col-6">
+                            <h3 class="text-success mb-1">{{ items|length }}</h3>
+                            <small class="text-muted">Available</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Quick Tips -->
+            <div class="card shadow-sm border-0">
+                <div class="card-header bg-gradient-warning text-dark border-0">
+                    <h5 class="mb-0">
+                        <i class="bi bi-info-circle-fill me-2"></i>Pro Tips
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="d-flex mb-3">
+                        <i class="bi bi-check-circle-fill text-success me-3 mt-1"></i>
+                        <div>
+                            <strong>Smart Upload:</strong>
+                            <br><small class="text-muted">Use clear, well-lit photos for better AI recognition</small>
+                        </div>
+                    </div>
+                    <div class="d-flex mb-3">
+                        <i class="bi bi-check-circle-fill text-success me-3 mt-1"></i>
+                        <div>
+                            <strong>Recipe Magic:</strong>
+                            <br><small class="text-muted">More items = better recipe suggestions</small>
+                        </div>
+                    </div>
+                    <div class="d-flex">
+                        <i class="bi bi-check-circle-fill text-success me-3 mt-1"></i>
+                        <div>
+                            <strong>Nutrition Tracking:</strong>
+                            <br><small class="text-muted">Get detailed nutrition info for your recipes</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Photo Upload Modal -->
+<div class="modal fade" id="photoModal" tabindex="-1" aria-labelledby="photoModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content" style="border-radius: 24px; border: none;">
+            <div class="modal-header border-0 pb-0">
+                <h5 class="modal-title fw-bold" id="photoModalLabel">
+                    <i class="bi bi-camera-fill me-2 text-success"></i>Add Items with Photo
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body p-4">
+                <!-- Camera View (Hidden by default) -->
+                <div id="cameraView" class="camera-preview mb-3" style="display: none;">
+                    <video id="cameraStream" autoplay playsinline></video>
+                    <div class="camera-controls">
+                        <button type="button" class="btn btn-light btn-sm me-2" id="closeCameraBtn">
+                            <i class="bi bi-x-lg"></i> Close
+                        </button>
+                        <button type="button" class="capture-btn" id="captureBtn" title="Capture Photo"></button>
+                    </div>
+                </div>
+
+                <!-- Upload Zone -->
+                <div id="uploadZone">
+                    <!-- Camera Buttons -->
+                    <div class="row g-2 mb-3">
+                        <div class="col-6">
+                            <button type="button" class="btn btn-outline-success w-100" id="openCameraBtn">
+                                <i class="bi bi-camera-video me-2"></i>Live Camera
+                            </button>
+                        </div>
+                        <div class="col-6">
+                            <button type="button" class="btn btn-success w-100" id="mobileCameraBtn">
+                                <i class="bi bi-camera-fill me-2"></i>Take Photo
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="text-center mb-3">
+                        <span class="text-muted">or</span>
+                    </div>
+
+                    <!-- Drag & Drop Zone -->
+                    <div class="photo-upload-zone" id="dropZone">
+                        <i class="bi bi-cloud-upload display-1 text-muted mb-3"></i>
+                        <h5 class="mb-2">Drag & Drop Photo Here</h5>
+                        <p class="text-muted mb-3">or click to browse</p>
+                        <button type="button" class="btn btn-primary" id="browseBtn">
+                            <i class="bi bi-folder2-open me-2"></i>Browse Files
+                        </button>
+                        <input type="file" id="photoInput" accept="image/*" style="display: none;">
+                        <input type="file" id="mobileCameraInput" accept="image/*" capture="environment" style="display: none;">
+                    </div>
+                </div>
+
+                <!-- Preview & Upload Section (Hidden by default) -->
+                <div id="previewSection" style="display: none;">
+                    <div class="text-center">
+                        <img id="imagePreview" class="image-preview" alt="Preview">
+                        <div class="mt-3">
+                            <button type="button" class="btn btn-outline-secondary me-2" id="cancelUploadBtn">
+                                <i class="bi bi-x-circle me-2"></i>Cancel
+                            </button>
+                            <button type="button" class="btn btn-success btn-lg" id="uploadBtn">
+                                <i class="bi bi-magic me-2"></i><span id="uploadBtnText">Analyze & Add Items</span>
+                            </button>
+                        </div>
+                        <small class="text-muted d-block mt-2">AI will detect food items in your photo</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    let selectedFile = null;
+    let cameraStream = null;
+
+    // DOM Elements
+    const photoModal = document.getElementById('photoModal');
+    const photoInput = document.getElementById('photoInput');
+    const mobileCameraInput = document.getElementById('mobileCameraInput');
+    const dropZone = document.getElementById('dropZone');
+    const browseBtn = document.getElementById('browseBtn');
+    const mobileCameraBtn = document.getElementById('mobileCameraBtn');
+    const uploadZone = document.getElementById('uploadZone');
+    const previewSection = document.getElementById('previewSection');
+    const imagePreview = document.getElementById('imagePreview');
+    const uploadBtn = document.getElementById('uploadBtn');
+    const cancelUploadBtn = document.getElementById('cancelUploadBtn');
+    const uploadBtnText = document.getElementById('uploadBtnText');
+    
+    // Camera Elements
+    const cameraView = document.getElementById('cameraView');
+    const cameraStreamVideo = document.getElementById('cameraStream');
+    const openCameraBtn = document.getElementById('openCameraBtn');
+    const closeCameraBtn = document.getElementById('closeCameraBtn');
+    const captureBtn = document.getElementById('captureBtn');
+
+    // Browse button click
+    browseBtn.addEventListener('click', () => photoInput.click());
+
+    // Mobile camera button (works without HTTPS)
+    mobileCameraBtn.addEventListener('click', () => mobileCameraInput.click());
+
+    // File input change
+    photoInput.addEventListener('change', handleFileSelect);
+    mobileCameraInput.addEventListener('change', handleFileSelect);
+
+    // Drag and drop handlers
+    dropZone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        dropZone.classList.add('dragover');
+    });
+
+    dropZone.addEventListener('dragleave', () => {
+        dropZone.classList.remove('dragover');
+    });
+
+    dropZone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        dropZone.classList.remove('dragover');
+        const files = e.dataTransfer.files;
+        if (files.length > 0) {
+            handleFile(files[0]);
+        }
+    });
+
+    dropZone.addEventListener('click', (e) => {
+        if (e.target === dropZone || e.target.closest('#dropZone')) {
+            photoInput.click();
+        }
+    });
+
+    // Handle file selection
+    function handleFileSelect(e) {
+        const files = e.target.files;
+        if (files.length > 0) {
+            handleFile(files[0]);
+        }
+    }
+
+    // Handle file
+    function handleFile(file) {
+        if (!file.type.startsWith('image/')) {
+            alert('Please select an image file');
+            return;
+        }
+
+        selectedFile = file;
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            imagePreview.src = e.target.result;
+            uploadZone.style.display = 'none';
+            previewSection.style.display = 'block';
+        };
+        reader.readAsDataURL(file);
+    }
+
+    // Camera Functions
+    openCameraBtn.addEventListener('click', async () => {
+        // Check if getUserMedia is supported
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            alert('Camera access requires HTTPS or localhost.\n\nTo use camera:\n1. Access via https:// (requires SSL certificate)\n2. Access via http://localhost:5050 or http://127.0.0.1:5050\n\nFor now, please use "Browse Files" to upload a photo instead.');
+            return;
+        }
+
+        try {
+            cameraStream = await navigator.mediaDevices.getUserMedia({ 
+                video: { facingMode: 'environment' } 
+            });
+            cameraStreamVideo.srcObject = cameraStream;
+            uploadZone.style.display = 'none';
+            cameraView.style.display = 'block';
+        } catch (err) {
+            if (err.name === 'NotAllowedError') {
+                alert('Camera permission denied. Please allow camera access and try again.');
+            } else if (err.name === 'NotFoundError') {
+                alert('No camera found on this device.');
+            } else {
+                alert('Could not access camera: ' + err.message + '\n\nPlease use "Browse Files" to upload a photo instead.');
+            }
+        }
+    });
+
+    closeCameraBtn.addEventListener('click', () => {
+        stopCamera();
+        cameraView.style.display = 'none';
+        uploadZone.style.display = 'block';
+    });
+
+    captureBtn.addEventListener('click', () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = cameraStreamVideo.videoWidth;
+        canvas.height = cameraStreamVideo.videoHeight;
+        canvas.getContext('2d').drawImage(cameraStreamVideo, 0, 0);
+        
+        canvas.toBlob((blob) => {
+            selectedFile = new File([blob], 'camera-capture.jpg', { type: 'image/jpeg' });
+            imagePreview.src = canvas.toDataURL('image/jpeg');
+            stopCamera();
+            cameraView.style.display = 'none';
+            previewSection.style.display = 'block';
+        }, 'image/jpeg');
+    });
+
+    function stopCamera() {
+        if (cameraStream) {
+            cameraStream.getTracks().forEach(track => track.stop());
+            cameraStream = null;
+        }
+    }
+
+    // Cancel upload
+    cancelUploadBtn.addEventListener('click', () => {
+        selectedFile = null;
+        photoInput.value = '';
+        previewSection.style.display = 'none';
+        uploadZone.style.display = 'block';
+    });
+
+    // Upload photo
+    uploadBtn.addEventListener('click', async () => {
+        if (!selectedFile) {
+            alert('Please select a photo first');
+            return;
+        }
+
+        const formData = new FormData();
+        formData.append('photo', selectedFile);
+
+        uploadBtn.disabled = true;
+        uploadBtnText.innerHTML = '<span class="loading-spinner me-2"></span>Analyzing...';
+
+        try {
+            const response = await fetch('{{ url_for("upload_photo") }}', {
+                method: 'POST',
+                body: formData
+            });
+
+            if (response.ok) {
+                window.location.reload();
+            } else {
+                const data = await response.text();
+                alert('Upload failed: ' + data);
+                uploadBtn.disabled = false;
+                uploadBtnText.textContent = 'Analyze & Add Items';
+            }
+        } catch (err) {
+            alert('Upload error: ' + err.message);
+            uploadBtn.disabled = false;
+            uploadBtnText.textContent = 'Analyze & Add Items';
+        }
+    });
+
+    // Reset modal when closed
+    photoModal.addEventListener('hidden.bs.modal', () => {
+        stopCamera();
+        selectedFile = null;
+        photoInput.value = '';
+        cameraView.style.display = 'none';
+        previewSection.style.display = 'none';
+        uploadZone.style.display = 'block';
+        uploadBtn.disabled = false;
+        uploadBtnText.textContent = 'Analyze & Add Items';
+    });
+
+    // Check camera availability on page load
+    window.addEventListener('DOMContentLoaded', () => {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            // Disable live camera button (getUserMedia not available)
+            openCameraBtn.disabled = true;
+            openCameraBtn.innerHTML = '<i class="bi bi-camera-video-off me-2"></i>HTTPS Only';
+            openCameraBtn.title = 'Live camera requires HTTPS or localhost. Use "Take Photo" button instead.';
+            openCameraBtn.classList.add('opacity-50');
+            
+            // Make "Take Photo" button more prominent
+            mobileCameraBtn.classList.remove('btn-success');
+            mobileCameraBtn.classList.add('btn-success', 'pulse');
+        }
+    });
+</script>
+{% endblock %}

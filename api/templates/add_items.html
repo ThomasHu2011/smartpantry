@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+
+{% block title %}Add Items - SmartPantry{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header">
+                <h4><i class="bi bi-plus-circle"></i> Add Pantry Items</h4>
+            </div>
+            <div class="card-body">
+                <!-- Manual item form -->
+                <form method="POST">
+                    <div class="input-group mb-3">
+                        <input type="text" class="form-control" name="item_name" placeholder="Enter item name (e.g., eggs, bread, milk)" required>
+                        <button class="btn btn-primary" type="submit">
+                            <i class="bi bi-plus"></i> Add Item
+                        </button>
+                    </div>
+                </form>
+
+                <!-- OR upload photo -->
+                <div class="text-center my-3 text-muted">
+                    <em>— or —</em>
+                </div>
+
+                <!-- Upload photo form -->
+                <form action="{{ url_for('upload_photo') }}" method="post" enctype="multipart/form-data">
+                    <div class="input-group mb-3">
+                        <input type="file" class="form-control" name="photo" accept="image/*" required>
+                        <button class="btn btn-secondary" type="submit">
+                            <i class="bi bi-camera"></i> Upload Photo
+                        </button>
+                    </div>
+                </form>
+                
+                {% if items %}
+                <hr>
+                <h5>Your Pantry Items ({{ items|length }})</h5>
+                <div class="row">
+                    {% for item in items %}
+                    <div class="col-md-4 col-sm-6 mb-2">
+                        <div class="d-flex justify-content-between align-items-center bg-light p-2 rounded">
+                            <span><i class="bi bi-box"></i> {{ item }}</span>
+                            <a href="{{ url_for('delete_item', item_name=item) }}" class="btn btn-sm btn-outline-danger">
+                                <i class="bi bi-trash"></i>
+                            </a>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <div class="text-center text-muted py-4">
+                    <i class="bi bi-box" style="font-size: 3rem;"></i>
+                    <p class="mt-2">Your pantry is empty. Add some items or upload a food photo to get started!</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="bi bi-info-circle"></i> Tips</h5>
+            </div>
+            <div class="card-body">
+                <ul class="list-unstyled">
+                    <li><i class="bi bi-check-circle text-success"></i> Add common ingredients like eggs, bread, milk</li>
+                    <li><i class="bi bi-check-circle text-success"></i> Include vegetables and proteins</li>
+                    <li><i class="bi bi-check-circle text-success"></i> Add pantry staples like rice, pasta, flour</li>
+                </ul>
+                <hr>
+                <a href="{{ url_for('suggest_recipe') }}" class="btn btn-success w-100">
+                    <i class="bi bi-lightbulb"></i> Get Recipe Suggestions
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
