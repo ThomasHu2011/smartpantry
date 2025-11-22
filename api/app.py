@@ -630,8 +630,14 @@ def upload_photo():
         
         flash(f"Successfully analyzed photo! Added {len(detected_items)} items: {', '.join(detected_items)}", "success")
         
+    except ValueError as e:
+        # Specific error for missing API key
+        flash(f"⚠️ {str(e)} Please configure OPENAI_API_KEY in your Render environment variables.", "danger")
     except Exception as e:
-        flash(f"Error analyzing photo: {str(e)}", "danger")
+        # Generic error handler
+        error_msg = str(e)
+        print(f"Error analyzing photo: {error_msg}")
+        flash(f"Error analyzing photo: {error_msg}", "danger")
     
     return redirect(url_for("index"))
 
