@@ -311,7 +311,10 @@ def index():
         user_pantry = get_user_pantry(session['user_id'])
         return render_template("index.html", items=user_pantry, username=session.get('username'))
     else:
-        return render_template("index.html", items=web_pantry, username=None)
+        # For anonymous users, use session to persist pantry across server restarts
+        if 'web_pantry' not in session:
+            session['web_pantry'] = []
+        return render_template("index.html", items=session['web_pantry'], username=None)
 
 # Add items
 @app.route("/add", methods=["POST"])
@@ -334,9 +337,11 @@ def add_items():
             else:
                 flash(f"{item} is already in your pantry.", "warning")
         else:
-            # Add to anonymous web pantry
-            if item not in web_pantry:  # Prevent duplicates
-                web_pantry.append(item)
+            # Add to anonymous web pantry (stored in session for persistence)
+            if 'web_pantry' not in session:
+                session['web_pantry'] = []
+            if item not in session['web_pantry']:  # Prevent duplicates
+                session['web_pantry'].append(item)
                 flash(f"{item} added to pantry.", "success")
             else:
                 flash(f"{item} is already in your pantry.", "warning")
@@ -353,9 +358,11 @@ def delete_item(item_name):
             update_user_pantry(session['user_id'], user_pantry)
             flash(f"{item_name} removed from pantry.", "info")
     else:
-        # Remove from anonymous web pantry
-        if item_name in web_pantry:
-            web_pantry.remove(item_name)
+        # Remove from anonymous web pantry (stored in session)
+        if 'web_pantry' not in session:
+            session['web_pantry'] = []
+        if item_name in session['web_pantry']:
+            session['web_pantry'].remove(item_name)
             flash(f"{item_name} removed from pantry.", "info")
     return redirect(url_for("index"))
 
@@ -366,9 +373,13 @@ def suggest_recipe():
     if 'user_id' in session:
         current_pantry = get_user_pantry(session['user_id'])
     else:
-        current_pantry = web_pantry
+        # Use session-based pantry for anonymous users
+        if 'web_pantry' not in session:
+            session['web_pantry'] = []
+        current_pantry = session['web_pantry']
     
-    if not current_pantry:
+    # Check if pantry is empty (handle both None and empty list)
+    if not current_pantry or len(current_pantry) == 0:
         flash("Your pantry is empty. Add items first.", "warning")
         return redirect(url_for("index"))
 
@@ -562,9 +573,13 @@ def generate_new_recipes():
     if 'user_id' in session:
         pantry_to_check = get_user_pantry(session['user_id'])
     else:
-        pantry_to_check = web_pantry
+        # Use session-based pantry for anonymous users
+        if 'web_pantry' not in session:
+            session['web_pantry'] = []
+        pantry_to_check = session['web_pantry']
     
-    if not pantry_to_check:
+    # Check if pantry is empty (handle both None and empty list)
+    if not pantry_to_check or len(pantry_to_check) == 0:
         flash("Your pantry is empty. Add items first.", "warning")
         return redirect(url_for("index"))
 
@@ -679,9 +694,12 @@ def nutrition_info(recipe_name):
     if 'user_id' in session:
         current_pantry = get_user_pantry(session['user_id'])
     else:
-        current_pantry = web_pantry
+        # Use session-based pantry for anonymous users
+        if 'web_pantry' not in session:
+            session['web_pantry'] = []
+        current_pantry = session['web_pantry']
     
-    if not current_pantry:
+    if not current_pantry or len(current_pantry) == 0:
         flash("Your pantry is empty. Cannot generate nutrition recipes.", "warning")
         return redirect(url_for("index"))
     
