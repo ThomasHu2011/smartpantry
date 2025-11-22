@@ -94,22 +94,23 @@ def handle_exception(e):
         return f"Error: {error_msg} (Type: {error_type})", 500
 
 # Configure session for serverless environment
-# On Render, sessions should persist across requests within the same server instance
-# On Vercel, sessions won't persist across function invocations (stateless)
+# Flask's default cookie-based sessions work on both Render and Vercel
+# On Render, sessions persist in cookies (survives server restarts)
+# On Vercel, sessions are stateless but work within a single request
+# Make sure secret_key is set (done above) for secure session cookies
 if IS_RENDER:
-    # On Render, use file-based session storage for persistence
-    app.config['SESSION_TYPE'] = 'filesystem'
-    app.config['SESSION_FILE_DIR'] = '/tmp/flask_session'
-    app.config['SESSION_PERMANENT'] = True
-    app.config['SESSION_USE_SIGNER'] = True
-    app.config['SESSION_KEY_PREFIX'] = 'smartpantry:'
-    # Ensure session directory exists
-    os.makedirs(app.config['SESSION_FILE_DIR'], exist_ok=True)
+    # On Render, ensure sessions are permanent and secure
+    app.config['PERMANENT_SESSION_LIFETIME'] = 86400 * 7  # 7 days
+    app.config['SESSION_COOKIE_SECURE'] = False  # Set to True if using HTTPS
+    app.config['SESSION_COOKIE_HTTPONLY'] = True
+    app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 elif IS_VERCEL:
-    # For serverless, we'll use Flask's default in-memory sessions
-    # Note: Sessions won't persist across function invocations in serverless
-    # For production, consider using external session storage (Redis, database, etc.)
-    pass
+    # For serverless, we'll use Flask's default cookie-based sessions
+    # Note: Sessions persist in cookies, so they work across function invocations
+    app.config['PERMANENT_SESSION_LIFETIME'] = 86400 * 7  # 7 days
+    app.config['SESSION_COOKIE_SECURE'] = True  # HTTPS required on Vercel
+    app.config['SESSION_COOKIE_HTTPONLY'] = True
+    app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 
 # Enable CORS for all domains on all routes using manual headers
 # Manual headers work perfectly and don't require flask-cors package
