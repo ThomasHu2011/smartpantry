@@ -368,6 +368,8 @@ def signup():
         password = request.form.get("password")
         confirm_password = request.form.get("confirm_password")
         
+        print(f"Signup attempt - Username: {username}, Email: {email}")
+        
         if password != confirm_password:
             flash("Passwords do not match", "danger")
         elif len(password) < 6:
@@ -377,9 +379,12 @@ def signup():
             if user_id:
                 session['user_id'] = user_id
                 session['username'] = username
+                print(f"Signup successful - User ID: {user_id}, Username: {username}")
+                print(f"Session after signup: user_id={session.get('user_id')}, username={session.get('username')}")
                 flash(f"Account created successfully! Welcome, {username}!", "success")
                 return redirect(url_for("index"))
             else:
+                print(f"Signup failed - Error: {error}")
                 flash(error, "danger")
     
     return render_template("signup.html")
