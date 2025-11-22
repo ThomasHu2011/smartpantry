@@ -1386,8 +1386,10 @@ def api_upload_photo():
                 global mobile_pantry
                 mobile_pantry.extend(detected_items)
             else:
-                global web_pantry
-                web_pantry.extend(detected_items)
+                # Add to anonymous web pantry (stored in session)
+                if 'web_pantry' not in session:
+                    session['web_pantry'] = []
+                session['web_pantry'].extend(detected_items)
         
         return jsonify({
             'success': True,
