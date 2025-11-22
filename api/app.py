@@ -9,6 +9,8 @@ from dotenv import load_dotenv
 
 # Check if running on Vercel (serverless environment)
 IS_VERCEL = os.getenv('VERCEL') == '1' or os.getenv('VERCEL_ENV') is not None
+# Check if running on Render (persistent server environment)
+IS_RENDER = os.getenv('RENDER') == 'true' or 'render.com' in os.getenv('RENDER_EXTERNAL_HOSTNAME', '')
 
 # CORS will be handled via manual headers (no flask-cors dependency needed)
 # This approach works perfectly for all use cases and doesn't require additional packages
@@ -134,18 +136,25 @@ mobile_pantry = []
 
 # User management system
 # In serverless, use /tmp directory for temporary storage or in-memory storage
+# On Render, use persistent file storage
 if IS_VERCEL:
     # Use /tmp directory which is writable in Vercel serverless functions
     USERS_FILE = os.path.join('/tmp', 'users.json')
     # In-memory fallback if file operations fail
     _in_memory_users = {}
+elif IS_RENDER:
+    # On Render, use /tmp for persistent storage (survives restarts but not redeploys)
+    # For production, consider using a database
+    USERS_FILE = os.path.join('/tmp', 'users.json')
+    _in_memory_users = {}
 else:
+    # Local development: use current directory
     USERS_FILE = 'users.json'
     _in_memory_users = {}
 
 def load_users():
     """Load users from JSON file or in-memory storage"""
-    if IS_VERCEL:
+    if IS_VERCEL or IS_RENDER:
         # Try to load from /tmp, fallback to in-memory
         try:
             if os.path.exists(USERS_FILE):
@@ -154,8 +163,10 @@ def load_users():
                     # Update in-memory cache as well
                     global _in_memory_users
                     _in_memory_users = loaded.copy()
+                    print(f"Loaded {len(loaded)} users from {USERS_FILE}")
                     return loaded
             # Return in-memory copy
+            print(f"Users file not found at {USERS_FILE}, using in-memory storage")
             return _in_memory_users.copy() if _in_memory_users else {}
         except (IOError, OSError, json.JSONDecodeError) as e:
             # Fallback to in-memory if file read fails
@@ -166,14 +177,16 @@ def load_users():
         try:
             if os.path.exists(USERS_FILE):
                 with open(USERS_FILE, 'r') as f:
-                    return json.load(f)
+                    loaded = json.load(f)
+                    print(f"Loaded {len(loaded)} users from {USERS_FILE}")
+                    return loaded
         except (IOError, json.JSONDecodeError) as e:
             print(f"Warning: Could not load users file: {e}")
         return {}
 
 def save_users(users):
     """Save users to JSON file or in-memory storage"""
-    if IS_VERCEL:
+    if IS_VERCEL or IS_RENDER:
         # Try to save to /tmp, always update in-memory cache
         global _in_memory_users
         _in_memory_users = users.copy()  # Always update in-memory
@@ -183,6 +196,7 @@ def save_users(users):
             os.makedirs(os.path.dirname(USERS_FILE), exist_ok=True)
             with open(USERS_FILE, 'w') as f:
                 json.dump(users, f, indent=2)
+            print(f"Saved {len(users)} users to {USERS_FILE}")
         except (IOError, OSError) as e:
             # Fallback to in-memory storage if file write fails
             print(f"Warning: Could not save users file: {e}. Using in-memory storage.")
@@ -191,6 +205,7 @@ def save_users(users):
         try:
             with open(USERS_FILE, 'w') as f:
                 json.dump(users, f, indent=2)
+            print(f"Saved {len(users)} users to {USERS_FILE}")
         except (IOError, OSError) as e:
             print(f"Error: Could not save users file: {e}")
 
@@ -227,16 +242,26 @@ def authenticate_user(username, password, client_type='web'):
     """Authenticate user and return user data"""
     users = load_users()
     
+    # Debug: print number of users loaded
+    print(f"Authenticating user '{username}' against {len(users)} users")
+    
+    password_hash = hash_password(password)
+    
     for user_id, user_data in users.items():
-        if (user_data['username'] == username or user_data['email'] == username) and \
-           user_data['password_hash'] == hash_password(password):
-            
+        username_match = (user_data['username'] == username or user_data['email'] == username)
+        password_match = user_data['password_hash'] == password_hash
+        
+        if username_match and password_match:
             # Update last login
             user_data['last_login'] = datetime.now().isoformat()
             save_users(users)
             
+            print(f"Authentication successful for user '{username}'")
             return user_data, None
+        elif username_match and not password_match:
+            print(f"Password mismatch for user '{username}'")
     
+    print(f"Authentication failed: No matching user found for '{username}'")
     return None, "Invalid credentials"
 
 def get_user_pantry(user_id):
