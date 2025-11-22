@@ -1,3 +1,0 @@
-# Only exclude root-level app.py to prevent auto-detection
-# SmartPantryWeb/ directory must be included for imports to work
-/app.py
