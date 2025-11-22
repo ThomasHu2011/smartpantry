@@ -298,7 +298,10 @@ def get_user_pantry(user_id):
     """Get user's pantry items"""
     users = load_users()
     if user_id in users:
-        return users[user_id]['pantry']
+        pantry = users[user_id].get('pantry', [])
+        print(f"Retrieved pantry for user {user_id}: {len(pantry)} items")
+        return pantry
+    print(f"Warning: User {user_id} not found in users database")
     return []
 
 def update_user_pantry(user_id, pantry_items):
@@ -307,6 +310,9 @@ def update_user_pantry(user_id, pantry_items):
     if user_id in users:
         users[user_id]['pantry'] = pantry_items
         save_users(users)
+        print(f"Updated pantry for user {user_id}: {len(pantry_items)} items saved")
+    else:
+        print(f"Error: Cannot update pantry - user {user_id} not found in users database")
 
  
 
@@ -384,10 +390,17 @@ def add_items():
         
         if 'user_id' in session:
             # Add to user's pantry
-            user_pantry = get_user_pantry(session['user_id'])
+            user_id = session['user_id']
+            print(f"Adding item '{item}' to pantry for user {user_id}")
+            user_pantry = get_user_pantry(user_id)
+            print(f"Current pantry before add: {user_pantry}")
             if item not in user_pantry:  # Prevent duplicates
                 user_pantry.append(item)
-                update_user_pantry(session['user_id'], user_pantry)
+                print(f"Pantry after append: {user_pantry}")
+                update_user_pantry(user_id, user_pantry)
+                # Verify it was saved
+                verify_pantry = get_user_pantry(user_id)
+                print(f"Verified pantry after save: {verify_pantry}")
                 flash(f"{item} added to pantry.", "success")
             else:
                 flash(f"{item} is already in your pantry.", "warning")
