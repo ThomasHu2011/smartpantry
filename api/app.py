@@ -275,21 +275,36 @@ def authenticate_user(username, password, client_type='web'):
     # Debug: print number of users loaded
     print(f"Authenticating user '{username}' against {len(users)} users")
     
+    if not users:
+        print("ERROR: No users found in database!")
+        return None, "No users found. Please sign up first."
+    
+    # Debug: print all usernames (without passwords)
+    usernames = [user_data.get('username', 'N/A') for user_data in users.values()]
+    print(f"Available usernames: {usernames}")
+    
     password_hash = hash_password(password)
+    print(f"Password hash for provided password: {password_hash[:20]}...")
     
     for user_id, user_data in users.items():
-        username_match = (user_data['username'] == username or user_data['email'] == username)
-        password_match = user_data['password_hash'] == password_hash
+        stored_username = user_data.get('username', '')
+        stored_email = user_data.get('email', '')
+        stored_password_hash = user_data.get('password_hash', '')
+        
+        username_match = (stored_username == username or stored_email == username)
+        password_match = stored_password_hash == password_hash
+        
+        print(f"Checking user {user_id}: username='{stored_username}', email='{stored_email}', password_match={password_match}")
         
         if username_match and password_match:
             # Update last login
             user_data['last_login'] = datetime.now().isoformat()
             save_users(users)
             
-            print(f"Authentication successful for user '{username}'")
+            print(f"Authentication successful for user '{username}' (ID: {user_id})")
             return user_data, None
         elif username_match and not password_match:
-            print(f"Password mismatch for user '{username}'")
+            print(f"Password mismatch for user '{username}' - stored hash: {stored_password_hash[:20]}..., provided hash: {password_hash[:20]}...")
     
     print(f"Authentication failed: No matching user found for '{username}'")
     return None, "Invalid credentials"
@@ -325,13 +340,22 @@ def login():
         username = request.form.get("username")
         password = request.form.get("password")
         
+        print(f"Login attempt - Username: {username}, Password provided: {'Yes' if password else 'No'}")
+        
+        if not username or not password:
+            flash("Please provide both username and password", "danger")
+            return render_template("login.html")
+        
         user_data, error = authenticate_user(username, password, 'web')
         if user_data:
             session['user_id'] = user_data['id']
             session['username'] = user_data['username']
+            print(f"Login successful - User ID: {user_data['id']}, Username: {user_data['username']}")
+            print(f"Session after login: user_id={session.get('user_id')}, username={session.get('username')}")
             flash(f"Welcome back, {user_data['username']}!", "success")
             return redirect(url_for("index"))
         else:
+            print(f"Login failed - Error: {error}")
             flash(error, "danger")
     
     return render_template("login.html")
