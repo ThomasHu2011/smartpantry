@@ -299,8 +299,10 @@ def get_user_pantry(user_id):
     users = load_users()
     if user_id in users:
         pantry = users[user_id].get('pantry', [])
-        print(f"Retrieved pantry for user {user_id}: {len(pantry)} items")
-        return pantry
+        # Return a copy of the list to avoid reference issues
+        pantry_copy = list(pantry) if pantry else []
+        print(f"Retrieved pantry for user {user_id}: {len(pantry_copy)} items")
+        return pantry_copy
     print(f"Warning: User {user_id} not found in users database")
     return []
 
