@@ -156,22 +156,52 @@ def load_users():
     """Load users from JSON file or in-memory storage"""
     if IS_VERCEL or IS_RENDER:
         # Try to load from /tmp, fallback to in-memory
+        users = {}
+        
+        # First, try to load from new location (/tmp/users.json)
         try:
             if os.path.exists(USERS_FILE):
                 with open(USERS_FILE, 'r') as f:
-                    loaded = json.load(f)
-                    # Update in-memory cache as well
-                    global _in_memory_users
-                    _in_memory_users = loaded.copy()
-                    print(f"Loaded {len(loaded)} users from {USERS_FILE}")
-                    return loaded
-            # Return in-memory copy
-            print(f"Users file not found at {USERS_FILE}, using in-memory storage")
-            return _in_memory_users.copy() if _in_memory_users else {}
+                    users = json.load(f)
+                    print(f"Loaded {len(users)} users from {USERS_FILE}")
         except (IOError, OSError, json.JSONDecodeError) as e:
-            # Fallback to in-memory if file read fails
-            print(f"Warning: Could not load users file: {e}")
+            print(f"Warning: Could not load users file from {USERS_FILE}: {e}")
+        
+        # Also check old location (users.json in current directory) and migrate
+        old_users_file = 'users.json'
+        try:
+            if os.path.exists(old_users_file):
+                with open(old_users_file, 'r') as f:
+                    old_users = json.load(f)
+                    print(f"Found {len(old_users)} users in old location ({old_users_file}), migrating...")
+                    # Merge old users into current users (old users take precedence if duplicate)
+                    for user_id, user_data in old_users.items():
+                        if user_id not in users:
+                            users[user_id] = user_data
+                            print(f"Migrated user: {user_data.get('username', 'unknown')}")
+                    # Save merged users to new location
+                    if old_users:
+                        global _in_memory_users
+                        _in_memory_users = users.copy()
+                        try:
+                            os.makedirs(os.path.dirname(USERS_FILE), exist_ok=True)
+                            with open(USERS_FILE, 'w') as f:
+                                json.dump(users, f, indent=2)
+                            print(f"Migrated {len(old_users)} users to {USERS_FILE}")
+                        except Exception as e:
+                            print(f"Warning: Could not save migrated users: {e}")
+        except (IOError, OSError, json.JSONDecodeError) as e:
+            print(f"Note: Could not check old users file: {e}")
+        
+        # Update in-memory cache
+        global _in_memory_users
+        _in_memory_users = users.copy()
+        
+        if not users:
+            print(f"No users found, using in-memory storage")
             return _in_memory_users.copy() if _in_memory_users else {}
+        
+        return users
     else:
         # Local development: use file system
         try:
