@@ -368,6 +368,7 @@ def login():
         
         user_data, error = authenticate_user(username, password, 'web')
         if user_data:
+            session.permanent = True  # Make session permanent
             session['user_id'] = user_data['id']
             session['username'] = user_data['username']
             print(f"Login successful - User ID: {user_data['id']}, Username: {user_data['username']}")
@@ -397,6 +398,7 @@ def signup():
         else:
             user_id, error = create_user(username, email, password, 'web')
             if user_id:
+                session.permanent = True  # Make session permanent
                 session['user_id'] = user_id
                 session['username'] = username
                 print(f"Signup successful - User ID: {user_id}, Username: {username}")
