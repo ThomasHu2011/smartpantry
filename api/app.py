@@ -292,12 +292,20 @@ def authenticate_user(username, password, client_type='web'):
     """Authenticate user and return user data"""
     users = load_users()
     
+    # Normalize input (strip whitespace and convert to lowercase for comparison)
+    username_normalized = username.strip().lower() if username else ""
+    password = password.strip() if password else ""
+    
     # Debug: print number of users loaded
-    print(f"Authenticating user '{username}' against {len(users)} users")
+    print(f"Authenticating user '{username}' (normalized: '{username_normalized}') against {len(users)} users")
     
     if not users:
         print("ERROR: No users found in database!")
         return None, "No users found. Please sign up first."
+    
+    if not username_normalized or not password:
+        print("ERROR: Username or password is empty!")
+        return None, "Username and password are required"
     
     # Debug: print all usernames (without passwords)
     usernames = [user_data.get('username', 'N/A') for user_data in users.values()]
@@ -307,26 +315,30 @@ def authenticate_user(username, password, client_type='web'):
     print(f"Password hash for provided password: {password_hash[:20]}...")
     
     for user_id, user_data in users.items():
-        stored_username = user_data.get('username', '')
-        stored_email = user_data.get('email', '')
+        stored_username = user_data.get('username', '').strip()
+        stored_email = user_data.get('email', '').strip()
         stored_password_hash = user_data.get('password_hash', '')
         
-        username_match = (stored_username == username or stored_email == username)
+        # Case-insensitive matching for username and email
+        username_match = (
+            stored_username.lower() == username_normalized or 
+            stored_email.lower() == username_normalized
+        )
         password_match = stored_password_hash == password_hash
         
-        print(f"Checking user {user_id}: username='{stored_username}', email='{stored_email}', password_match={password_match}")
+        print(f"Checking user {user_id}: username='{stored_username}', email='{stored_email}', username_match={username_match}, password_match={password_match}")
         
         if username_match and password_match:
             # Update last login
             user_data['last_login'] = datetime.now().isoformat()
             save_users(users)
             
-            print(f"Authentication successful for user '{username}' (ID: {user_id})")
+            print(f"✅ Authentication successful for user '{username}' (ID: {user_id})")
             return user_data, None
         elif username_match and not password_match:
-            print(f"Password mismatch for user '{username}' - stored hash: {stored_password_hash[:20]}..., provided hash: {password_hash[:20]}...")
+            print(f"❌ Password mismatch for user '{username}' - stored hash: {stored_password_hash[:20]}..., provided hash: {password_hash[:20]}...")
     
-    print(f"Authentication failed: No matching user found for '{username}'")
+    print(f"❌ Authentication failed: No matching user found for '{username}'")
     return None, "Invalid credentials"
 
 def get_user_pantry(user_id):
@@ -1114,29 +1126,41 @@ def api_signup():
 @app.route('/api/auth/login', methods=['POST'])
 def api_login():
     """Login user via API"""
-    data = request.get_json()
-    if not data:
-        return jsonify({'success': False, 'error': 'Invalid request data'}), 400
-    
-    username = data.get('username', '').strip()
-    password = data.get('password', '').strip()
-    client_type = request.headers.get('X-Client-Type', 'mobile')
-    
-    if not username or not password:
-        return jsonify({'success': False, 'error': 'Username and password are required'}), 400
-    
-    user_data, error = authenticate_user(username, password, client_type)
-    if user_data:
-        return jsonify({
-            'success': True,
-            'message': 'Login successful',
-            'user_id': user_data['id'],
-            'username': user_data['username'],
-            'email': user_data['email'],
-            'pantry': user_data['pantry']
-        })
-    else:
-        return jsonify({'success': False, 'error': error}), 401
+    try:
+        data = request.get_json()
+        if not data:
+            print("ERROR: No JSON data received in login request")
+            return jsonify({'success': False, 'error': 'Invalid request data'}), 400
+        
+        username = data.get('username', '').strip()
+        password = data.get('password', '').strip()
+        client_type = request.headers.get('X-Client-Type', 'mobile')
+        
+        print(f"API Login attempt - Username: '{username}', Password provided: {'Yes' if password else 'No'}, Client: {client_type}")
+        
+        if not username or not password:
+            print("ERROR: Username or password is empty")
+            return jsonify({'success': False, 'error': 'Username and password are required'}), 400
+        
+        user_data, error = authenticate_user(username, password, client_type)
+        if user_data:
+            print(f"✅ API Login successful for user '{username}' (ID: {user_data['id']})")
+            return jsonify({
+                'success': True,
+                'message': 'Login successful',
+                'user_id': user_data['id'],
+                'username': user_data['username'],
+                'email': user_data['email'],
+                'pantry': user_data.get('pantry', [])
+            }), 200
+        else:
+            print(f"❌ API Login failed: {error}")
+            return jsonify({'success': False, 'error': error}), 401
+    except Exception as e:
+        print(f"ERROR: Exception in api_login: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': f'Server error: {str(e)}'}), 500
 
 @app.route('/api/pantry', methods=['GET'])
 def api_get_pantry():
