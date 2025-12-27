@@ -314,6 +314,9 @@ def authenticate_user(username, password, client_type='web'):
     password_hash = hash_password(password)
     print(f"Password hash for provided password: {password_hash[:20]}...")
     
+    # Track if we found a matching username but wrong password
+    found_username = False
+    
     for user_id, user_data in users.items():
         stored_username = user_data.get('username', '').strip()
         stored_email = user_data.get('email', '').strip()
@@ -336,10 +339,16 @@ def authenticate_user(username, password, client_type='web'):
             print(f"✅ Authentication successful for user '{username}' (ID: {user_id})")
             return user_data, None
         elif username_match and not password_match:
+            found_username = True
             print(f"❌ Password mismatch for user '{username}' - stored hash: {stored_password_hash[:20]}..., provided hash: {password_hash[:20]}...")
     
-    print(f"❌ Authentication failed: No matching user found for '{username}'")
-    return None, "Invalid credentials"
+    # Provide specific error messages
+    if found_username:
+        print(f"❌ Authentication failed: Incorrect password for user '{username}'")
+        return None, "Incorrect password. Please try again."
+    else:
+        print(f"❌ Authentication failed: Username or email '{username}' not found")
+        return None, "Incorrect username or email. Please check and try again."
 
 def get_user_pantry(user_id):
     """Get user's pantry items"""
