@@ -1488,30 +1488,71 @@ Provide nutrition facts per serving in JSON format:
 @app.route('/api/auth/signup', methods=['POST'])
 def api_signup():
     """Sign up a new user via API"""
-    data = request.get_json()
+    print(f"\n{'='*60}")
+    print(f"📥 API SIGNUP REQUEST")
+    print(f"{'='*60}")
+    print(f"Method: {request.method}")
+    print(f"Content-Type: {request.content_type}")
+    print(f"Headers: {dict(request.headers)}")
+    print(f"X-Client-Type: {request.headers.get('X-Client-Type', 'NOT PROVIDED')}")
+    print(f"Raw request data (first 500 chars): {request.get_data()[:500]}")
+    
+    # Check if request has JSON data
+    if not request.is_json:
+        print(f"❌ ERROR: Request is not JSON. Content-Type: {request.content_type}")
+        return jsonify({'success': False, 'error': 'Request must be JSON. Content-Type should be application/json'}), 400
+    
+    try:
+        data = request.get_json(force=True)  # Force JSON parsing
+        print(f"✅ Received JSON data: {data}")
+        print(f"   Data type: {type(data)}")
+        print(f"   Data keys: {list(data.keys()) if isinstance(data, dict) else 'Not a dict'}")
+    except Exception as e:
+        print(f"❌ Error parsing JSON: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': f'Invalid JSON data: {str(e)}'}), 400
+    
     if not data:
+        print("❌ ERROR: No data received after parsing")
         return jsonify({'success': False, 'error': 'Invalid request data'}), 400
     
-    username = data.get('username', '').strip()
-    email = data.get('email', '').strip()
-    password = data.get('password', '').strip()
+    username = data.get('username', '').strip() if data.get('username') else ''
+    email = data.get('email', '').strip() if data.get('email') else ''
+    password = data.get('password', '').strip() if data.get('password') else ''
     client_type = request.headers.get('X-Client-Type', 'mobile')
     
+    print(f"📋 Extracted values:")
+    print(f"   Username: '{username}' (length: {len(username)})")
+    print(f"   Email: '{email}' (length: {len(email)})")
+    print(f"   Password: {'***' if password else 'EMPTY'} (length: {len(password)})")
+    print(f"   Client Type: {client_type}")
+    
     if not username or not email or not password:
+        print(f"❌ Validation failed: missing required fields")
+        print(f"   Username empty: {not username}")
+        print(f"   Email empty: {not email}")
+        print(f"   Password empty: {not password}")
         return jsonify({'success': False, 'error': 'Username, email, and password are required'}), 400
     
     if len(password) < 6:
+        print(f"❌ Validation failed: password too short ({len(password)} chars)")
         return jsonify({'success': False, 'error': 'Password must be at least 6 characters'}), 400
     
+    print(f"💾 Calling create_user()...")
     user_id, error = create_user(username, email, password, client_type)
     if user_id:
+        print(f"✅ User created successfully: {user_id}")
+        print(f"{'='*60}\n")
         return jsonify({
             'success': True,
             'message': 'Account created successfully',
             'user_id': user_id,
             'username': username
-        })
+        }), 200
     else:
+        print(f"❌ User creation failed: {error}")
+        print(f"{'='*60}\n")
         return jsonify({'success': False, 'error': error}), 409
 
 @app.route('/api/admin/delete-all-users', methods=['POST'])
@@ -1637,11 +1678,21 @@ def api_add_item():
     print(f"Headers: {dict(request.headers)}")
     print(f"X-User-ID: {request.headers.get('X-User-ID', 'NOT PROVIDED')}")
     print(f"X-Client-Type: {request.headers.get('X-Client-Type', 'NOT PROVIDED')}")
+    print(f"Raw request data (first 500 chars): {request.get_data()[:500]}")
+    print(f"Raw request data (hex): {request.get_data()[:100].hex()}")
+    
+    # Also check form data (in case it's being sent as form-data)
+    print(f"Form data: {dict(request.form)}")
+    print(f"Form files: {list(request.files.keys())}")
     
     # Check if request has JSON data
     if not request.is_json:
         print(f"❌ ERROR: Request is not JSON. Content-Type: {request.content_type}")
         print(f"   Raw data: {request.get_data()[:200]}")  # First 200 chars
+        # Try to parse as form data
+        if request.form:
+            print(f"   Found form data: {dict(request.form)}")
+            return jsonify({'success': False, 'error': 'Request must be JSON. Content-Type should be application/json. Received form data instead.'}), 400
         return jsonify({'success': False, 'error': 'Request must be JSON. Content-Type should be application/json'}), 400
     
     try:
