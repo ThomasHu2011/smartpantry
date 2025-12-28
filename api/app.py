@@ -1869,12 +1869,21 @@ def api_add_item():
 def api_delete_item(item_id):
     """Delete an item from pantry via API (by ID or name for backward compatibility)"""
     global mobile_pantry, web_pantry  # Declare globals at function start
+    
+    print(f"\n{'='*60}")
+    print(f"🗑️ API DELETE ITEM REQUEST")
+    print(f"{'='*60}")
+    print(f"Item ID: {item_id}")
+    print(f"X-User-ID: {request.headers.get('X-User-ID', 'NOT PROVIDED')}")
+    print(f"X-Client-Type: {request.headers.get('X-Client-Type', 'NOT PROVIDED')}")
+    
     client_type = request.headers.get('X-Client-Type', 'web')
     user_id = request.headers.get('X-User-ID')
     
     # URL decode the item_id
     from urllib.parse import unquote
     item_id = unquote(item_id)
+    print(f"Decoded item ID: {item_id}")
     
     # Check if user is authenticated
     if user_id:
@@ -1905,14 +1914,25 @@ def api_delete_item(item_id):
                 break
         
         if item_to_delete:
+            print(f"✅ Found item to delete: {item_to_delete}")
+            print(f"   Pantry before delete: {len(pantry_list)} items")
             update_user_pantry(user_id, pantry_list)
             item_name = item_to_delete.get('name', item_id) if isinstance(item_to_delete, dict) else item_to_delete
+            print(f"✅ Successfully deleted item '{item_name}' from user {user_id}'s pantry")
+            print(f"   Pantry after delete: {len(pantry_list)} items")
+            print(f"{'='*60}\n")
             return jsonify({
                 'success': True,
                 'message': f'Removed "{item_name}" from pantry',
                 'total_items': len(pantry_list)
-            })
+            }), 200
         else:
+            print(f"❌ Item not found in pantry. Item ID: {item_id}")
+            print(f"   User ID: {user_id}")
+            print(f"   Pantry has {len(pantry_list)} items")
+            if pantry_list:
+                print(f"   Available item IDs: {[item.get('id', 'unknown') if isinstance(item, dict) else str(item) for item in pantry_list[:5]]}")
+            print(f"{'='*60}\n")
             return jsonify({'success': False, 'error': f'Item not found in pantry'}), 404
     else:
         # Use anonymous pantry
