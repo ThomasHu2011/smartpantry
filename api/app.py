@@ -177,6 +177,8 @@ else:
 
 def load_users():
     """Load users from JSON file or in-memory storage"""
+    global _in_memory_users  # Declare global at the start of the function
+    
     if IS_VERCEL or IS_RENDER:
         # Try to load from /tmp, fallback to in-memory
         users = {}
@@ -204,7 +206,6 @@ def load_users():
                             print(f"Migrated user: {user_data.get('username', 'unknown')}")
                     # Save merged users to new location
                     if old_users:
-                        global _in_memory_users
                         _in_memory_users = users.copy()
                         try:
                             os.makedirs(os.path.dirname(USERS_FILE), exist_ok=True)
@@ -217,7 +218,6 @@ def load_users():
             print(f"Note: Could not check old users file: {e}")
         
         # Update in-memory cache
-        global _in_memory_users
         _in_memory_users = users.copy()
         
         if not users:
@@ -266,7 +266,16 @@ def save_users(users):
         # Local development: use file system with atomic write
         try:
             # Ensure directory exists
-            os.makedirs(os.path.dirname(USERS_FILE), exist_ok=True)
+            file_dir = os.path.dirname(USERS_FILE)
+            if file_dir and file_dir != '.':
+                os.makedirs(file_dir, exist_ok=True)
+                print(f"📁 Ensured directory exists: {file_dir}")
+            elif not file_dir or file_dir == '':
+                # If no directory, file is in current directory
+                print(f"📁 Saving to current directory: {os.getcwd()}")
+            
+            print(f"💾 Attempting to save {len(users)} users to {USERS_FILE}")
+            print(f"   Absolute path: {os.path.abspath(USERS_FILE)}")
             
             # Use atomic write: write to temp file first, then rename
             temp_file = USERS_FILE + '.tmp'
@@ -284,13 +293,28 @@ def save_users(users):
                 with open(USERS_FILE, 'r') as f:
                     verify = json.load(f)
                     if len(verify) == len(users):
-                        print(f"✅ Verified: {len(verify)} users saved correctly")
+                        print(f"✅ Verified: {len(verify)} users saved correctly to {USERS_FILE}")
+                        # Print user IDs for debugging
+                        if users:
+                            print(f"   User IDs in file: {list(verify.keys())}")
                     else:
                         print(f"⚠️ Warning: Saved {len(users)} users but file contains {len(verify)} users")
+                        print(f"   Expected IDs: {list(users.keys())}")
+                        print(f"   Found IDs: {list(verify.keys())}")
+            else:
+                print(f"❌ Error: File {USERS_FILE} does not exist after save!")
         except (IOError, OSError) as e:
             print(f"❌ Error: Could not save users file to {USERS_FILE}: {e}")
             import traceback
             traceback.print_exc()
+            # Try to save to a fallback location
+            try:
+                fallback_file = 'users.json'
+                with open(fallback_file, 'w') as f:
+                    json.dump(users, f, indent=2)
+                print(f"⚠️ Saved to fallback location: {fallback_file}")
+            except Exception as e2:
+                print(f"❌ Could not save to fallback location either: {e2}")
 
 def hash_password(password):
     """Hash password using SHA-256"""
