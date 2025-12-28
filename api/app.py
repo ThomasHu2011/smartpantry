@@ -1447,8 +1447,17 @@ def api_get_pantry():
 def api_add_item():
     """Add an item to pantry via API"""
     
-    data = request.get_json()
+    try:
+        data = request.get_json()
+        print(f"Received data: {data}")
+        print(f"Data type: {type(data)}")
+        print(f"Data keys: {list(data.keys()) if isinstance(data, dict) else 'Not a dict'}")
+    except Exception as e:
+        print(f"Error parsing JSON: {e}")
+        return jsonify({'success': False, 'error': f'Invalid JSON data: {str(e)}'}), 400
+    
     if not data:
+        print("ERROR: No data received")
         return jsonify({'success': False, 'error': 'Invalid request data'}), 400
     
     # Support both old format (item: string) and new format (PantryItem object)
@@ -1470,18 +1479,36 @@ def api_add_item():
         }
     elif 'name' in data:
         # New format - PantryItem object
+        item_name = data.get('name', '').strip() if data.get('name') else ''
+        if not item_name:
+            print(f"ERROR: Item name is empty or missing. Data received: {data}")
+            return jsonify({'success': False, 'error': 'Item name cannot be empty'}), 400
+        
+        # Handle expirationDate - can be None, empty string, or a valid date string
+        expiration_date = data.get('expirationDate')
+        if expiration_date == '' or expiration_date is None:
+            expiration_date = None
+        
+        # Handle quantity - ensure it's a valid string, default to '1' if None or empty
+        quantity = data.get('quantity', '1')
+        if not quantity or (isinstance(quantity, str) and quantity.strip() == ''):
+            quantity = '1'
+        elif not isinstance(quantity, str):
+            quantity = str(quantity)  # Convert to string if it's a number
+        
         pantry_item = {
             'id': data.get('id', str(uuid.uuid4())),
-            'name': data['name'].strip(),
-            'quantity': data.get('quantity', '1'),
-            'expirationDate': data.get('expirationDate'),
+            'name': item_name,
+            'quantity': quantity.strip() if isinstance(quantity, str) else str(quantity),
+            'expirationDate': expiration_date,
             'addedDate': data.get('addedDate', datetime.now().isoformat())
         }
         
-        if not pantry_item['name']:
-            return jsonify({'success': False, 'error': 'Item name cannot be empty'}), 400
+        print(f"✅ Created pantry item: name='{pantry_item['name']}', quantity='{pantry_item['quantity']}', expirationDate={pantry_item['expirationDate']}")
     else:
-        return jsonify({'success': False, 'error': 'Item name required'}), 400
+        print(f"ERROR: Neither 'item' nor 'name' found in data. Keys: {list(data.keys()) if isinstance(data, dict) else 'Not a dict'}")
+        print(f"Full data: {data}")
+        return jsonify({'success': False, 'error': 'Item name required. Please provide either "item" or "name" field.'}), 400
     
     client_type = request.headers.get('X-Client-Type', 'web')
     user_id = request.headers.get('X-User-ID')
@@ -1504,8 +1531,13 @@ def api_add_item():
                 })
         
         # Check for duplicates (case-insensitive name match)
-        if any(i.get('name', '').lower() == pantry_item['name'].lower() for i in pantry_list):
-            return jsonify({'success': False, 'error': f'"{pantry_item["name"]}" is already in pantry'}), 409
+        # Safely handle None or missing name values
+        item_name = pantry_item.get('name', '').strip() if pantry_item.get('name') else ''
+        if item_name:
+            for i in pantry_list:
+                existing_name = i.get('name', '').strip() if i.get('name') else ''
+                if existing_name and existing_name.lower() == item_name.lower():
+                    return jsonify({'success': False, 'error': f'"{item_name}" is already in pantry'}), 409
         
         pantry_list.append(pantry_item)
         update_user_pantry(user_id, pantry_list)
