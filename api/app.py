@@ -317,20 +317,28 @@ def save_users(users):
             
             print(f"💾 Attempting to save {len(users)} users to {USERS_FILE}")
             print(f"   Absolute path: {os.path.abspath(USERS_FILE)}")
+            print(f"   Current working directory: {os.getcwd()}")
+            print(f"   File directory exists: {os.path.exists(file_dir) if file_dir else 'N/A'}")
             
             # Use atomic write: write to temp file first, then rename
             temp_file = USERS_FILE + '.tmp'
+            print(f"   Writing to temp file: {temp_file}")
+            
             with open(temp_file, 'w') as f:
                 json.dump(users, f, indent=2)
                 f.flush()  # Force write to disk
                 os.fsync(f.fileno())  # Ensure data is written to disk
             
+            print(f"   Temp file written, size: {os.path.getsize(temp_file)} bytes")
+            
             # Atomic rename
             os.replace(temp_file, USERS_FILE)
             print(f"✅ Saved {len(users)} users to {USERS_FILE}")
             
-            # Verify the save
+            # Verify the save immediately
             if os.path.exists(USERS_FILE):
+                file_size = os.path.getsize(USERS_FILE)
+                print(f"   File exists, size: {file_size} bytes")
                 with open(USERS_FILE, 'r') as f:
                     verify = json.load(f)
                     if len(verify) == len(users):
@@ -338,24 +346,44 @@ def save_users(users):
                         # Print user IDs for debugging
                         if users:
                             print(f"   User IDs in file: {list(verify.keys())}")
+                            # Print first user as sample
+                            first_user_id = list(verify.keys())[0]
+                            first_user = verify[first_user_id]
+                            print(f"   Sample user: {first_user.get('username', 'unknown')} ({first_user_id})")
                     else:
                         print(f"⚠️ Warning: Saved {len(users)} users but file contains {len(verify)} users")
                         print(f"   Expected IDs: {list(users.keys())}")
                         print(f"   Found IDs: {list(verify.keys())}")
             else:
                 print(f"❌ Error: File {USERS_FILE} does not exist after save!")
-        except (IOError, OSError) as e:
+                print(f"   Attempting direct write...")
+                # Try direct write as fallback
+                try:
+                    with open(USERS_FILE, 'w') as f:
+                        json.dump(users, f, indent=2)
+                        f.flush()
+                        os.fsync(f.fileno())
+                    print(f"   ✅ Direct write succeeded")
+                except Exception as e3:
+                    print(f"   ❌ Direct write also failed: {e3}")
+        except (IOError, OSError, PermissionError) as e:
             print(f"❌ Error: Could not save users file to {USERS_FILE}: {e}")
+            print(f"   Error type: {type(e).__name__}")
             import traceback
             traceback.print_exc()
             # Try to save to a fallback location
             try:
                 fallback_file = 'users.json'
+                print(f"   Attempting fallback save to: {fallback_file}")
                 with open(fallback_file, 'w') as f:
                     json.dump(users, f, indent=2)
+                    f.flush()
+                    os.fsync(f.fileno())
                 print(f"⚠️ Saved to fallback location: {fallback_file}")
             except Exception as e2:
                 print(f"❌ Could not save to fallback location either: {e2}")
+                import traceback
+                traceback.print_exc()
 
 def hash_password(password):
     """Hash password using SHA-256"""
