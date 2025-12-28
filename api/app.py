@@ -227,17 +227,58 @@ def load_users():
         return users
     else:
         # Local development: use file system
+        users = {}
+        
+        # First, try to load from the new location (api/users.json)
         try:
             if os.path.exists(USERS_FILE):
                 with open(USERS_FILE, 'r') as f:
-                    loaded = json.load(f)
-                    print(f"Loaded {len(loaded)} users from {USERS_FILE}")
-                    return loaded
-            else:
-                print(f"Users file does not exist at {USERS_FILE}, starting with empty users")
+                    users = json.load(f)
+                    print(f"✅ Loaded {len(users)} users from {USERS_FILE}")
+                    return users
         except (IOError, json.JSONDecodeError) as e:
-            print(f"Warning: Could not load users file: {e}")
-        return {}
+            print(f"⚠️ Warning: Could not load users file from {USERS_FILE}: {e}")
+        
+        # Also check old locations and migrate
+        old_locations = [
+            'users.json',  # Current directory
+            os.path.join('SmartPantryWeb', 'users.json'),  # Old SmartPantryWeb location
+            os.path.join('..', 'SmartPantryWeb', 'users.json'),  # Relative path
+        ]
+        
+        for old_file in old_locations:
+            try:
+                if os.path.exists(old_file):
+                    with open(old_file, 'r') as f:
+                        old_users = json.load(f)
+                        if old_users and isinstance(old_users, dict):
+                            print(f"📦 Found {len(old_users)} users in old location ({old_file}), migrating...")
+                            # Merge old users into current users
+                            for user_id, user_data in old_users.items():
+                                if user_id not in users:
+                                    users[user_id] = user_data
+                                    print(f"   Migrated user: {user_data.get('username', 'unknown')} (ID: {user_id})")
+                            
+                            # Save migrated users to new location
+                            if old_users:
+                                try:
+                                    file_dir = os.path.dirname(USERS_FILE)
+                                    if file_dir and file_dir != '.':
+                                        os.makedirs(file_dir, exist_ok=True)
+                                    with open(USERS_FILE, 'w') as f:
+                                        json.dump(users, f, indent=2)
+                                    print(f"✅ Migrated {len(old_users)} users to {USERS_FILE}")
+                                except Exception as e:
+                                    print(f"⚠️ Warning: Could not save migrated users: {e}")
+            except (IOError, json.JSONDecodeError) as e:
+                # Continue checking other locations
+                pass
+        
+        if not users:
+            print(f"📁 Users file does not exist at {USERS_FILE}, starting with empty users")
+            print(f"   Checked locations: {[USERS_FILE] + old_locations}")
+        
+        return users
 
 def save_users(users):
     """Save users to JSON file or in-memory storage"""
@@ -358,26 +399,64 @@ def create_user(username, email, password, client_type='web'):
     }
     
     # Save users immediately and ensure it's written to disk
-    print(f"💾 Saving user to {USERS_FILE}...")
-    save_users(users)
+    print(f"💾 Saving user '{username}' (ID: {user_id}) to {USERS_FILE}...")
+    print(f"   Total users to save: {len(users)}")
+    print(f"   User data: username={username}, email={email}, pantry={len(users[user_id]['pantry'])} items")
+    
+    try:
+        save_users(users)
+        print(f"✅ save_users() completed without exception")
+    except Exception as e:
+        print(f"❌ ERROR in save_users(): {e}")
+        import traceback
+        traceback.print_exc()
+        # Still try to continue, but log the error
     
     # Verify the save was successful by reloading
     # This ensures the file is actually written before returning
     print(f"🔍 Verifying save by reloading users from {USERS_FILE}...")
+    print(f"   File exists: {os.path.exists(USERS_FILE)}")
+    if os.path.exists(USERS_FILE):
+        print(f"   File size: {os.path.getsize(USERS_FILE)} bytes")
+    
     verify_users = load_users()
+    print(f"   Loaded {len(verify_users)} users after save")
+    
     if user_id not in verify_users:
         print(f"⚠️ Warning: User {user_id} not found after save, retrying...")
-        save_users(users)  # Retry once
-        # Verify again
-        verify_users = load_users()
-        if user_id not in verify_users:
-            print(f"❌ Error: User {user_id} still not found after retry!")
-            print(f"   Current users in file: {list(verify_users.keys())}")
-            print(f"   Expected user ID: {user_id}")
-        else:
-            print(f"✅ User {user_id} found after retry")
+        print(f"   Users in file: {list(verify_users.keys())}")
+        try:
+            save_users(users)  # Retry once
+            # Verify again
+            verify_users = load_users()
+            if user_id not in verify_users:
+                print(f"❌ Error: User {user_id} still not found after retry!")
+                print(f"   Current users in file: {list(verify_users.keys())}")
+                print(f"   Expected user ID: {user_id}")
+                print(f"   File path: {os.path.abspath(USERS_FILE)}")
+                # Try to write directly as a last resort
+                try:
+                    with open(USERS_FILE, 'w') as f:
+                        json.dump(users, f, indent=2)
+                        f.flush()
+                        os.fsync(f.fileno())
+                    print(f"   ✅ Direct write succeeded, verifying...")
+                    verify_users = load_users()
+                    if user_id in verify_users:
+                        print(f"   ✅ User found after direct write!")
+                    else:
+                        print(f"   ❌ User still not found after direct write")
+                except Exception as e2:
+                    print(f"   ❌ Direct write also failed: {e2}")
+            else:
+                print(f"✅ User {user_id} found after retry")
+        except Exception as e:
+            print(f"❌ Error during retry: {e}")
+            import traceback
+            traceback.print_exc()
     else:
         print(f"✅ User {user_id} verified in saved file")
+        print(f"   User data in file: username={verify_users[user_id].get('username')}, email={verify_users[user_id].get('email')}")
     
     print(f"✅ User created successfully: {username} (ID: {user_id})")
     return user_id, None
@@ -476,13 +555,25 @@ def get_user_pantry(user_id):
 
 def update_user_pantry(user_id, pantry_items):
     """Update user's pantry items"""
+    print(f"\n{'='*60}")
+    print(f"🔄 UPDATE USER PANTRY")
+    print(f"{'='*60}")
+    print(f"User ID: {user_id}")
+    print(f"Items to save: {len(pantry_items)}")
+    
     users = load_users()
+    print(f"Total users in database: {len(users)}")
+    
     if user_id in users:
+        print(f"✅ User {user_id} found in database")
+        print(f"   Username: {users[user_id].get('username', 'unknown')}")
         users[user_id]['pantry'] = pantry_items
+        print(f"💾 Saving {len(users)} users to {USERS_FILE}...")
         save_users(users)
         print(f"✅ Updated pantry for user {user_id}: {len(pantry_items)} items saved to {USERS_FILE}")
         
         # Verify the update
+        print(f"🔍 Verifying save...")
         verify_users = load_users()
         if user_id in verify_users:
             verify_pantry = verify_users[user_id].get('pantry', [])
@@ -490,10 +581,14 @@ def update_user_pantry(user_id, pantry_items):
                 print(f"✅ Verified: Pantry update saved correctly ({len(verify_pantry)} items)")
             else:
                 print(f"⚠️ Warning: Saved {len(pantry_items)} items but file contains {len(verify_pantry)} items")
+                print(f"   Expected items: {[item.get('name', 'unknown') if isinstance(item, dict) else str(item) for item in pantry_items[:5]]}")
+                print(f"   Saved items: {[item.get('name', 'unknown') if isinstance(item, dict) else str(item) for item in verify_pantry[:5]]}")
         else:
             print(f"❌ Error: User {user_id} not found after save!")
     else:
         print(f"❌ Error: Cannot update pantry - user {user_id} not found in users database")
+        print(f"   Available user IDs: {list(users.keys())[:5]}...")
+    print(f"{'='*60}\n")
 
  
 
@@ -1531,18 +1626,39 @@ def api_get_pantry():
 @app.route('/api/pantry', methods=['POST'])
 def api_add_item():
     """Add an item to pantry via API"""
+    global mobile_pantry, web_pantry  # Declare globals at function start
+    
+    # Log request details for debugging
+    print(f"\n{'='*60}")
+    print(f"📥 API ADD ITEM REQUEST")
+    print(f"{'='*60}")
+    print(f"Method: {request.method}")
+    print(f"Content-Type: {request.content_type}")
+    print(f"Headers: {dict(request.headers)}")
+    print(f"X-User-ID: {request.headers.get('X-User-ID', 'NOT PROVIDED')}")
+    print(f"X-Client-Type: {request.headers.get('X-Client-Type', 'NOT PROVIDED')}")
+    
+    # Check if request has JSON data
+    if not request.is_json:
+        print(f"❌ ERROR: Request is not JSON. Content-Type: {request.content_type}")
+        print(f"   Raw data: {request.get_data()[:200]}")  # First 200 chars
+        return jsonify({'success': False, 'error': 'Request must be JSON. Content-Type should be application/json'}), 400
     
     try:
-        data = request.get_json()
-        print(f"Received data: {data}")
-        print(f"Data type: {type(data)}")
-        print(f"Data keys: {list(data.keys()) if isinstance(data, dict) else 'Not a dict'}")
+        data = request.get_json(force=True)  # Force JSON parsing
+        print(f"✅ Received data: {data}")
+        print(f"   Data type: {type(data)}")
+        print(f"   Data keys: {list(data.keys()) if isinstance(data, dict) else 'Not a dict'}")
     except Exception as e:
-        print(f"Error parsing JSON: {e}")
+        print(f"❌ Error parsing JSON: {e}")
+        print(f"   Raw request data: {request.get_data()[:500]}")
+        import traceback
+        traceback.print_exc()
         return jsonify({'success': False, 'error': f'Invalid JSON data: {str(e)}'}), 400
     
     if not data:
-        print("ERROR: No data received")
+        print("❌ ERROR: No data received after parsing")
+        print(f"   Raw request data: {request.get_data()[:500]}")
         return jsonify({'success': False, 'error': 'Invalid request data'}), 400
     
     # Support both old format (item: string) and new format (PantryItem object)
@@ -1625,15 +1741,18 @@ def api_add_item():
                     return jsonify({'success': False, 'error': f'"{item_name}" is already in pantry'}), 409
         
         pantry_list.append(pantry_item)
+        print(f"💾 Updating pantry for user {user_id} with {len(pantry_list)} items")
         update_user_pantry(user_id, pantry_list)
+        print(f"✅ Successfully added item '{pantry_item['name']}' to user {user_id}'s pantry")
         return jsonify({
             'success': True,
             'message': f'Added "{pantry_item["name"]}" to pantry',
             'item': pantry_item,
             'total_items': len(pantry_list)
-        })
+        }), 200
     else:
         # Use anonymous pantry
+        global mobile_pantry, web_pantry  # Declare globals BEFORE using them
         pantry_to_use = mobile_pantry if client_type == 'mobile' else web_pantry
         # Convert to list of dicts if needed
         pantry_list = []
@@ -1655,22 +1774,22 @@ def api_add_item():
         
         pantry_list.append(pantry_item)
         if client_type == 'mobile':
-            global mobile_pantry
             mobile_pantry = pantry_list
         else:
-            global web_pantry
             web_pantry = pantry_list
         
+        print(f"✅ Successfully added item '{pantry_item['name']}' to anonymous {client_type} pantry")
         return jsonify({
             'success': True,
             'message': f'Added "{pantry_item["name"]}" to pantry',
             'item': pantry_item,
             'total_items': len(pantry_list)
-        })
+        }), 200
 
 @app.route('/api/pantry/<item_id>', methods=['DELETE'])
 def api_delete_item(item_id):
     """Delete an item from pantry via API (by ID or name for backward compatibility)"""
+    global mobile_pantry, web_pantry  # Declare globals at function start
     client_type = request.headers.get('X-Client-Type', 'web')
     user_id = request.headers.get('X-User-ID')
     
@@ -1746,10 +1865,8 @@ def api_delete_item(item_id):
         
         if item_to_delete:
             if client_type == 'mobile':
-                global mobile_pantry
                 mobile_pantry = pantry_list
             else:
-                global web_pantry
                 web_pantry = pantry_list
             item_name = item_to_delete.get('name', item_id) if isinstance(item_to_delete, dict) else item_to_delete
             return jsonify({
@@ -2142,8 +2259,8 @@ If you cannot determine a quantity, use "1" as the default. Return ONLY valid JS
             update_user_pantry(user_id, user_pantry)
         else:
             # Add to anonymous pantry
+            global mobile_pantry, web_pantry  # Declare globals at function start
             if client_type == 'mobile':
-                global mobile_pantry
                 mobile_pantry.extend(detected_items)
             else:
                 # Add to anonymous web pantry (stored in session)
@@ -2188,6 +2305,21 @@ def api_health():
 handler = app
 
 if __name__ == "__main__":
+    # On startup, check for old users and migrate them
+    print("=" * 60)
+    print("🚀 Starting Smart Pantry Server")
+    print("=" * 60)
+    print(f"📁 USERS_FILE location: {USERS_FILE}")
+    print(f"   Absolute path: {os.path.abspath(USERS_FILE)}")
+    print(f"   IS_VERCEL: {IS_VERCEL}, IS_RENDER: {IS_RENDER}")
+    
+    # Load users to trigger migration if needed
+    initial_users = load_users()
+    print(f"📊 Initial user count: {len(initial_users)}")
+    if initial_users:
+        print(f"   User IDs: {list(initial_users.keys())[:5]}...")  # Show first 5
+    print("=" * 60)
+    
     # Get port from environment variable (Render sets this) or use default
     port = int(os.getenv('PORT', 5050))
     # host='0.0.0.0' allows connections from other devices on the network
