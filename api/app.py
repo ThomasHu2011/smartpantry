@@ -168,9 +168,12 @@ elif IS_RENDER:
     USERS_FILE = os.path.join('/tmp', 'users.json')
     _in_memory_users = {}
 else:
-    # Local development: use current directory
-    USERS_FILE = 'users.json'
+    # Local development: use api directory (where app.py is located)
+    # Use the same _app_file_dir that's already defined for templates
+    USERS_FILE = os.path.join(_app_file_dir, 'users.json')
     _in_memory_users = {}
+    print(f"📁 Local development: Using USERS_FILE = {USERS_FILE}")
+    print(f"   App directory: {_app_file_dir}")
 
 def load_users():
     """Load users from JSON file or in-memory storage"""
@@ -230,6 +233,8 @@ def load_users():
                     loaded = json.load(f)
                     print(f"Loaded {len(loaded)} users from {USERS_FILE}")
                     return loaded
+            else:
+                print(f"Users file does not exist at {USERS_FILE}, starting with empty users")
         except (IOError, json.JSONDecodeError) as e:
             print(f"Warning: Could not load users file: {e}")
         return {}
@@ -260,6 +265,9 @@ def save_users(users):
     else:
         # Local development: use file system with atomic write
         try:
+            # Ensure directory exists
+            os.makedirs(os.path.dirname(USERS_FILE), exist_ok=True)
+            
             # Use atomic write: write to temp file first, then rename
             temp_file = USERS_FILE + '.tmp'
             with open(temp_file, 'w') as f:
@@ -269,9 +277,20 @@ def save_users(users):
             
             # Atomic rename
             os.replace(temp_file, USERS_FILE)
-            print(f"Saved {len(users)} users to {USERS_FILE}")
+            print(f"✅ Saved {len(users)} users to {USERS_FILE}")
+            
+            # Verify the save
+            if os.path.exists(USERS_FILE):
+                with open(USERS_FILE, 'r') as f:
+                    verify = json.load(f)
+                    if len(verify) == len(users):
+                        print(f"✅ Verified: {len(verify)} users saved correctly")
+                    else:
+                        print(f"⚠️ Warning: Saved {len(users)} users but file contains {len(verify)} users")
         except (IOError, OSError) as e:
-            print(f"Error: Could not save users file: {e}")
+            print(f"❌ Error: Could not save users file to {USERS_FILE}: {e}")
+            import traceback
+            traceback.print_exc()
 
 def hash_password(password):
     """Hash password using SHA-256"""
@@ -315,16 +334,28 @@ def create_user(username, email, password, client_type='web'):
     }
     
     # Save users immediately and ensure it's written to disk
+    print(f"💾 Saving user to {USERS_FILE}...")
     save_users(users)
     
     # Verify the save was successful by reloading
     # This ensures the file is actually written before returning
+    print(f"🔍 Verifying save by reloading users from {USERS_FILE}...")
     verify_users = load_users()
     if user_id not in verify_users:
-        print(f"Warning: User {user_id} not found after save, retrying...")
+        print(f"⚠️ Warning: User {user_id} not found after save, retrying...")
         save_users(users)  # Retry once
+        # Verify again
+        verify_users = load_users()
+        if user_id not in verify_users:
+            print(f"❌ Error: User {user_id} still not found after retry!")
+            print(f"   Current users in file: {list(verify_users.keys())}")
+            print(f"   Expected user ID: {user_id}")
+        else:
+            print(f"✅ User {user_id} found after retry")
+    else:
+        print(f"✅ User {user_id} verified in saved file")
     
-    print(f"User created successfully: {username} (ID: {user_id})")
+    print(f"✅ User created successfully: {username} (ID: {user_id})")
     return user_id, None
 
 def authenticate_user(username, password, client_type='web'):
@@ -425,9 +456,20 @@ def update_user_pantry(user_id, pantry_items):
     if user_id in users:
         users[user_id]['pantry'] = pantry_items
         save_users(users)
-        print(f"Updated pantry for user {user_id}: {len(pantry_items)} items saved")
+        print(f"✅ Updated pantry for user {user_id}: {len(pantry_items)} items saved to {USERS_FILE}")
+        
+        # Verify the update
+        verify_users = load_users()
+        if user_id in verify_users:
+            verify_pantry = verify_users[user_id].get('pantry', [])
+            if len(verify_pantry) == len(pantry_items):
+                print(f"✅ Verified: Pantry update saved correctly ({len(verify_pantry)} items)")
+            else:
+                print(f"⚠️ Warning: Saved {len(pantry_items)} items but file contains {len(verify_pantry)} items")
+        else:
+            print(f"❌ Error: User {user_id} not found after save!")
     else:
-        print(f"Error: Cannot update pantry - user {user_id} not found in users database")
+        print(f"❌ Error: Cannot update pantry - user {user_id} not found in users database")
 
  
 
