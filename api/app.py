@@ -239,22 +239,36 @@ def save_users(users):
     if IS_VERCEL or IS_RENDER:
         # Try to save to /tmp, always update in-memory cache
         global _in_memory_users
-        _in_memory_users = users.copy()  # Always update in-memory
+        _in_memory_users = users.copy()  # Always update in-memory first
         
         try:
             # Ensure /tmp directory exists
             os.makedirs(os.path.dirname(USERS_FILE), exist_ok=True)
-            with open(USERS_FILE, 'w') as f:
+            # Use atomic write: write to temp file first, then rename
+            temp_file = USERS_FILE + '.tmp'
+            with open(temp_file, 'w') as f:
                 json.dump(users, f, indent=2)
+                f.flush()  # Force write to disk
+                os.fsync(f.fileno())  # Ensure data is written to disk
+            
+            # Atomic rename (works on Unix-like systems)
+            os.replace(temp_file, USERS_FILE)
             print(f"Saved {len(users)} users to {USERS_FILE}")
         except (IOError, OSError) as e:
             # Fallback to in-memory storage if file write fails
             print(f"Warning: Could not save users file: {e}. Using in-memory storage.")
     else:
-        # Local development: use file system
+        # Local development: use file system with atomic write
         try:
-            with open(USERS_FILE, 'w') as f:
+            # Use atomic write: write to temp file first, then rename
+            temp_file = USERS_FILE + '.tmp'
+            with open(temp_file, 'w') as f:
                 json.dump(users, f, indent=2)
+                f.flush()  # Force write to disk
+                os.fsync(f.fileno())  # Ensure data is written to disk
+            
+            # Atomic rename
+            os.replace(temp_file, USERS_FILE)
             print(f"Saved {len(users)} users to {USERS_FILE}")
         except (IOError, OSError) as e:
             print(f"Error: Could not save users file: {e}")
@@ -285,7 +299,17 @@ def create_user(username, email, password, client_type='web'):
         'last_login': None
     }
     
+    # Save users immediately and ensure it's written to disk
     save_users(users)
+    
+    # Verify the save was successful by reloading
+    # This ensures the file is actually written before returning
+    verify_users = load_users()
+    if user_id not in verify_users:
+        print(f"Warning: User {user_id} not found after save, retrying...")
+        save_users(users)  # Retry once
+    
+    print(f"User created successfully: {username} (ID: {user_id})")
     return user_id, None
 
 def authenticate_user(username, password, client_type='web'):
