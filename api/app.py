@@ -281,10 +281,25 @@ def create_user(username, email, password, client_type='web'):
     """Create a new user"""
     users = load_users()
     
-    # Check if username or email already exists (regardless of client_type)
+    # Normalize inputs for case-insensitive comparison
+    username_normalized = username.strip().lower() if username else ""
+    email_normalized = email.strip().lower() if email else ""
+    
+    # Validate inputs
+    if not username_normalized:
+        return None, "Username cannot be empty"
+    if not email_normalized:
+        return None, "Email cannot be empty"
+    
+    # Check if username or email already exists (case-insensitive, regardless of client_type)
     for user_id, user_data in users.items():
-        if user_data['username'] == username or user_data['email'] == email:
-            return None, "Username or email already exists"
+        stored_username = user_data.get('username', '').strip().lower()
+        stored_email = user_data.get('email', '').strip().lower()
+        
+        if stored_username == username_normalized:
+            return None, f"Username '{username}' already exists (case-insensitive)"
+        if stored_email == email_normalized:
+            return None, f"Email '{email}' already exists (case-insensitive)"
     
     # Create new user
     user_id = str(uuid.uuid4())
@@ -1319,6 +1334,24 @@ def api_signup():
         })
     else:
         return jsonify({'success': False, 'error': error}), 409
+
+@app.route('/api/admin/delete-all-users', methods=['POST'])
+def api_delete_all_users():
+    """Delete all users via API - ADMIN ONLY (for testing/cleanup)"""
+    try:
+        # Clear in-memory storage
+        global _in_memory_users
+        _in_memory_users = {}
+        
+        # Clear file storage
+        empty_users = {}
+        save_users(empty_users)
+        
+        print("All users deleted successfully via API")
+        return jsonify({'success': True, 'message': 'All users deleted successfully'}), 200
+    except Exception as e:
+        print(f"Error deleting users: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/auth/login', methods=['POST'])
 def api_login():
