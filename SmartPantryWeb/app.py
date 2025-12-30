@@ -1494,9 +1494,8 @@ def api_health():
         'ai_available': bool(client and api_key)
     })
 
-# Export handler for Vercel serverless functions
-# This is required for Vercel to properly invoke the Flask app
-handler = app
+# Note: handler is exported in api/index.py for Vercel serverless functions
+# Do not export handler here to avoid conflicts with Vercel's handler detection
 
 if __name__ == "__main__":
     # Get port from environment variable (Render sets this) or use default

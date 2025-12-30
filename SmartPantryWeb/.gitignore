@@ -1,21 +1,68 @@
-# Existing rules
+# Python
 __pycache__/
 *.py[cod]
+*$py.class
+*.so
+.Python
 *.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual environments
 venv/
+env/
+ENV/
+.venv
+
+# Environment variables
 .env
 .env.*
-.vscode/
-.DS_Store
-uploads/
+.env.local
 
-# Hide specific project files
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+pantry.db
+
+# Server runtime files
+users.json
+cookies.txt
+*.log
+/tmp/
+/tmp/*
+
+# User uploads
+uploads/
+uploads/*
+
+# Flask instance folder
+instance/
+.webassets-cache
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# Project-specific files
 smartpantry_presentation.md
 icon_setup_complete.md
 api_documentation.md
-users.json
 app_icons/
-Assets.xcassets/   
-pantry.db
+Assets.xcassets/
 static_logo.png
 get-pip.py
