@@ -10,18 +10,20 @@
             <div class="card shadow-sm border-0 mb-4">
                 <div class="card-header bg-gradient-primary text-white border-0">
                     <h4 class="mb-0">
-                        <i class="bi bi-person-circle me-2"></i>User Profile
+                        <i class="bi bi-person-circle-fill me-2"></i>User Profile
                     </h4>
                 </div>
                 <div class="card-body p-4">
                     <!-- User Information -->
                     <div class="mb-4">
                         <h5 class="text-primary mb-3">
-                            <i class="bi bi-info-circle me-2"></i>Account Information
+                            <i class="bi bi-info-circle-fill me-2"></i>Account Information
                         </h5>
                         <div class="row mb-3">
                             <div class="col-sm-4">
-                                <strong class="text-muted">Username:</strong>
+                                <strong class="text-muted">
+                                    <i class="bi bi-person-fill me-1"></i>Username:
+                                </strong>
                             </div>
                             <div class="col-sm-8">
                                 <span class="fs-5">{{ username }}</span>
@@ -29,7 +31,9 @@
                         </div>
                         <div class="row mb-3">
                             <div class="col-sm-4">
-                                <strong class="text-muted">Email:</strong>
+                                <strong class="text-muted">
+                                    <i class="bi bi-envelope-fill me-1"></i>Email:
+                                </strong>
                             </div>
                             <div class="col-sm-8">
                                 <span class="fs-5">{{ email }}</span>
@@ -42,7 +46,7 @@
                     <!-- Password Change Form -->
                     <div>
                         <h5 class="text-primary mb-3">
-                            <i class="bi bi-key me-2"></i>Change Password
+                            <i class="bi bi-lock-fill me-2"></i>Change Password
                         </h5>
                         <form method="POST" action="{{ url_for('profile') }}">
                             <div class="mb-3">
@@ -68,10 +72,10 @@
                             </div>
                             <div class="d-flex gap-2">
                                 <button type="submit" class="btn btn-primary">
-                                    <i class="bi bi-check-circle me-2"></i>Update Password
+                                    <i class="bi bi-check-circle-fill me-2"></i>Update Password
                                 </button>
                                 <a href="{{ url_for('index') }}" class="btn btn-outline-secondary">
-                                    <i class="bi bi-arrow-left me-2"></i>Back to Home
+                                    <i class="bi bi-arrow-left-circle me-2"></i>Back to Home
                                 </a>
                             </div>
                         </form>

@@ -432,93 +432,96 @@ def add_items():
     expiration_date_raw = request.form.get("expiration_date", "")
     expiration_date = expiration_date_raw.strip() if expiration_date_raw else ""
     
-    if item_name:
-        # Sanitize and validate input
-        item_name = item_name.strip()
-        if len(item_name) > 100:  # Prevent extremely long items
-            flash("Item name too long. Please keep it under 100 characters.", "danger")
-            return redirect(request.referrer or url_for("index"))
-        
-        # Validate quantity - default to "1" if empty
-        if not quantity or quantity == "":
-            quantity = "1"
-        
-        # Handle expiration date - convert to YYYY-MM-DD format if provided
-        expiration_date_formatted = None
-        if expiration_date and expiration_date.strip():
-            try:
-                expiration_date = expiration_date.strip()
-                # If it's already in YYYY-MM-DD format
-                if len(expiration_date) == 10 and expiration_date.count('-') == 2:
-                    # Validate it's a valid date
-                    datetime.strptime(expiration_date, "%Y-%m-%d")
-                    expiration_date_formatted = expiration_date
-                else:
-                    # Try to parse other formats
-                    parsed_date = datetime.strptime(expiration_date, "%Y-%m-%d")
-                    expiration_date_formatted = parsed_date.strftime("%Y-%m-%d")
-            except (ValueError, TypeError, AttributeError):
-                # Invalid date format - ignore expiration date
-                expiration_date_formatted = None
-                flash("Invalid expiration date format. Date ignored.", "warning")
-        
-        # Create pantry item dictionary (matching API format)
-        pantry_item = {
-            'id': str(uuid.uuid4()),
-            'name': item_name,
-            'quantity': quantity,
-            'expirationDate': expiration_date_formatted,
-            'addedDate': datetime.now().isoformat()
-        }
-        
-        if 'user_id' in session:
-            # Add to user's pantry
-            user_pantry = get_user_pantry(session['user_id'])
-            # Convert to list of dicts if needed (backward compatibility)
-            pantry_list = []
-            for item in user_pantry:
-                if isinstance(item, dict):
-                    pantry_list.append(item)
-                else:
-                    pantry_list.append({
-                        'id': str(uuid.uuid4()),
-                        'name': item,
-                        'quantity': '1',
-                        'expirationDate': None,
-                        'addedDate': datetime.now().isoformat()
-                    })
-            
-            # Check for duplicates (case-insensitive name match)
-            if any(i.get('name', '').lower() == item_name.lower() for i in pantry_list):
-                flash(f"{item_name} is already in your pantry.", "warning")
+    if not item_name or not item_name.strip():
+        flash("Please enter an item name.", "warning")
+        return redirect(request.referrer or url_for("index"))
+    
+    # Sanitize and validate input
+    item_name = item_name.strip()
+    if len(item_name) > 100:  # Prevent extremely long items
+        flash("Item name too long. Please keep it under 100 characters.", "danger")
+        return redirect(request.referrer or url_for("index"))
+    
+    # Validate quantity - default to "1" if empty
+    if not quantity or quantity == "":
+        quantity = "1"
+    
+    # Handle expiration date - convert to YYYY-MM-DD format if provided
+    expiration_date_formatted = None
+    if expiration_date and expiration_date.strip():
+        try:
+            expiration_date = expiration_date.strip()
+            # If it's already in YYYY-MM-DD format
+            if len(expiration_date) == 10 and expiration_date.count('-') == 2:
+                # Validate it's a valid date
+                datetime.strptime(expiration_date, "%Y-%m-%d")
+                expiration_date_formatted = expiration_date
             else:
-                pantry_list.append(pantry_item)
-                update_user_pantry(session['user_id'], pantry_list)
-                flash(f"{item_name} added to pantry.", "success")
+                # Try to parse other formats
+                parsed_date = datetime.strptime(expiration_date, "%Y-%m-%d")
+                expiration_date_formatted = parsed_date.strftime("%Y-%m-%d")
+        except (ValueError, TypeError, AttributeError):
+            # Invalid date format - ignore expiration date
+            expiration_date_formatted = None
+            flash("Invalid expiration date format. Date ignored.", "warning")
+    
+    # Create pantry item dictionary (matching API format)
+    pantry_item = {
+        'id': str(uuid.uuid4()),
+        'name': item_name,
+        'quantity': quantity,
+        'expirationDate': expiration_date_formatted,
+        'addedDate': datetime.now().isoformat()
+    }
+    
+    if 'user_id' in session:
+        # Add to user's pantry
+        user_pantry = get_user_pantry(session['user_id'])
+        # Convert to list of dicts if needed (backward compatibility)
+        pantry_list = []
+        for item in user_pantry:
+            if isinstance(item, dict):
+                pantry_list.append(item)
+            else:
+                pantry_list.append({
+                    'id': str(uuid.uuid4()),
+                    'name': item,
+                    'quantity': '1',
+                    'expirationDate': None,
+                    'addedDate': datetime.now().isoformat()
+                })
+        
+        # Check for duplicates (case-insensitive name match)
+        if any(i.get('name', '').lower() == item_name.lower() for i in pantry_list):
+            flash(f"{item_name} is already in your pantry.", "warning")
         else:
-            # Add to anonymous web pantry
-            global web_pantry
-            # Convert to list of dicts if needed (backward compatibility)
-            pantry_list = []
-            for item in web_pantry:
-                if isinstance(item, dict):
-                    pantry_list.append(item)
-                else:
-                    pantry_list.append({
-                        'id': str(uuid.uuid4()),
-                        'name': item,
-                        'quantity': '1',
-                        'expirationDate': None,
-                        'addedDate': datetime.now().isoformat()
-                    })
-            
-            # Check for duplicates
-            if any(i.get('name', '').lower() == item_name.lower() for i in pantry_list):
-                flash(f"{item_name} is already in your pantry.", "warning")
+            pantry_list.append(pantry_item)
+            update_user_pantry(session['user_id'], pantry_list)
+            flash(f"{item_name} added to pantry.", "success")
+    else:
+        # Add to anonymous web pantry
+        global web_pantry
+        # Convert to list of dicts if needed (backward compatibility)
+        pantry_list = []
+        for item in web_pantry:
+            if isinstance(item, dict):
+                pantry_list.append(item)
             else:
-                pantry_list.append(pantry_item)
-                web_pantry = pantry_list
-                flash(f"{item_name} added to pantry.", "success")
+                pantry_list.append({
+                    'id': str(uuid.uuid4()),
+                    'name': item,
+                    'quantity': '1',
+                    'expirationDate': None,
+                    'addedDate': datetime.now().isoformat()
+                })
+        
+        # Check for duplicates
+        if any(i.get('name', '').lower() == item_name.lower() for i in pantry_list):
+            flash(f"{item_name} is already in your pantry.", "warning")
+        else:
+            pantry_list.append(pantry_item)
+            web_pantry = pantry_list
+            flash(f"{item_name} added to pantry.", "success")
     
     return redirect(request.referrer or url_for("index"))
 

@@ -25,7 +25,7 @@
                         <i class="bi bi-camera-fill me-2"></i>Photo Recognition
                     </span>
                     <span class="badge px-4 py-2 border-0" style="background: rgba(255,255,255,0.25); backdrop-filter: blur(10px); color: white; border-radius: 12px;">
-                        <i class="bi bi-lightbulb-fill me-2"></i>Smart Recipes
+                        <i class="bi bi-book me-2"></i>Smart Recipes
                     </span>
                     <span class="badge px-4 py-2 border-0" style="background: rgba(255,255,255,0.25); backdrop-filter: blur(10px); color: white; border-radius: 12px;">
                         <i class="bi bi-graph-up me-2"></i>Nutrition Tracking
@@ -45,95 +45,97 @@
     <div class="row">
         <!-- Main Content -->
         <div class="col-lg-8">
-            <!-- Quick Actions Card -->
-            <div class="card shadow-sm border-0 mb-4">
-                <div class="card-header bg-gradient-primary text-white border-0">
-                    <h4 class="mb-0 fw-bold">
-                        <i class="bi bi-lightning-charge-fill me-2"></i>Quick Actions
-                    </h4>
-                </div>
-                <div class="card-body">
+            <!-- Quick Actions Card - Cleaner Design -->
+            <div class="card shadow-sm border-0 mb-4" style="border-radius: 20px; overflow: hidden;">
+                <div class="card-body p-4">
                     <div class="row g-4">
                         <!-- Manual Add Item -->
                         <div class="col-md-6">
-                            <div class="h-100 p-3" style="background: rgba(139, 92, 246, 0.05); border-radius: 16px;">
-                                <div class="d-flex align-items-center mb-3">
-                                    <div class="me-2" style="width: 40px; height: 40px; background: linear-gradient(135deg, #8B5CF6 0%, #3B82F6 100%); border-radius: 12px; display: flex; align-items: center; justify-content: center;">
-                                        <i class="bi bi-pencil-square text-white"></i>
+                            <div class="h-100 p-4" style="background: linear-gradient(135deg, rgba(139, 92, 246, 0.08) 0%, rgba(59, 130, 246, 0.05) 100%); border-radius: 18px; border: 1px solid rgba(139, 92, 246, 0.15);">
+                                <div class="d-flex align-items-center mb-4">
+                                    <div class="me-3" style="width: 48px; height: 48px; background: linear-gradient(135deg, #8B5CF6 0%, #3B82F6 100%); border-radius: 14px; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 12px rgba(139, 92, 246, 0.3);">
+                                        <i class="bi bi-plus-circle-fill text-white" style="font-size: 1.5rem;"></i>
                                     </div>
-                                    <h6 class="mb-0 fw-semibold">Add Items Manually</h6>
+                                    <h5 class="mb-0 fw-bold" style="color: #1e293b;">Add Items</h5>
                                 </div>
-                                <form action="{{ url_for('add_items') }}" method="post" id="addItemForm">
+                                <form action="/add" method="post" id="addItemForm" onsubmit="return handleAddItem(event);">
                                     <div class="mb-3">
-                                        <input type="text" name="item" class="form-control form-control-lg mb-2" 
-                                               placeholder="Enter food item..." required>
-                                        <div class="row g-2">
+                                        <label class="form-label fw-semibold small text-muted mb-2">Item Name</label>
+                                        <input type="text" name="item" id="itemInput" class="form-control form-control-lg" 
+                                               placeholder="e.g., Milk, Bread, Eggs" required autocomplete="off"
+                                               style="border-radius: 12px; border: 2px solid #e2e8f0; padding: 14px 16px;">
+                                        <div class="row g-2 mt-2">
                                             <div class="col-6">
-                                                <input type="text" name="quantity" class="form-control" 
-                                                       placeholder="Qty" value="1">
+                                                <label class="form-label fw-semibold small text-muted mb-1">Quantity</label>
+                                                <input type="text" name="quantity" id="quantityInput" class="form-control" 
+                                                       placeholder="1" value="1" autocomplete="off"
+                                                       style="border-radius: 10px; border: 2px solid #e2e8f0;">
                                             </div>
                                             <div class="col-6">
-                                                <input type="date" name="expiration_date" class="form-control">
+                                                <label class="form-label fw-semibold small text-muted mb-1">Expires</label>
+                                                <input type="date" name="expiration_date" id="expirationInput" class="form-control"
+                                                       style="border-radius: 10px; border: 2px solid #e2e8f0;">
                                             </div>
                                         </div>
                                     </div>
-                                    <button type="submit" class="btn btn-primary btn-lg w-100">
-                                        <i class="bi bi-plus-circle me-2"></i>Add Item
+                                    <button type="submit" class="btn btn-primary btn-lg w-100" id="addItemBtn"
+                                            style="border-radius: 12px; padding: 14px; font-weight: 600; box-shadow: 0 4px 12px rgba(139, 92, 246, 0.3);">
+                                        <i class="bi bi-plus-circle-fill me-2"></i><span id="addItemBtnText">Add to Pantry</span>
                                     </button>
                                 </form>
-                                <small class="text-muted d-block mt-2">
-                                    <i class="bi bi-info-circle me-1"></i>Type and add individual items
-                                </small>
+                                <div id="addItemFeedback" class="mt-3" style="display: none;"></div>
                             </div>
                         </div>
                         
                         <!-- Photo Upload -->
                         <div class="col-md-6">
-                            <div class="h-100 p-3" style="background: rgba(16, 185, 129, 0.05); border-radius: 16px;">
-                                <div class="d-flex align-items-center mb-3">
-                                    <div class="me-2" style="width: 40px; height: 40px; background: linear-gradient(135deg, #10B981 0%, #059669 100%); border-radius: 12px; display: flex; align-items: center; justify-content: center;">
-                                        <i class="bi bi-camera-fill text-white"></i>
+                            <div class="h-100 p-4" style="background: linear-gradient(135deg, rgba(16, 185, 129, 0.08) 0%, rgba(5, 150, 105, 0.05) 100%); border-radius: 18px; border: 1px solid rgba(16, 185, 129, 0.15);">
+                                <div class="d-flex align-items-center mb-4">
+                                    <div class="me-3" style="width: 48px; height: 48px; background: linear-gradient(135deg, #10B981 0%, #059669 100%); border-radius: 14px; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);">
+                                        <i class="bi bi-camera-fill text-white" style="font-size: 1.5rem;"></i>
                                     </div>
-                                    <h6 class="mb-0 fw-semibold">Smart Photo Upload</h6>
+                                    <h5 class="mb-0 fw-bold" style="color: #1e293b;">Photo Upload</h5>
                                 </div>
-                                <button type="button" class="btn btn-success btn-lg w-100" data-bs-toggle="modal" data-bs-target="#photoModal">
+                                <p class="text-muted small mb-3">Upload a photo and let AI detect food items automatically</p>
+                                <button type="button" class="btn btn-success btn-lg w-100" data-bs-toggle="modal" data-bs-target="#photoModal"
+                                        style="border-radius: 12px; padding: 14px; font-weight: 600; box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);">
                                     <i class="bi bi-camera-fill me-2"></i>Take/Upload Photo
                                 </button>
-                                <small class="text-muted d-block mt-2">
-                                    <i class="bi bi-magic me-1"></i>AI will automatically detect food items
-                                </small>
                             </div>
                         </div>
                     </div>
                 </div>
             </div>
 
-            <!-- Pantry Overview -->
-            <div class="card shadow-sm border-0">
-                <div class="card-header bg-gradient-light border-0">
+            <!-- Pantry Overview - Cleaner Design -->
+            <div class="card shadow-sm border-0" style="border-radius: 20px; overflow: hidden;">
+                <div class="card-header border-0" style="background: linear-gradient(135deg, rgba(139, 92, 246, 0.1) 0%, rgba(59, 130, 246, 0.08) 100%); padding: 20px 24px;">
                     <div class="d-flex justify-content-between align-items-center">
-                        <h5 class="mb-0 text-primary fw-bold">
-                            <i class="bi bi-box-seam me-2"></i>Your Pantry
+                        <h5 class="mb-0 fw-bold" style="color: #1e293b; font-size: 1.25rem;">
+                            <i class="bi bi-basket-fill me-2" style="color: #8B5CF6;"></i>Your Pantry
                         </h5>
                         {% if items %}
-                        <span class="badge px-3 py-2" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border-radius: 12px; font-size: 0.9rem;">
-                            <i class="bi bi-basket me-1"></i>{{ items|length }} items
+                        <span class="badge px-3 py-2" style="background: linear-gradient(135deg, #8B5CF6 0%, #3B82F6 100%); color: white; border-radius: 10px; font-size: 0.875rem; font-weight: 600;">
+                            <i class="bi bi-basket-fill me-1"></i>{{ items|length }} {{ 'item' if items|length == 1 else 'items' }}
                         </span>
                         {% endif %}
                     </div>
                 </div>
-                <div class="card-body">
+                <div class="card-body p-4">
                     {% if items %}
                     <div class="row g-3">
                         {% for item in items %}
                         <div class="col-md-6 col-lg-4">
-                            <div class="pantry-item-card card border-0 bg-white h-100">
+                            <div class="pantry-item-card card border-0 bg-white h-100" 
+                                 style="border-radius: 16px; transition: all 0.3s ease; border: 1px solid #e2e8f0; cursor: pointer;"
+                                 onmouseover="this.style.transform='translateY(-4px)'; this.style.boxShadow='0 8px 20px rgba(0,0,0,0.1)'; this.style.borderColor='#8B5CF6';"
+                                 onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='none'; this.style.borderColor='#e2e8f0';">
                                 <div class="card-body p-3">
                                     <div class="d-flex justify-content-between align-items-start">
                                         <div class="flex-grow-1">
                                             <div class="d-flex align-items-center mb-2">
-                                                <div class="me-2" style="width: 8px; height: 8px; background: linear-gradient(135deg, #10B981 0%, #059669 100%); border-radius: 50%;"></div>
-                                                <span class="fw-semibold text-dark">
+                                                <div class="me-2" style="width: 10px; height: 10px; background: linear-gradient(135deg, #10B981 0%, #059669 100%); border-radius: 50%; flex-shrink: 0;"></div>
+                                                <span class="fw-semibold text-dark" style="font-size: 1rem; line-height: 1.4;">
                                                     {% if item is mapping %}
                                                         {{ item.get('name', item) }}
                                                     {% else %}
@@ -160,10 +162,12 @@
                                         </div>
                                         <a href="{{ url_for('delete_item', item_name=(item.get('name', item) if item is mapping else item)) }}" 
                                            class="btn btn-sm btn-outline-danger" 
-                                           style="border-radius: 50%; width: 32px; height: 32px; padding: 0; display: flex; align-items: center; justify-content: center;"
+                                           style="border-radius: 50%; width: 36px; height: 36px; padding: 0; display: flex; align-items: center; justify-content: center; transition: all 0.2s ease; flex-shrink: 0;"
                                            title="Remove item"
+                                           onmouseover="this.style.background='#ef4444'; this.style.color='white'; this.style.transform='scale(1.1)';"
+                                           onmouseout="this.style.background='transparent'; this.style.color='#ef4444'; this.style.transform='scale(1)';"
                                            onclick="return confirm('Remove {% if item is mapping %}{{ item.get('name', item) }}{% else %}{{ item }}{% endif %} from pantry?')">
-                                            <i class="bi bi-x"></i>
+                                            <i class="bi bi-x-lg"></i>
                                         </a>
                                     </div>
                                 </div>
@@ -172,16 +176,22 @@
                         {% endfor %}
                     </div>
                     {% else %}
-                    <div class="empty-state">
-                        <i class="bi bi-box-seam" style="font-size: 5rem; color: #8B5CF6; opacity: 0.3;"></i>
-                        <h5 class="mt-4 mb-2 fw-bold">Your pantry is empty</h5>
-                        <p class="mb-4 text-muted">Start by adding items manually or upload a photo to automatically detect food items!</p>
-                        <div class="d-flex justify-content-center gap-3">
-                            <button class="btn btn-primary btn-lg" onclick="document.querySelector('input[name=\"item\"]').focus()">
-                                <i class="bi bi-plus-circle me-2"></i>Add Item
+                    <div class="empty-state text-center py-5">
+                        <div class="mb-4">
+                            <div style="width: 120px; height: 120px; margin: 0 auto; background: linear-gradient(135deg, rgba(139, 92, 246, 0.1) 0%, rgba(59, 130, 246, 0.08) 100%); border-radius: 30px; display: flex; align-items: center; justify-content: center;">
+                                <i class="bi bi-basket" style="font-size: 4rem; color: #8B5CF6; opacity: 0.6;"></i>
+                            </div>
+                        </div>
+                        <h4 class="mt-4 mb-2 fw-bold" style="color: #1e293b;">Your pantry is empty</h4>
+                        <p class="mb-4 text-muted" style="font-size: 1rem;">Start adding items to get personalized recipe suggestions!</p>
+                        <div class="d-flex justify-content-center gap-3 flex-wrap">
+                            <button class="btn btn-primary btn-lg" onclick="document.getElementById('itemInput').focus()" 
+                                    style="border-radius: 12px; padding: 12px 24px; font-weight: 600; box-shadow: 0 4px 12px rgba(139, 92, 246, 0.3);">
+                                <i class="bi bi-plus-circle-fill me-2"></i>Add Item
                             </button>
-                            <button class="btn btn-success btn-lg" data-bs-toggle="modal" data-bs-target="#photoModal">
-                                <i class="bi bi-camera me-2"></i>Upload Photo
+                            <button class="btn btn-success btn-lg" data-bs-toggle="modal" data-bs-target="#photoModal"
+                                    style="border-radius: 12px; padding: 12px 24px; font-weight: 600; box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);">
+                                <i class="bi bi-camera-fill me-2"></i>Upload Photo
                             </button>
                         </div>
                     </div>
@@ -196,18 +206,18 @@
             <div class="card shadow-sm border-0 mb-4">
                 <div class="card-header bg-gradient-success text-white border-0">
                     <h5 class="mb-0 fw-bold">
-                        <i class="bi bi-lightbulb-fill me-2"></i>Smart Recipes
+                        <i class="bi bi-book me-2"></i>Smart Recipes
                     </h5>
                 </div>
                 <div class="card-body text-center">
                     <div class="mb-4">
                         <div style="width: 80px; height: 80px; background: linear-gradient(135deg, rgba(16, 185, 129, 0.2) 0%, rgba(5, 150, 105, 0.2) 100%); border-radius: 20px; display: flex; align-items: center; justify-content: center; margin: 0 auto;">
-                            <i class="bi bi-robot" style="font-size: 2.5rem; color: #10B981;"></i>
+                            <i class="bi bi-book" style="font-size: 2.5rem; color: #10B981;"></i>
                         </div>
                     </div>
                     <div class="mb-3">
                         <label for="expiringDays" class="form-label text-muted small fw-semibold mb-2 d-block">
-                            <i class="bi bi-clock-history me-1"></i>Use items expiring within:
+                            <i class="bi bi-clock me-1"></i>Use items expiring within:
                         </label>
                         <select class="form-select form-select-lg" id="expiringDays" style="border-radius: 12px;">
                             <option value="">All items</option>
@@ -218,10 +228,10 @@
                         </select>
                     </div>
                     <a href="{{ url_for('suggest_recipe') }}" class="btn btn-success btn-lg w-100 mb-3" id="recipeBtn" style="border-radius: 16px;">
-                        <i class="bi bi-magic me-2"></i>Get Recipe Ideas
+                        <i class="bi bi-stars me-2"></i>Get Recipe Ideas
                     </a>
                     <p class="text-muted small mb-0">
-                        <i class="bi bi-sparkles me-1"></i>AI-powered recipe suggestions
+                        <i class="bi bi-stars me-1"></i>AI-powered recipe suggestions
                     </p>
                 </div>
             </div>
@@ -260,7 +270,7 @@
                     </div>
                     <div class="d-flex mb-3 pb-3" style="border-bottom: 1px solid rgba(0,0,0,0.05);">
                         <div class="me-3" style="width: 32px; height: 32px; background: rgba(139, 92, 246, 0.1); border-radius: 8px; display: flex; align-items: center; justify-content: center;">
-                            <i class="bi bi-check-circle-fill text-primary"></i>
+                            <i class="bi bi-stars text-primary"></i>
                         </div>
                         <div>
                             <strong class="d-block mb-1">Recipe Magic</strong>
@@ -269,7 +279,7 @@
                     </div>
                     <div class="d-flex">
                         <div class="me-3" style="width: 32px; height: 32px; background: rgba(59, 130, 246, 0.1); border-radius: 8px; display: flex; align-items: center; justify-content: center;">
-                            <i class="bi bi-check-circle-fill text-info"></i>
+                            <i class="bi bi-graph-up-arrow text-info"></i>
                         </div>
                         <div>
                             <strong class="d-block mb-1">Nutrition Tracking</strong>
@@ -346,7 +356,7 @@
                                 <i class="bi bi-x-circle me-2"></i>Cancel
                             </button>
                             <button type="button" class="btn btn-success btn-lg" id="uploadBtn">
-                                <i class="bi bi-magic me-2"></i><span id="uploadBtnText">Analyze & Add Items</span>
+                                <i class="bi bi-stars me-2"></i><span id="uploadBtnText">Analyze & Add Items</span>
                             </button>
                         </div>
                         <small class="text-muted d-block mt-2">AI will detect food items in your photo</small>
@@ -614,6 +624,119 @@
             }
         });
     });
+    
+    // Handle add item form submission
+    function handleAddItem(event) {
+        // Check if function exists and elements are available
+        if (typeof event === 'undefined' || !event) {
+            // Fallback: allow normal form submission
+            return true;
+        }
+        
+        event.preventDefault();
+        const form = event.target;
+        if (!form) {
+            return true; // Fallback to normal submission
+        }
+        
+        const formData = new FormData(form);
+        const itemName = formData.get('item');
+        const btn = document.getElementById('addItemBtn');
+        const btnText = document.getElementById('addItemBtnText');
+        const feedback = document.getElementById('addItemFeedback');
+        const itemInput = document.getElementById('itemInput');
+        
+        // Validate input
+        if (!itemName || !itemName.trim()) {
+            if (feedback) {
+                showFeedback('Please enter an item name', 'danger');
+            }
+            if (itemInput) {
+                itemInput.focus();
+            }
+            return false;
+        }
+        
+        // Disable button and show loading state
+        if (btn) {
+            btn.disabled = true;
+        }
+        if (btnText) {
+            btnText.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Adding...';
+        }
+        
+        // Submit form using fetch
+        fetch('/add', {
+            method: 'POST',
+            body: formData,
+            redirect: 'follow'
+        })
+        .then(response => {
+            // Check response - Flask redirects return 302, then 200
+            if (response.ok || response.status === 200 || response.status === 302) {
+                // Success - show feedback and reload
+                if (feedback) {
+                    showFeedback('Item added successfully!', 'success');
+                }
+                // Clear form
+                if (form) {
+                    form.reset();
+                    // Reset quantity to default
+                    const quantityInput = document.getElementById('quantityInput');
+                    if (quantityInput) quantityInput.value = '1';
+                }
+                // Reload page after short delay to show new item
+                setTimeout(() => {
+                    window.location.reload();
+                }, 800);
+            } else {
+                // Error response
+                return response.text().then(text => {
+                    if (feedback) {
+                        showFeedback('Failed to add item. Please try again.', 'danger');
+                    }
+                    resetButton();
+                });
+            }
+        })
+        .catch(error => {
+            console.error('Error adding item:', error);
+            if (feedback) {
+                showFeedback('Failed to add item. Please check your connection and try again.', 'danger');
+            }
+            resetButton();
+        });
+        
+        function resetButton() {
+            if (btn) {
+                btn.disabled = false;
+            }
+            if (btnText) {
+                btnText.innerHTML = '<i class="bi bi-plus-circle-fill me-2"></i>Add to Pantry';
+            }
+        }
+        
+        return false; // Prevent default form submission
+    }
+    
+    function showFeedback(message, type) {
+        const feedback = document.getElementById('addItemFeedback');
+        if (!feedback) return;
+        
+        feedback.className = `alert alert-${type} alert-dismissible fade show mt-3`;
+        feedback.innerHTML = `
+            ${message}
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        `;
+        feedback.style.display = 'block';
+        
+        // Auto-hide after 5 seconds
+        setTimeout(() => {
+            if (feedback) {
+                feedback.style.display = 'none';
+            }
+        }, 5000);
+    }
 </script>
 {% endblock %}
 
