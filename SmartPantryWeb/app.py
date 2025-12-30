@@ -1005,12 +1005,20 @@ def api_add_item():
     """Add an item to pantry via API"""
     
     data = request.get_json()
-    if not data or 'item' not in data:
+    
+    # Support both old format {"item": "name"} and new format {"name": "name", ...}
+    if not data:
         return jsonify({'success': False, 'error': 'Item name required'}), 400
     
-    item = data['item'].strip()
+    # Extract item name from either 'item' or 'name' field
+    item = None
+    if 'item' in data:
+        item = data['item'].strip() if isinstance(data['item'], str) else str(data['item']).strip()
+    elif 'name' in data:
+        item = data['name'].strip() if isinstance(data['name'], str) else str(data['name']).strip()
+    
     if not item:
-        return jsonify({'success': False, 'error': 'Item name cannot be empty'}), 400
+        return jsonify({'success': False, 'error': 'Item name required'}), 400
     
     client_type = request.headers.get('X-Client-Type', 'web')
     user_id = request.headers.get('X-User-ID')
@@ -1095,7 +1103,22 @@ def api_suggest_recipe():
     
     try:
         # Generate AI recipes
-        pantry_list = ", ".join(pantry_items)
+        # Convert pantry_items to list of strings (handle both dict and string formats)
+        pantry_items_list = []
+        for item in pantry_items:
+            if isinstance(item, dict):
+                # Extract name from dictionary format
+                item_name = item.get('name', '')
+                if item_name:
+                    pantry_items_list.append(item_name)
+            elif isinstance(item, str):
+                # Already a string
+                pantry_items_list.append(item)
+        
+        if not pantry_items_list:
+            return jsonify({'success': False, 'error': 'No valid items in pantry'}), 400
+        
+        pantry_list = ", ".join(pantry_items_list)
         prompt = f"""
         Create 3 delicious and diverse recipes using these available ingredients: {pantry_list}
         
