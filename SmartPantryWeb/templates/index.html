@@ -4,37 +4,37 @@
 
 {% block content %}
 <!-- Hero Section -->
-<div class="hero-section text-white py-5 mb-5">
+<div class="hero-section text-white py-5 mb-4">
     <div class="container">
         <div class="row align-items-center">
             <div class="col-lg-8">
                 <div class="d-flex align-items-center mb-4">
-                    <div class="me-3" style="width: 60px; height: 60px; background: linear-gradient(135deg, #8B5CF6 0%, #3B82F6 100%); border-radius: 16px; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 12px rgba(139, 92, 246, 0.3);">
-                        <img src="{{ url_for('static', filename='logo.png') }}" alt="Smart Pantry" height="40" style="filter: brightness(0) invert(1);">
+                    <div class="me-3" style="width: 80px; height: 80px; background: linear-gradient(135deg, rgba(255,255,255,0.2) 0%, rgba(255,255,255,0.1) 100%); border-radius: 20px; display: flex; align-items: center; justify-content: center; box-shadow: 0 8px 24px rgba(0,0,0,0.15); backdrop-filter: blur(10px);">
+                        <img src="{{ url_for('static', filename='logo.png') }}" alt="Smart Pantry" height="50" style="filter: brightness(0) invert(1);">
                     </div>
-                    <h1 class="display-4 fw-bold mb-0">SmartPantry</h1>
+                    <div>
+                        <h1 class="display-4 fw-bold mb-1" style="text-shadow: 0 2px 8px rgba(0,0,0,0.2);">SmartPantry</h1>
+                        <p class="mb-0 opacity-90" style="font-size: 1.1rem;">Your intelligent kitchen companion</p>
+                    </div>
                 </div>
                 {% if username %}
-                    <p class="lead mb-2">Welcome back, <strong>{{ username }}</strong>!</p>
-                    <p class="mb-4 opacity-90">Your intelligent kitchen companion is ready to help.</p>
-                {% else %}
-                    <p class="lead mb-4 opacity-90">Transform your kitchen with AI-powered food tracking, photo recognition, and personalized recipe suggestions.</p>
+                    <p class="lead mb-3 opacity-95" style="font-size: 1.2rem;">Welcome back, <strong>{{ username }}</strong>!</p>
                 {% endif %}
-                <div class="d-flex flex-wrap gap-3">
-                    <span class="badge fs-6 px-4 py-2 rounded-pill border-0" style="background: linear-gradient(135deg, #8B5CF6 0%, #3B82F6 100%); color: white;">
+                <div class="d-flex flex-wrap gap-3 mt-4">
+                    <span class="badge px-4 py-2 border-0" style="background: rgba(255,255,255,0.25); backdrop-filter: blur(10px); color: white; border-radius: 12px;">
                         <i class="bi bi-camera-fill me-2"></i>Photo Recognition
                     </span>
-                    <span class="badge fs-6 px-4 py-2 rounded-pill border-0" style="background: linear-gradient(135deg, #10B981 0%, #059669 100%); color: white;">
+                    <span class="badge px-4 py-2 border-0" style="background: rgba(255,255,255,0.25); backdrop-filter: blur(10px); color: white; border-radius: 12px;">
                         <i class="bi bi-lightbulb-fill me-2"></i>Smart Recipes
                     </span>
-                    <span class="badge fs-6 px-4 py-2 rounded-pill border-0" style="background: linear-gradient(135deg, #06B6D4 0%, #0891B2 100%); color: white;">
+                    <span class="badge px-4 py-2 border-0" style="background: rgba(255,255,255,0.25); backdrop-filter: blur(10px); color: white; border-radius: 12px;">
                         <i class="bi bi-graph-up me-2"></i>Nutrition Tracking
                     </span>
                 </div>
             </div>
-            <div class="col-lg-4 text-center">
-                <div style="width: 120px; height: 120px; background: linear-gradient(135deg, #8B5CF6 0%, #3B82F6 100%); border-radius: 30px; display: flex; align-items: center; justify-content: center; margin: 0 auto; box-shadow: 0 8px 20px rgba(139, 92, 246, 0.3);">
-                    <i class="bi bi-house-heart display-1 opacity-75"></i>
+            <div class="col-lg-4 text-center mt-4 mt-lg-0">
+                <div style="width: 140px; height: 140px; background: linear-gradient(135deg, rgba(255,255,255,0.2) 0%, rgba(255,255,255,0.1) 100%); border-radius: 35px; display: flex; align-items: center; justify-content: center; margin: 0 auto; box-shadow: 0 12px 32px rgba(0,0,0,0.2); backdrop-filter: blur(10px);">
+                    <i class="bi bi-house-heart" style="font-size: 4rem; opacity: 0.9;"></i>
                 </div>
             </div>
         </div>
@@ -47,44 +47,61 @@
         <div class="col-lg-8">
             <!-- Quick Actions Card -->
             <div class="card shadow-sm border-0 mb-4">
-                <div class="card-header bg-white border-0 pb-0">
-                    <h4 class="text-primary mb-0">
+                <div class="card-header bg-gradient-primary text-white border-0">
+                    <h4 class="mb-0 fw-bold">
                         <i class="bi bi-lightning-charge-fill me-2"></i>Quick Actions
                     </h4>
                 </div>
-                <div class="card-body pt-3">
+                <div class="card-body">
                     <div class="row g-4">
                         <!-- Manual Add Item -->
                         <div class="col-md-6">
-                            <div class="h-100">
-                                <h6 class="text-muted mb-3">
-                                    <i class="bi bi-pencil-square me-2"></i>Add Items Manually
-                                </h6>
-                                <form action="{{ url_for('add_items') }}" method="post">
-                                    <div class="input-group mb-2">
-                                        <input type="text" name="item" class="form-control form-control-lg" 
-                                               placeholder="Enter food item..." required>
-                                        <button type="submit" class="btn btn-primary btn-lg">
-                                            <i class="bi bi-plus-circle"></i>
-                                        </button>
+                            <div class="h-100 p-3" style="background: rgba(139, 92, 246, 0.05); border-radius: 16px;">
+                                <div class="d-flex align-items-center mb-3">
+                                    <div class="me-2" style="width: 40px; height: 40px; background: linear-gradient(135deg, #8B5CF6 0%, #3B82F6 100%); border-radius: 12px; display: flex; align-items: center; justify-content: center;">
+                                        <i class="bi bi-pencil-square text-white"></i>
                                     </div>
+                                    <h6 class="mb-0 fw-semibold">Add Items Manually</h6>
+                                </div>
+                                <form action="{{ url_for('add_items') }}" method="post" id="addItemForm">
+                                    <div class="mb-3">
+                                        <input type="text" name="item" class="form-control form-control-lg mb-2" 
+                                               placeholder="Enter food item..." required>
+                                        <div class="row g-2">
+                                            <div class="col-6">
+                                                <input type="text" name="quantity" class="form-control" 
+                                                       placeholder="Qty" value="1">
+                                            </div>
+                                            <div class="col-6">
+                                                <input type="date" name="expiration_date" class="form-control">
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <button type="submit" class="btn btn-primary btn-lg w-100">
+                                        <i class="bi bi-plus-circle me-2"></i>Add Item
+                                    </button>
                                 </form>
-                                <small class="text-muted">Type and add individual items to your pantry</small>
+                                <small class="text-muted d-block mt-2">
+                                    <i class="bi bi-info-circle me-1"></i>Type and add individual items
+                                </small>
                             </div>
                         </div>
                         
                         <!-- Photo Upload -->
                         <div class="col-md-6">
-                            <div class="h-100">
-                                <h6 class="text-muted mb-3">
-                                    <i class="bi bi-camera-fill me-2"></i>Smart Photo Upload
-                                </h6>
-                                <div class="d-flex gap-2">
-                                    <button type="button" class="btn btn-success flex-fill" data-bs-toggle="modal" data-bs-target="#photoModal">
-                                        <i class="bi bi-camera-fill me-2"></i>Take/Upload Photo
-                                    </button>
+                            <div class="h-100 p-3" style="background: rgba(16, 185, 129, 0.05); border-radius: 16px;">
+                                <div class="d-flex align-items-center mb-3">
+                                    <div class="me-2" style="width: 40px; height: 40px; background: linear-gradient(135deg, #10B981 0%, #059669 100%); border-radius: 12px; display: flex; align-items: center; justify-content: center;">
+                                        <i class="bi bi-camera-fill text-white"></i>
+                                    </div>
+                                    <h6 class="mb-0 fw-semibold">Smart Photo Upload</h6>
                                 </div>
-                                <small class="text-muted d-block mt-2">AI will automatically detect and add food items</small>
+                                <button type="button" class="btn btn-success btn-lg w-100" data-bs-toggle="modal" data-bs-target="#photoModal">
+                                    <i class="bi bi-camera-fill me-2"></i>Take/Upload Photo
+                                </button>
+                                <small class="text-muted d-block mt-2">
+                                    <i class="bi bi-magic me-1"></i>AI will automatically detect food items
+                                </small>
                             </div>
                         </div>
                     </div>
@@ -95,46 +112,75 @@
             <div class="card shadow-sm border-0">
                 <div class="card-header bg-gradient-light border-0">
                     <div class="d-flex justify-content-between align-items-center">
-                        <h5 class="mb-0 text-primary">
+                        <h5 class="mb-0 text-primary fw-bold">
                             <i class="bi bi-box-seam me-2"></i>Your Pantry
                         </h5>
                         {% if items %}
-                        <span class="badge fs-6" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">{{ items|length }} items</span>
+                        <span class="badge px-3 py-2" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border-radius: 12px; font-size: 0.9rem;">
+                            <i class="bi bi-basket me-1"></i>{{ items|length }} items
+                        </span>
                         {% endif %}
                     </div>
                 </div>
-                <div class="card-body p-0">
+                <div class="card-body">
                     {% if items %}
-                    <div class="row g-2 p-3">
+                    <div class="row g-3">
                         {% for item in items %}
                         <div class="col-md-6 col-lg-4">
-                            <div class="card border-0 bg-light h-100">
-                                <div class="card-body d-flex justify-content-between align-items-center py-2">
-                                    <div class="d-flex align-items-center">
-                                        <i class="bi bi-circle-fill text-success me-2" style="font-size: 0.5rem;"></i>
-                                        <span class="fw-semibold text-dark">{{ item }}</span>
+                            <div class="pantry-item-card card border-0 bg-white h-100">
+                                <div class="card-body p-3">
+                                    <div class="d-flex justify-content-between align-items-start">
+                                        <div class="flex-grow-1">
+                                            <div class="d-flex align-items-center mb-2">
+                                                <div class="me-2" style="width: 8px; height: 8px; background: linear-gradient(135deg, #10B981 0%, #059669 100%); border-radius: 50%;"></div>
+                                                <span class="fw-semibold text-dark">
+                                                    {% if item is mapping %}
+                                                        {{ item.get('name', item) }}
+                                                    {% else %}
+                                                        {{ item }}
+                                                    {% endif %}
+                                                </span>
+                                            </div>
+                                            {% if item is mapping %}
+                                                {% if item.get('quantity') and item.get('quantity') != '1' %}
+                                                    <div class="mb-2">
+                                                        <span class="badge" style="background: rgba(139, 92, 246, 0.1); color: #8B5CF6; border-radius: 8px; font-size: 0.75rem;">
+                                                            <i class="bi bi-123 me-1"></i>{{ item.get('quantity') }}
+                                                        </span>
+                                                    </div>
+                                                {% endif %}
+                                                {% if item.get('expirationDate') %}
+                                                    <div>
+                                                        <span class="expiration-badge expiration-fresh" data-exp-date="{{ item.get('expirationDate') }}" style="font-size: 0.75rem;">
+                                                            <i class="bi bi-calendar3 me-1"></i>{{ item.get('expirationDate') }}
+                                                        </span>
+                                                    </div>
+                                                {% endif %}
+                                            {% endif %}
+                                        </div>
+                                        <a href="{{ url_for('delete_item', item_name=(item.get('name', item) if item is mapping else item)) }}" 
+                                           class="btn btn-sm btn-outline-danger" 
+                                           style="border-radius: 50%; width: 32px; height: 32px; padding: 0; display: flex; align-items: center; justify-content: center;"
+                                           title="Remove item"
+                                           onclick="return confirm('Remove {% if item is mapping %}{{ item.get('name', item) }}{% else %}{{ item }}{% endif %} from pantry?')">
+                                            <i class="bi bi-x"></i>
+                                        </a>
                                     </div>
-                                    <a href="{{ url_for('delete_item', item_name=item) }}" 
-                                       class="btn btn-sm btn-outline-danger btn-circle" 
-                                       title="Remove item"
-                                       onclick="return confirm('Remove {{ item }} from pantry?')">
-                                        <i class="bi bi-x"></i>
-                                    </a>
                                 </div>
                             </div>
                         </div>
                         {% endfor %}
                     </div>
                     {% else %}
-                    <div class="text-center text-muted py-5">
-                        <i class="bi bi-box-seam display-1 opacity-25"></i>
-                        <h5 class="mt-3 mb-2">Your pantry is empty</h5>
-                        <p class="mb-4">Start by adding items manually or upload a photo to automatically detect food items!</p>
+                    <div class="empty-state">
+                        <i class="bi bi-box-seam" style="font-size: 5rem; color: #8B5CF6; opacity: 0.3;"></i>
+                        <h5 class="mt-4 mb-2 fw-bold">Your pantry is empty</h5>
+                        <p class="mb-4 text-muted">Start by adding items manually or upload a photo to automatically detect food items!</p>
                         <div class="d-flex justify-content-center gap-3">
-                            <button class="btn btn-primary" onclick="document.querySelector('input[name=\"item\"]').focus()">
+                            <button class="btn btn-primary btn-lg" onclick="document.querySelector('input[name=\"item\"]').focus()">
                                 <i class="bi bi-plus-circle me-2"></i>Add Item
                             </button>
-                            <button class="btn btn-success" data-bs-toggle="modal" data-bs-target="#photoModal">
+                            <button class="btn btn-success btn-lg" data-bs-toggle="modal" data-bs-target="#photoModal">
                                 <i class="bi bi-camera me-2"></i>Upload Photo
                             </button>
                         </div>
@@ -149,19 +195,33 @@
             <!-- Recipe Suggestions Card -->
             <div class="card shadow-sm border-0 mb-4">
                 <div class="card-header bg-gradient-success text-white border-0">
-                    <h5 class="mb-0">
+                    <h5 class="mb-0 fw-bold">
                         <i class="bi bi-lightbulb-fill me-2"></i>Smart Recipes
                     </h5>
                 </div>
                 <div class="card-body text-center">
-                    <div class="mb-3">
-                        <i class="bi bi-robot display-4 text-success opacity-75"></i>
+                    <div class="mb-4">
+                        <div style="width: 80px; height: 80px; background: linear-gradient(135deg, rgba(16, 185, 129, 0.2) 0%, rgba(5, 150, 105, 0.2) 100%); border-radius: 20px; display: flex; align-items: center; justify-content: center; margin: 0 auto;">
+                            <i class="bi bi-robot" style="font-size: 2.5rem; color: #10B981;"></i>
+                        </div>
                     </div>
-                    <a href="{{ url_for('suggest_recipe') }}" class="btn btn-success btn-lg w-100 mb-3">
+                    <div class="mb-3">
+                        <label for="expiringDays" class="form-label text-muted small fw-semibold mb-2 d-block">
+                            <i class="bi bi-clock-history me-1"></i>Use items expiring within:
+                        </label>
+                        <select class="form-select form-select-lg" id="expiringDays" style="border-radius: 12px;">
+                            <option value="">All items</option>
+                            <option value="3">3 days</option>
+                            <option value="7">7 days</option>
+                            <option value="14">14 days</option>
+                            <option value="30">30 days</option>
+                        </select>
+                    </div>
+                    <a href="{{ url_for('suggest_recipe') }}" class="btn btn-success btn-lg w-100 mb-3" id="recipeBtn" style="border-radius: 16px;">
                         <i class="bi bi-magic me-2"></i>Get Recipe Ideas
                     </a>
-                    <p class="text-muted small">
-                        AI-powered recipe suggestions based on your pantry items
+                    <p class="text-muted small mb-0">
+                        <i class="bi bi-sparkles me-1"></i>AI-powered recipe suggestions
                     </p>
                 </div>
             </div>
@@ -169,22 +229,14 @@
             <!-- Quick Stats -->
             <div class="card shadow-sm border-0 mb-4">
                 <div class="card-header bg-gradient-info text-white border-0">
-                    <h5 class="mb-0">
+                    <h5 class="mb-0 fw-bold">
                         <i class="bi bi-graph-up me-2"></i>Pantry Stats
                     </h5>
                 </div>
                 <div class="card-body">
-                    <div class="row text-center">
-                        <div class="col-6">
-                            <div class="border-end">
-                                <h3 class="text-primary mb-1">{{ items|length }}</h3>
-                                <small class="text-muted">Total Items</small>
-                            </div>
-                        </div>
-                        <div class="col-6">
-                            <h3 class="text-success mb-1">{{ items|length }}</h3>
-                            <small class="text-muted">Available</small>
-                        </div>
+                    <div class="stat-card">
+                        <div class="stat-number mb-2">{{ items|length }}</div>
+                        <div class="text-muted fw-semibold">Total Items</div>
                     </div>
                 </div>
             </div>
@@ -192,30 +244,36 @@
             <!-- Quick Tips -->
             <div class="card shadow-sm border-0">
                 <div class="card-header bg-gradient-warning text-dark border-0">
-                    <h5 class="mb-0">
+                    <h5 class="mb-0 fw-bold">
                         <i class="bi bi-info-circle-fill me-2"></i>Pro Tips
                     </h5>
                 </div>
                 <div class="card-body">
-                    <div class="d-flex mb-3">
-                        <i class="bi bi-check-circle-fill text-success me-3 mt-1"></i>
+                    <div class="d-flex mb-3 pb-3" style="border-bottom: 1px solid rgba(0,0,0,0.05);">
+                        <div class="me-3" style="width: 32px; height: 32px; background: rgba(16, 185, 129, 0.1); border-radius: 8px; display: flex; align-items: center; justify-content: center;">
+                            <i class="bi bi-check-circle-fill text-success"></i>
+                        </div>
                         <div>
-                            <strong>Smart Upload:</strong>
-                            <br><small class="text-muted">Use clear, well-lit photos for better AI recognition</small>
+                            <strong class="d-block mb-1">Smart Upload</strong>
+                            <small class="text-muted">Use clear, well-lit photos for better AI recognition</small>
                         </div>
                     </div>
-                    <div class="d-flex mb-3">
-                        <i class="bi bi-check-circle-fill text-success me-3 mt-1"></i>
+                    <div class="d-flex mb-3 pb-3" style="border-bottom: 1px solid rgba(0,0,0,0.05);">
+                        <div class="me-3" style="width: 32px; height: 32px; background: rgba(139, 92, 246, 0.1); border-radius: 8px; display: flex; align-items: center; justify-content: center;">
+                            <i class="bi bi-check-circle-fill text-primary"></i>
+                        </div>
                         <div>
-                            <strong>Recipe Magic:</strong>
-                            <br><small class="text-muted">More items = better recipe suggestions</small>
+                            <strong class="d-block mb-1">Recipe Magic</strong>
+                            <small class="text-muted">More items = better recipe suggestions</small>
                         </div>
                     </div>
                     <div class="d-flex">
-                        <i class="bi bi-check-circle-fill text-success me-3 mt-1"></i>
+                        <div class="me-3" style="width: 32px; height: 32px; background: rgba(59, 130, 246, 0.1); border-radius: 8px; display: flex; align-items: center; justify-content: center;">
+                            <i class="bi bi-check-circle-fill text-info"></i>
+                        </div>
                         <div>
-                            <strong>Nutrition Tracking:</strong>
-                            <br><small class="text-muted">Get detailed nutrition info for your recipes</small>
+                            <strong class="d-block mb-1">Nutrition Tracking</strong>
+                            <small class="text-muted">Get detailed nutrition info for your recipes</small>
                         </div>
                     </div>
                 </div>
@@ -505,6 +563,57 @@
             mobileCameraBtn.classList.remove('btn-success');
             mobileCameraBtn.classList.add('btn-success', 'pulse');
         }
+
+        // Handle expiration days selector for recipe suggestions
+        const recipeBtn = document.getElementById('recipeBtn');
+        const expiringDaysSelect = document.getElementById('expiringDays');
+        
+        if (recipeBtn && expiringDaysSelect) {
+            recipeBtn.addEventListener('click', (e) => {
+                const expiringDays = expiringDaysSelect.value;
+                if (expiringDays) {
+                    e.preventDefault();
+                    window.location.href = `{{ url_for('suggest_recipe') }}?expiring_days=${expiringDays}`;
+                }
+            });
+        }
+        
+        // Update expiration badge colors based on dates
+        document.querySelectorAll('[data-exp-date]').forEach(function(badge) {
+            try {
+                const expDate = badge.getAttribute('data-exp-date');
+                if (expDate && expDate.trim() !== '') {
+                    const today = new Date();
+                    today.setHours(0, 0, 0, 0);
+                    const expiration = new Date(expDate);
+                    
+                    // Check if date is valid
+                    if (isNaN(expiration.getTime())) {
+                        badge.classList.add('expiration-none');
+                        return;
+                    }
+                    
+                    expiration.setHours(0, 0, 0, 0);
+                    const daysDiff = Math.floor((expiration - today) / (1000 * 60 * 60 * 24));
+                    
+                    badge.classList.remove('expiration-expired', 'expiration-soon', 'expiration-fresh', 'expiration-none');
+                    if (daysDiff < 0) {
+                        badge.classList.add('expiration-expired');
+                    } else if (daysDiff < 3) {
+                        badge.classList.add('expiration-soon');
+                    } else if (daysDiff < 7) {
+                        badge.classList.add('expiration-soon');
+                    } else {
+                        badge.classList.add('expiration-fresh');
+                    }
+                }
+            } catch (e) {
+                // If there's any error parsing the date, use default styling
+                console.warn('Error parsing expiration date:', e);
+                badge.classList.add('expiration-none');
+            }
+        });
     });
 </script>
 {% endblock %}
+

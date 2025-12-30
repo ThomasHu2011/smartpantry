@@ -3,6 +3,7 @@ import json
 import hashlib
 import uuid
 from datetime import datetime
+from urllib.parse import quote, unquote
 from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, session
 from openai import OpenAI
 from dotenv import load_dotenv
@@ -238,6 +239,29 @@ def authenticate_user(username, password, client_type='web'):
     
     return None, "Invalid credentials"
 
+def update_user_password(user_id, new_password):
+    """Update user's password
+    
+    Args:
+        user_id: User ID
+        new_password: New password (plain text)
+    
+    Returns:
+        (success: bool, error_message: str or None)
+    """
+    if len(new_password) < 6:
+        return False, "Password must be at least 6 characters"
+    
+    users = load_users()
+    if user_id not in users:
+        return False, "User not found"
+    
+    # Update password hash
+    users[user_id]['password_hash'] = hash_password(new_password)
+    save_users(users)
+    
+    return True, None
+
 def get_user_pantry(user_id):
     """Get user's pantry items"""
     users = load_users()
@@ -251,6 +275,52 @@ def update_user_pantry(user_id, pantry_items):
     if user_id in users:
         users[user_id]['pantry'] = pantry_items
         save_users(users)
+
+def get_expiring_items(pantry_items, days_threshold):
+    """Filter pantry items expiring within N days
+    
+    Args:
+        pantry_items: List of pantry items (can be strings or dicts with 'name' and 'expirationDate')
+        days_threshold: Number of days to look ahead (e.g., 7 for items expiring in 7 days)
+    
+    Returns:
+        List of items expiring within the threshold (same format as input)
+    """
+    if not pantry_items or days_threshold is None:
+        return pantry_items
+    
+    today = datetime.now().date()
+    expiring_items = []
+    
+    for item in pantry_items:
+        # Handle both string and dict formats
+        if isinstance(item, dict):
+            expiration_date_str = item.get('expirationDate')
+            if expiration_date_str:
+                try:
+                    # Parse ISO format date string
+                    if isinstance(expiration_date_str, str):
+                        # Handle both date-only and datetime strings
+                        if 'T' in expiration_date_str:
+                            exp_date = datetime.fromisoformat(expiration_date_str.replace('Z', '+00:00')).date()
+                        else:
+                            exp_date = datetime.fromisoformat(expiration_date_str).date()
+                        
+                        days_until_exp = (exp_date - today).days
+                        if 0 <= days_until_exp <= days_threshold:
+                            expiring_items.append(item)
+                    else:
+                        # If expirationDate is not a string, skip it
+                        continue
+                except (ValueError, AttributeError) as e:
+                    # Invalid date format - skip this item
+                    continue
+            # If no expiration date, skip (don't include in expiring items)
+        else:
+            # String format items don't have expiration dates, skip
+            continue
+    
+    return expiring_items
 
  
 
@@ -302,6 +372,47 @@ def logout():
     flash("You have been logged out", "info")
     return redirect(url_for("login"))
 
+@app.route("/profile", methods=["GET", "POST"])
+def profile():
+    """User profile page with password change"""
+    # Require login
+    if 'user_id' not in session:
+        flash("Please log in to access your profile", "warning")
+        return redirect(url_for("login"))
+    
+    user_id = session['user_id']
+    users = load_users()
+    
+    if user_id not in users:
+        flash("User not found", "danger")
+        session.clear()
+        return redirect(url_for("login"))
+    
+    user_data = users[user_id]
+    
+    # Handle POST request (password change)
+    if request.method == "POST":
+        new_password = request.form.get("new_password", "").strip()
+        confirm_password = request.form.get("confirm_password", "").strip()
+        
+        if not new_password:
+            flash("Password cannot be empty", "danger")
+        elif len(new_password) < 6:
+            flash("Password must be at least 6 characters", "danger")
+        elif new_password != confirm_password:
+            flash("Passwords do not match", "danger")
+        else:
+            success, error = update_user_password(user_id, new_password)
+            if success:
+                flash("Password updated successfully!", "success")
+                return redirect(url_for("profile"))
+            else:
+                flash(error or "Failed to update password", "danger")
+    
+    return render_template("profile.html", 
+                         username=user_data.get('username'),
+                         email=user_data.get('email'))
+
 # Home page (pantry list)
 @app.route("/")
 def index():
@@ -315,47 +426,179 @@ def index():
 # Add items
 @app.route("/add", methods=["POST"])
 def add_items():
-    item = request.form.get("item")
-    if item:
+    item_name = request.form.get("item") or request.form.get("item_name")
+    quantity_raw = request.form.get("quantity", "")
+    quantity = quantity_raw.strip() if quantity_raw else ""
+    expiration_date_raw = request.form.get("expiration_date", "")
+    expiration_date = expiration_date_raw.strip() if expiration_date_raw else ""
+    
+    if item_name:
         # Sanitize and validate input
-        item = item.strip()
-        if len(item) > 100:  # Prevent extremely long items
+        item_name = item_name.strip()
+        if len(item_name) > 100:  # Prevent extremely long items
             flash("Item name too long. Please keep it under 100 characters.", "danger")
-            return redirect(url_for("index"))
+            return redirect(request.referrer or url_for("index"))
+        
+        # Validate quantity - default to "1" if empty
+        if not quantity or quantity == "":
+            quantity = "1"
+        
+        # Handle expiration date - convert to YYYY-MM-DD format if provided
+        expiration_date_formatted = None
+        if expiration_date and expiration_date.strip():
+            try:
+                expiration_date = expiration_date.strip()
+                # If it's already in YYYY-MM-DD format
+                if len(expiration_date) == 10 and expiration_date.count('-') == 2:
+                    # Validate it's a valid date
+                    datetime.strptime(expiration_date, "%Y-%m-%d")
+                    expiration_date_formatted = expiration_date
+                else:
+                    # Try to parse other formats
+                    parsed_date = datetime.strptime(expiration_date, "%Y-%m-%d")
+                    expiration_date_formatted = parsed_date.strftime("%Y-%m-%d")
+            except (ValueError, TypeError, AttributeError):
+                # Invalid date format - ignore expiration date
+                expiration_date_formatted = None
+                flash("Invalid expiration date format. Date ignored.", "warning")
+        
+        # Create pantry item dictionary (matching API format)
+        pantry_item = {
+            'id': str(uuid.uuid4()),
+            'name': item_name,
+            'quantity': quantity,
+            'expirationDate': expiration_date_formatted,
+            'addedDate': datetime.now().isoformat()
+        }
         
         if 'user_id' in session:
             # Add to user's pantry
             user_pantry = get_user_pantry(session['user_id'])
-            if item not in user_pantry:  # Prevent duplicates
-                user_pantry.append(item)
-                update_user_pantry(session['user_id'], user_pantry)
-                flash(f"{item} added to pantry.", "success")
+            # Convert to list of dicts if needed (backward compatibility)
+            pantry_list = []
+            for item in user_pantry:
+                if isinstance(item, dict):
+                    pantry_list.append(item)
+                else:
+                    pantry_list.append({
+                        'id': str(uuid.uuid4()),
+                        'name': item,
+                        'quantity': '1',
+                        'expirationDate': None,
+                        'addedDate': datetime.now().isoformat()
+                    })
+            
+            # Check for duplicates (case-insensitive name match)
+            if any(i.get('name', '').lower() == item_name.lower() for i in pantry_list):
+                flash(f"{item_name} is already in your pantry.", "warning")
             else:
-                flash(f"{item} is already in your pantry.", "warning")
+                pantry_list.append(pantry_item)
+                update_user_pantry(session['user_id'], pantry_list)
+                flash(f"{item_name} added to pantry.", "success")
         else:
             # Add to anonymous web pantry
-            if item not in web_pantry:  # Prevent duplicates
-                web_pantry.append(item)
-                flash(f"{item} added to pantry.", "success")
+            global web_pantry
+            # Convert to list of dicts if needed (backward compatibility)
+            pantry_list = []
+            for item in web_pantry:
+                if isinstance(item, dict):
+                    pantry_list.append(item)
+                else:
+                    pantry_list.append({
+                        'id': str(uuid.uuid4()),
+                        'name': item,
+                        'quantity': '1',
+                        'expirationDate': None,
+                        'addedDate': datetime.now().isoformat()
+                    })
+            
+            # Check for duplicates
+            if any(i.get('name', '').lower() == item_name.lower() for i in pantry_list):
+                flash(f"{item_name} is already in your pantry.", "warning")
             else:
-                flash(f"{item} is already in your pantry.", "warning")
-    return redirect(url_for("index"))
+                pantry_list.append(pantry_item)
+                web_pantry = pantry_list
+                flash(f"{item_name} added to pantry.", "success")
+    
+    return redirect(request.referrer or url_for("index"))
 
 # Delete item
 @app.route("/delete/<item_name>")
 def delete_item(item_name):
+    # URL decode the item name
+    item_name = unquote(item_name)
+    
     if 'user_id' in session:
         # Remove from user's pantry
         user_pantry = get_user_pantry(session['user_id'])
-        if item_name in user_pantry:
-            user_pantry.remove(item_name)
-            update_user_pantry(session['user_id'], user_pantry)
+        # Convert to list of dicts if needed (backward compatibility)
+        pantry_list = []
+        for item in user_pantry:
+            if isinstance(item, dict):
+                pantry_list.append(item)
+            else:
+                pantry_list.append({
+                    'id': str(uuid.uuid4()),
+                    'name': item,
+                    'quantity': '1',
+                    'expirationDate': None,
+                    'addedDate': datetime.now().isoformat()
+                })
+        
+        # Find and remove item (case-insensitive match)
+        removed = False
+        for i in pantry_list:
+            if isinstance(i, dict):
+                if i.get('name', '').lower() == item_name.lower():
+                    pantry_list.remove(i)
+                    removed = True
+                    break
+            elif str(i).lower() == item_name.lower():
+                pantry_list.remove(i)
+                removed = True
+                break
+        
+        if removed:
+            update_user_pantry(session['user_id'], pantry_list)
             flash(f"{item_name} removed from pantry.", "info")
+        else:
+            flash(f"{item_name} not found in pantry.", "warning")
     else:
         # Remove from anonymous web pantry
-        if item_name in web_pantry:
-            web_pantry.remove(item_name)
+        global web_pantry
+        # Convert to list of dicts if needed (backward compatibility)
+        pantry_list = []
+        for item in web_pantry:
+            if isinstance(item, dict):
+                pantry_list.append(item)
+            else:
+                pantry_list.append({
+                    'id': str(uuid.uuid4()),
+                    'name': item,
+                    'quantity': '1',
+                    'expirationDate': None,
+                    'addedDate': datetime.now().isoformat()
+                })
+        
+        # Find and remove item (case-insensitive match)
+        removed = False
+        for i in pantry_list:
+            if isinstance(i, dict):
+                if i.get('name', '').lower() == item_name.lower():
+                    pantry_list.remove(i)
+                    removed = True
+                    break
+            elif str(i).lower() == item_name.lower():
+                pantry_list.remove(i)
+                removed = True
+                break
+        
+        if removed:
+            web_pantry = pantry_list
             flash(f"{item_name} removed from pantry.", "info")
+        else:
+            flash(f"{item_name} not found in pantry.", "warning")
+    
     return redirect(url_for("index"))
 
 # Suggest recipes based on pantry
@@ -371,6 +614,19 @@ def suggest_recipe():
         flash("Your pantry is empty. Add items first.", "warning")
         return redirect(url_for("index"))
 
+    # Check for expiring_days query parameter
+    expiring_days = request.args.get('expiring_days', type=int)
+    
+    # Filter pantry items if expiring_days is specified
+    original_pantry = current_pantry
+    if expiring_days is not None:
+        current_pantry = get_expiring_items(current_pantry, expiring_days)
+        if not current_pantry:
+            flash(f"No items expiring within {expiring_days} days. Showing all items instead.", "warning")
+            current_pantry = original_pantry
+        else:
+            flash(f"Showing recipes for {len(current_pantry)} item(s) expiring within {expiring_days} days.", "info")
+
     # Check if we already have recipes in session
     existing_recipes = session.get('current_recipes', [])
     if existing_recipes:
@@ -379,9 +635,22 @@ def suggest_recipe():
         return render_template("suggest_recipe.html", recipes=existing_recipes, pantry_items=current_pantry)
 
     # Generate AI-powered recipes based on pantry items (only if no existing recipes)
-    pantry_items = ", ".join(current_pantry)
+    # Convert pantry items to string list for prompt
+    pantry_items_list = []
+    for item in current_pantry:
+        if isinstance(item, dict):
+            pantry_items_list.append(item.get('name', ''))
+        else:
+            pantry_items_list.append(str(item))
+    
+    pantry_items = ", ".join(pantry_items_list)
     pantry = current_pantry  # Use for compatibility with existing code
-    prompt = f"""Based on the following pantry items: {pantry_items}
+    
+    # Update prompt if using expiring items
+    expiring_note = ""
+    if expiring_days is not None and current_pantry:
+        expiring_note = f"\n\nIMPORTANT: These items are expiring within {expiring_days} days. Prioritize recipes that use these expiring ingredients to reduce food waste."
+    prompt = f"""Based on the following pantry items: {pantry_items}{expiring_note}
 
 Generate 3 creative and practical recipes that use AT LEAST 50% of these pantry ingredients. For each recipe, provide:
 1. Recipe name
@@ -1174,6 +1443,17 @@ def api_suggest_recipe():
     if not pantry_items:
         return jsonify({'success': False, 'error': 'No items in pantry'}), 400
     
+    # Check for expiring_days parameter
+    expiring_days = data.get('expiring_days') if data else None
+    
+    # Filter pantry items if expiring_days is specified
+    original_pantry_items = pantry_items
+    if expiring_days is not None:
+        pantry_items = get_expiring_items(pantry_items, expiring_days)
+        if not pantry_items:
+            # If no expiring items, use all items but note it in response
+            pantry_items = original_pantry_items
+    
     try:
         # Generate AI recipes
         # Convert pantry_items to list of strings (handle both dict and string formats)
@@ -1192,6 +1472,12 @@ def api_suggest_recipe():
             return jsonify({'success': False, 'error': 'No valid items in pantry'}), 400
         
         pantry_list = ", ".join(pantry_items_list)
+        
+        # Add note about expiring items if applicable
+        expiring_note = ""
+        if expiring_days is not None and pantry_items != original_pantry_items:
+            expiring_note = f"\n\nIMPORTANT: These items are expiring within {expiring_days} days. Prioritize recipes that use these expiring ingredients to reduce food waste."
+        
         prompt = f"""
         Create 3 delicious and diverse recipes using these available ingredients from the user's pantry: {pantry_list}
         
@@ -1342,7 +1628,9 @@ def api_suggest_recipe():
         return jsonify({
             'success': True,
             'recipes': recipe_data['recipes'],
-            'pantry_items_used': pantry_items
+            'pantry_items_used': pantry_items,
+            'expiring_days': expiring_days if expiring_days is not None else None,
+            'filtered_by_expiration': expiring_days is not None and pantry_items != original_pantry_items
         })
         
     except Exception as e:
@@ -1474,6 +1762,39 @@ def api_upload_photo():
             'success': False,
             'error': f'Error analyzing photo: {str(e)}'
         }), 500
+
+@app.route('/api/profile/password', methods=['POST'])
+def api_change_password():
+    """Change user password via API"""
+    data = request.get_json()
+    user_id = request.headers.get('X-User-ID')
+    
+    if not user_id:
+        return jsonify({'success': False, 'error': 'User authentication required'}), 401
+    
+    if not data:
+        return jsonify({'success': False, 'error': 'Invalid request data'}), 400
+    
+    new_password = data.get('new_password', '').strip()
+    confirm_password = data.get('confirm_password', '').strip()
+    
+    if not new_password:
+        return jsonify({'success': False, 'error': 'Password cannot be empty'}), 400
+    
+    if len(new_password) < 6:
+        return jsonify({'success': False, 'error': 'Password must be at least 6 characters'}), 400
+    
+    if new_password != confirm_password:
+        return jsonify({'success': False, 'error': 'Passwords do not match'}), 400
+    
+    success, error = update_user_password(user_id, new_password)
+    if success:
+        return jsonify({
+            'success': True,
+            'message': 'Password updated successfully'
+        })
+    else:
+        return jsonify({'success': False, 'error': error or 'Failed to update password'}), 500
 
 @app.route('/api/health', methods=['GET'])
 def api_health():
