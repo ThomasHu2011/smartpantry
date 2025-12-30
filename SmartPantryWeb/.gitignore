@@ -62,7 +62,15 @@ htmlcov/
 smartpantry_presentation.md
 icon_setup_complete.md
 api_documentation.md
+SETUP.md
+VERCEL_FIX_EXPLANATION.md
+
+# iOS/Mobile app files (not needed for web server)
 app_icons/
 Assets.xcassets/
+Info.plist
+SceneDelegate.swift
+SmartPantry.entitlements
+SmartPantryMobileApp.swift
 static_logo.png
 get-pip.py
