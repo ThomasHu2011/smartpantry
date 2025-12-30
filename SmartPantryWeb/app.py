@@ -1193,11 +1193,14 @@ def api_suggest_recipe():
         
         pantry_list = ", ".join(pantry_items_list)
         prompt = f"""
-        Create 3 delicious and diverse recipes using these available ingredients: {pantry_list}
+        Create 3 delicious and diverse recipes using these available ingredients from the user's pantry: {pantry_list}
         
-        Requirements:
-        - Each recipe must use at least 2-3 ingredients from this list: {pantry_list}
-        - Include basic pantry staples (salt, pepper, oil, butter) as needed
+        CRITICAL REQUIREMENTS:
+        - MAIN INGREDIENTS (70-80% of ingredients) MUST be from this pantry list: {pantry_list}
+        - Use pantry ingredients as the PRIMARY/STAR ingredients of each recipe
+        - Only add minimal supporting ingredients (salt, pepper, oil, butter, basic spices) that are NOT in the pantry
+        - Each recipe should prominently feature 3-5 ingredients from the pantry list as the main components
+        - Prioritize recipes where pantry ingredients are the star, not just supporting elements
         - Make recipes practical and easy to follow
         - Include realistic cooking times and difficulty levels
         - Make each recipe different (different cuisine, cooking method, etc.)
