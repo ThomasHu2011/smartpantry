@@ -1091,6 +1091,7 @@ def api_add_item():
         }), 200
     else:
         # Use anonymous pantry
+        global mobile_pantry, web_pantry  # Declare globals before using them
         pantry_to_use = mobile_pantry if client_type == 'mobile' else web_pantry
         # Convert to list of dicts if needed (backward compatibility)
         pantry_list = []
@@ -1112,10 +1113,8 @@ def api_add_item():
         
         pantry_list.append(pantry_item)
         if client_type == 'mobile':
-            global mobile_pantry
             mobile_pantry = pantry_list
         else:
-            global web_pantry
             web_pantry = pantry_list
         
         return jsonify({
