@@ -74,7 +74,8 @@
                                             <div class="col-6">
                                                 <label class="form-label fw-semibold small text-muted mb-1">Expires</label>
                                                 <input type="date" name="expiration_date" id="expirationInput" class="form-control"
-                                                       style="border-radius: 10px; border: 2px solid #e2e8f0;">
+                                                       style="border-radius: 10px; border: 2px solid #e2e8f0;"
+                                                       value="">
                                             </div>
                                         </div>
                                     </div>
@@ -641,10 +642,18 @@
         
         const formData = new FormData(form);
         const itemName = formData.get('item');
+        const expirationDateInput = document.getElementById('expirationInput');
         const btn = document.getElementById('addItemBtn');
         const btnText = document.getElementById('addItemBtnText');
         const feedback = document.getElementById('addItemFeedback');
         const itemInput = document.getElementById('itemInput');
+        
+        // Ensure expiration_date is included in FormData (even if empty)
+        // Date inputs return empty string when not set, but we want to ensure it's sent
+        if (expirationDateInput) {
+            const expirationDateValue = expirationDateInput.value || '';
+            formData.set('expiration_date', expirationDateValue);
+        }
         
         // Validate input
         if (!itemName || !itemName.trim()) {

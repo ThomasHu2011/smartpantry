@@ -429,6 +429,7 @@ def add_items():
     item_name = request.form.get("item") or request.form.get("item_name")
     quantity_raw = request.form.get("quantity", "")
     quantity = quantity_raw.strip() if quantity_raw else ""
+    # Get expiration date from form (can be empty string if not provided)
     expiration_date_raw = request.form.get("expiration_date", "")
     expiration_date = expiration_date_raw.strip() if expiration_date_raw else ""
     
@@ -451,19 +452,19 @@ def add_items():
     if expiration_date and expiration_date.strip():
         try:
             expiration_date = expiration_date.strip()
-            # If it's already in YYYY-MM-DD format
+            # Date input fields return YYYY-MM-DD format
             if len(expiration_date) == 10 and expiration_date.count('-') == 2:
                 # Validate it's a valid date
                 datetime.strptime(expiration_date, "%Y-%m-%d")
                 expiration_date_formatted = expiration_date
             else:
-                # Try to parse other formats
+                # Try to parse other formats as fallback
                 parsed_date = datetime.strptime(expiration_date, "%Y-%m-%d")
                 expiration_date_formatted = parsed_date.strftime("%Y-%m-%d")
-        except (ValueError, TypeError, AttributeError):
+        except (ValueError, TypeError, AttributeError) as e:
             # Invalid date format - ignore expiration date
             expiration_date_formatted = None
-            flash("Invalid expiration date format. Date ignored.", "warning")
+            flash(f"Invalid expiration date format: {expiration_date}. Date ignored.", "warning")
     
     # Create pantry item dictionary (matching API format)
     pantry_item = {
@@ -497,7 +498,10 @@ def add_items():
         else:
             pantry_list.append(pantry_item)
             update_user_pantry(session['user_id'], pantry_list)
-            flash(f"{item_name} added to pantry.", "success")
+            if expiration_date_formatted:
+                flash(f"{item_name} added to pantry with expiration date {expiration_date_formatted}.", "success")
+            else:
+                flash(f"{item_name} added to pantry.", "success")
     else:
         # Add to anonymous web pantry
         global web_pantry
@@ -521,7 +525,10 @@ def add_items():
         else:
             pantry_list.append(pantry_item)
             web_pantry = pantry_list
-            flash(f"{item_name} added to pantry.", "success")
+            if expiration_date_formatted:
+                flash(f"{item_name} added to pantry with expiration date {expiration_date_formatted}.", "success")
+            else:
+                flash(f"{item_name} added to pantry.", "success")
     
     return redirect(request.referrer or url_for("index"))
 
