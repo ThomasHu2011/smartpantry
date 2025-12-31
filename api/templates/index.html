@@ -32,6 +32,26 @@
     .card {
         animation: fadeIn 0.6s ease-out;
     }
+    
+    /* Fix modal backdrop darkness and ensure it doesn't block clicks */
+    .modal-backdrop {
+        background-color: rgba(0, 0, 0, 0.3) !important;
+        backdrop-filter: blur(2px);
+        z-index: 1040 !important;
+    }
+    
+    .modal-backdrop.show {
+        opacity: 1;
+    }
+    
+    .modal {
+        z-index: 1055 !important;
+    }
+    
+    /* Ensure modal content is clickable */
+    .modal-content {
+        pointer-events: auto !important;
+    }
 </style>
 {% endblock %}
 
@@ -42,7 +62,7 @@
         <div class="row align-items-center">
             <div class="col-lg-8">
                 <div class="d-flex align-items-center mb-4">
-                    <img src="{{ url_for('static', filename='logo.png') }}" alt="Smart Pantry" height="50" class="me-3">
+                    <img src="{{ url_for('static', filename='logo.png') }}" alt="Smart Pantry" height="80" class="me-3" style="max-width: 80px;">
                     <div>
                         <h1 class="display-4 fw-bold mb-1" style="text-shadow: 0 2px 8px rgba(0,0,0,0.2);">SmartPantry</h1>
                         <p class="mb-0 opacity-90" style="font-size: 1.1rem;">Your intelligent kitchen companion</p>
@@ -103,7 +123,7 @@
                                                        style="border-radius: 10px; border: 2px solid #e2e8f0;">
                                             </div>
                                             <div class="col-6">
-                                                <label class="form-label fw-semibold small text-muted mb-1">Expires</label>
+                                                <label class="form-label fw-semibold small text-muted mb-1">Expires <span class="text-muted" style="font-weight: normal;">(optional)</span></label>
                                                 <input type="date" name="expiration_date" id="expirationInput" class="form-control"
                                                        style="border-radius: 10px; border: 2px solid #e2e8f0;"
                                                        value="">
@@ -170,7 +190,7 @@
                     </div>
                 </div>
                 <div class="card-body p-4">
-                    {% if items %}
+                    {% if items and items|length > 0 %}
                     <div class="row g-3" id="pantryItemsContainer">
                         {% for item in items %}
                         {% set item_name = item.get('name', item) if item|is_dict else item %}
@@ -345,7 +365,7 @@
 </div>
 
 <!-- Photo Upload Modal -->
-<div class="modal fade" id="photoModal" tabindex="-1" aria-labelledby="photoModalLabel" aria-hidden="true">
+<div class="modal fade" id="photoModal" tabindex="-1" aria-labelledby="photoModalLabel" aria-hidden="true" data-bs-backdrop="true" data-bs-keyboard="true">
     <div class="modal-dialog modal-lg modal-dialog-centered">
         <div class="modal-content" style="border-radius: 24px; border: none;">
             <div class="modal-header border-0 pb-0">
@@ -445,39 +465,51 @@
     const captureBtn = document.getElementById('captureBtn');
 
     // Browse button click
-    browseBtn.addEventListener('click', () => photoInput.click());
+    if (browseBtn && photoInput) {
+        browseBtn.addEventListener('click', () => photoInput.click());
+    }
 
     // Mobile camera button (works without HTTPS)
-    mobileCameraBtn.addEventListener('click', () => mobileCameraInput.click());
+    if (mobileCameraBtn && mobileCameraInput) {
+        mobileCameraBtn.addEventListener('click', () => mobileCameraInput.click());
+    }
 
     // File input change
-    photoInput.addEventListener('change', handleFileSelect);
-    mobileCameraInput.addEventListener('change', handleFileSelect);
+    if (photoInput) {
+        photoInput.addEventListener('change', handleFileSelect);
+    }
+    if (mobileCameraInput) {
+        mobileCameraInput.addEventListener('change', handleFileSelect);
+    }
 
     // Drag and drop handlers
-    dropZone.addEventListener('dragover', (e) => {
-        e.preventDefault();
-        dropZone.classList.add('dragover');
-    });
+    if (dropZone) {
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.classList.add('dragover');
+        });
 
-    dropZone.addEventListener('dragleave', () => {
-        dropZone.classList.remove('dragover');
-    });
+        dropZone.addEventListener('dragleave', () => {
+            dropZone.classList.remove('dragover');
+        });
 
-    dropZone.addEventListener('drop', (e) => {
-        e.preventDefault();
-        dropZone.classList.remove('dragover');
-        const files = e.dataTransfer.files;
-        if (files.length > 0) {
-            handleFile(files[0]);
-        }
-    });
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('dragover');
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                handleFile(files[0]);
+            }
+        });
 
-    dropZone.addEventListener('click', (e) => {
-        if (e.target === dropZone || e.target.closest('#dropZone')) {
-            photoInput.click();
-        }
-    });
+        dropZone.addEventListener('click', (e) => {
+            if (e.target === dropZone || e.target.closest('#dropZone')) {
+                if (photoInput) {
+                    photoInput.click();
+                }
+            }
+        });
+    }
 
     // Handle file selection
     function handleFileSelect(e) {
@@ -497,15 +529,16 @@
         selectedFile = file;
         const reader = new FileReader();
         reader.onload = (e) => {
-            imagePreview.src = e.target.result;
-            uploadZone.style.display = 'none';
-            previewSection.style.display = 'block';
+            if (imagePreview) imagePreview.src = e.target.result;
+            if (uploadZone) uploadZone.style.display = 'none';
+            if (previewSection) previewSection.style.display = 'block';
         };
         reader.readAsDataURL(file);
     }
 
     // Camera Functions
-    openCameraBtn.addEventListener('click', async () => {
+    if (openCameraBtn) {
+        openCameraBtn.addEventListener('click', async () => {
         // Check if getUserMedia is supported
         if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
             alert('Camera access requires HTTPS or localhost.\n\nTo use camera:\n1. Access via https:// (requires SSL certificate)\n2. Access via http://localhost:5050 or http://127.0.0.1:5050\n\nFor now, please use "Browse Files" to upload a photo instead.');
@@ -516,9 +549,9 @@
             cameraStream = await navigator.mediaDevices.getUserMedia({ 
                 video: { facingMode: 'environment' } 
             });
-            cameraStreamVideo.srcObject = cameraStream;
-            uploadZone.style.display = 'none';
-            cameraView.style.display = 'block';
+            if (cameraStreamVideo) cameraStreamVideo.srcObject = cameraStream;
+            if (uploadZone) uploadZone.style.display = 'none';
+            if (cameraView) cameraView.style.display = 'block';
         } catch (err) {
             if (err.name === 'NotAllowedError') {
                 alert('Camera permission denied. Please allow camera access and try again.');
@@ -528,15 +561,19 @@
                 alert('Could not access camera: ' + err.message + '\n\nPlease use "Browse Files" to upload a photo instead.');
             }
         }
-    });
+        });
+    }
 
-    closeCameraBtn.addEventListener('click', () => {
-        stopCamera();
-        cameraView.style.display = 'none';
-        uploadZone.style.display = 'block';
-    });
+    if (closeCameraBtn) {
+        closeCameraBtn.addEventListener('click', () => {
+            stopCamera();
+            if (cameraView) cameraView.style.display = 'none';
+            if (uploadZone) uploadZone.style.display = 'block';
+        });
+    }
 
-    captureBtn.addEventListener('click', () => {
+    if (captureBtn && cameraStreamVideo) {
+        captureBtn.addEventListener('click', () => {
         const canvas = document.createElement('canvas');
         canvas.width = cameraStreamVideo.videoWidth;
         canvas.height = cameraStreamVideo.videoHeight;
@@ -544,12 +581,13 @@
         
         canvas.toBlob((blob) => {
             selectedFile = new File([blob], 'camera-capture.jpg', { type: 'image/jpeg' });
-            imagePreview.src = canvas.toDataURL('image/jpeg');
+            if (imagePreview) imagePreview.src = canvas.toDataURL('image/jpeg');
             stopCamera();
-            cameraView.style.display = 'none';
-            previewSection.style.display = 'block';
+            if (cameraView) cameraView.style.display = 'none';
+            if (previewSection) previewSection.style.display = 'block';
         }, 'image/jpeg');
-    });
+        });
+    }
 
     function stopCamera() {
         if (cameraStream) {
@@ -559,15 +597,18 @@
     }
 
     // Cancel upload
-    cancelUploadBtn.addEventListener('click', () => {
-        selectedFile = null;
-        photoInput.value = '';
-        previewSection.style.display = 'none';
-        uploadZone.style.display = 'block';
-    });
+    if (cancelUploadBtn) {
+        cancelUploadBtn.addEventListener('click', () => {
+            selectedFile = null;
+            if (photoInput) photoInput.value = '';
+            if (previewSection) previewSection.style.display = 'none';
+            if (uploadZone) uploadZone.style.display = 'block';
+        });
+    }
 
     // Upload photo
-    uploadBtn.addEventListener('click', async () => {
+    if (uploadBtn && uploadBtnText) {
+        uploadBtn.addEventListener('click', async () => {
         if (!selectedFile) {
             alert('Please select a photo first');
             return;
@@ -594,23 +635,48 @@
                 uploadBtnText.textContent = 'Analyze & Add Items';
             }
         } catch (err) {
-            alert('Upload error: ' + err.message);
-            uploadBtn.disabled = false;
-            uploadBtnText.textContent = 'Analyze & Add Items';
+                alert('Upload error: ' + err.message);
+                if (uploadBtn) uploadBtn.disabled = false;
+                if (uploadBtnText) uploadBtnText.textContent = 'Analyze & Add Items';
         }
-    });
+        });
+    }
 
     // Reset modal when closed
-    photoModal.addEventListener('hidden.bs.modal', () => {
+    if (photoModal) {
+        photoModal.addEventListener('hidden.bs.modal', () => {
         stopCamera();
         selectedFile = null;
-        photoInput.value = '';
-        cameraView.style.display = 'none';
-        previewSection.style.display = 'none';
-        uploadZone.style.display = 'block';
-        uploadBtn.disabled = false;
-        uploadBtnText.textContent = 'Analyze & Add Items';
-    });
+        if (photoInput) photoInput.value = '';
+        if (mobileCameraInput) mobileCameraInput.value = '';
+        if (cameraView) cameraView.style.display = 'none';
+        if (previewSection) previewSection.style.display = 'none';
+        if (uploadZone) uploadZone.style.display = 'block';
+        if (uploadBtn) uploadBtn.disabled = false;
+        if (uploadBtnText) uploadBtnText.textContent = 'Analyze & Add Items';
+        
+        // Ensure backdrop is removed and body is restored
+        setTimeout(() => {
+            const backdrop = document.querySelector('.modal-backdrop');
+            if (backdrop) {
+                backdrop.remove();
+            }
+            // Remove modal-open class from body and restore scrolling
+            document.body.classList.remove('modal-open');
+            document.body.style.overflow = '';
+            document.body.style.paddingRight = '';
+        }, 100);
+        });
+        
+        // Ensure modal is properly initialized when shown
+        photoModal.addEventListener('show.bs.modal', () => {
+            // Ensure modal content is clickable
+            const modalContent = photoModal.querySelector('.modal-content');
+            if (modalContent) {
+                modalContent.style.pointerEvents = 'auto';
+            }
+        });
+    }
 
     // Check camera availability on page load
     window.addEventListener('DOMContentLoaded', () => {

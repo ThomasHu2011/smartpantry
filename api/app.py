@@ -627,8 +627,12 @@ def normalize_pantry_item(item):
         if 'addedDate' not in normalized_item:
             normalized_item['addedDate'] = datetime.now().isoformat()
         # Ensure name exists and is a string
-        if 'name' not in normalized_item or not normalized_item['name']:
+        if 'name' not in normalized_item:
             normalized_item['name'] = str(normalized_item.get('name', ''))
+        elif normalized_item['name'] is None:
+            normalized_item['name'] = ''
+        else:
+            normalized_item['name'] = str(normalized_item['name']).strip()
         return normalized_item
     else:
         # Convert string to dict format
@@ -847,14 +851,22 @@ def index():
         normalized_pantry = []
         for item in user_pantry:
             try:
+                normalized_item = None
                 if isinstance(item, dict):
-                    normalized_pantry.append(normalize_pantry_item(item.copy()))
+                    normalized_item = normalize_pantry_item(item.copy())
                 elif item is not None:
-                    normalized_pantry.append(normalize_pantry_item(item))
+                    normalized_item = normalize_pantry_item(item)
+                
+                # Only add items with valid names
+                if normalized_item and normalized_item.get('name') and normalized_item.get('name').strip():
+                    normalized_pantry.append(normalized_item)
             except Exception as e:
                 print(f"Warning: Failed to normalize item {item}: {e}")
+                import traceback
+                traceback.print_exc()
                 continue
         print(f"DEBUG: Rendering index with {len(normalized_pantry)} items for user {session.get('username')}")
+        print(f"DEBUG: Items: {[item.get('name', 'NO_NAME') for item in normalized_pantry[:3]]}")
         return render_template("index.html", items=normalized_pantry, username=session.get('username'))
     else:
         # Use session-based pantry for anonymous users (consistent with add_items and delete_item)
@@ -868,14 +880,22 @@ def index():
         normalized_web_pantry = []
         for item in web_pantry:
             try:
+                normalized_item = None
                 if isinstance(item, dict):
-                    normalized_web_pantry.append(normalize_pantry_item(item.copy()))
+                    normalized_item = normalize_pantry_item(item.copy())
                 elif item is not None:
-                    normalized_web_pantry.append(normalize_pantry_item(item))
+                    normalized_item = normalize_pantry_item(item)
+                
+                # Only add items with valid names
+                if normalized_item and normalized_item.get('name') and normalized_item.get('name').strip():
+                    normalized_web_pantry.append(normalized_item)
             except Exception as e:
                 print(f"Warning: Failed to normalize item {item}: {e}")
+                import traceback
+                traceback.print_exc()
                 continue
         print(f"DEBUG: Rendering index with {len(normalized_web_pantry)} items for anonymous user")
+        print(f"DEBUG: Items: {[item.get('name', 'NO_NAME') for item in normalized_web_pantry[:3]]}")
         return render_template("index.html", items=normalized_web_pantry, username=None)
 
 # Add items
