@@ -2481,13 +2481,22 @@ def api_delete_item(item_id):
                     'addedDate': datetime.now().isoformat()
                 })
         
-        # Find item by ID or name
+        # Find item by ID or name (case-insensitive, trimmed)
         item_to_delete = None
+        item_id_clean = item_id.strip().lower()
         for i, pantry_item in enumerate(pantry_list):
-            if (isinstance(pantry_item, dict) and 
-                (pantry_item.get('id') == item_id or pantry_item.get('name', '').lower() == item_id.lower())):
-                item_to_delete = pantry_list.pop(i)
-                break
+            if isinstance(pantry_item, dict):
+                item_name = pantry_item.get('name', '').strip().lower() if pantry_item.get('name') else ''
+                item_id_from_dict = pantry_item.get('id', '').strip().lower() if pantry_item.get('id') else ''
+                if (item_id_from_dict == item_id_clean or item_name == item_id_clean):
+                    item_to_delete = pantry_list.pop(i)
+                    break
+            else:
+                # Handle old string format
+                pantry_str = str(pantry_item).strip().lower() if pantry_item else ''
+                if pantry_str == item_id_clean:
+                    item_to_delete = pantry_list.pop(i)
+                    break
             elif not isinstance(pantry_item, dict) and pantry_item.lower() == item_id.lower():
                 item_to_delete = pantry_list.pop(i)
                 break

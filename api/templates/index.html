@@ -12,6 +12,18 @@
     .pantry-item-card {
         animation: fadeInUp 0.5s ease-out forwards;
         opacity: 0;
+        position: relative;
+        z-index: 3;
+    }
+    
+    .pantry-item-wrapper {
+        position: relative;
+        z-index: 3;
+    }
+    
+    #pantryItemsContainer {
+        position: relative;
+        z-index: 2;
     }
     
     @keyframes fadeInUp {
@@ -175,8 +187,8 @@
             </div>
 
             <!-- Pantry Overview - Cleaner Design -->
-            <div class="card shadow-sm border-0" style="border-radius: 20px; overflow: hidden;">
-                <div class="card-header border-0" style="background: linear-gradient(135deg, rgba(139, 92, 246, 0.1) 0%, rgba(59, 130, 246, 0.08) 100%); padding: 20px 24px;">
+            <div class="card shadow-sm border-0" style="border-radius: 20px; overflow: visible; position: relative; z-index: 1;">
+                <div class="card-header border-0" style="background: linear-gradient(135deg, rgba(139, 92, 246, 0.1) 0%, rgba(59, 130, 246, 0.08) 100%); padding: 20px 24px; position: relative; z-index: 1;">
                     <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
                         <h5 class="mb-0 fw-bold" style="color: #1e293b; font-size: 1.25rem;">
                             <i class="bi bi-basket-fill me-2" style="color: #8B5CF6;"></i>Your Pantry
@@ -204,15 +216,16 @@
                         </div>
                     </div>
                 </div>
-                <div class="card-body p-4">
+                <div class="card-body p-4" style="position: relative; z-index: 2;">
                     {% if items is defined and items is not none and items|length > 0 %}
-                    <div class="row g-3" id="pantryItemsContainer">
+                    <div class="row g-3" id="pantryItemsContainer" style="position: relative; z-index: 2;">
                         {% for item in items %}
                         {% set item_name = item.get('name', item) if item|is_dict else item %}
                         {% set exp_date = item.get('expirationDate', '') if item|is_dict else '' %}
                         <div class="col-md-6 col-lg-4 pantry-item-wrapper" 
                              data-item-name="{{ item_name|lower }}"
-                             data-expiration-date="{{ exp_date[:10] if exp_date and exp_date|length >= 10 else '9999-12-31' }}">
+                             data-expiration-date="{{ exp_date[:10] if exp_date and exp_date|length >= 10 else '9999-12-31' }}"
+                             style="position: relative; z-index: 3;">
                             <div class="pantry-item-card card border-0 bg-white h-100 animate-fade-in" 
                                  style="border-radius: 18px; transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1); border: 1px solid #e2e8f0; cursor: pointer;"
                                  data-animation-delay="{{ loop.index0 * 0.05 }}"
