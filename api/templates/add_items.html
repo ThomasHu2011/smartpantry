@@ -82,13 +82,13 @@
                                         <div class="flex-grow-1">
                                             <h6 class="mb-1 fw-semibold">
                                                 <i class="bi bi-circle-fill text-success me-2" style="font-size: 0.5rem;"></i>
-                                                {% if item is dict %}
+                                                {% if item|is_dict %}
                                                     {{ item.get('name', item) }}
                                                 {% else %}
                                                     {{ item }}
                                                 {% endif %}
                                             </h6>
-                                            {% if item is mapping %}
+                                            {% if item|is_dict %}
                                                 {% if item.get('quantity') and item.get('quantity') != '1' %}
                                                     <small class="text-muted d-block">
                                                         <i class="bi bi-123 me-1"></i>Qty: {{ item.get('quantity') }}
@@ -107,7 +107,7 @@
                                                 {% endif %}
                                             {% endif %}
                                         </div>
-                                        {% set item_name = item.get('name', item) if item is dict else item %}
+                                        {% set item_name = item.get('name', item) if item|is_dict else item %}
                                         <a href="{{ url_for('delete_item', item_name=item_name) }}" 
                                            class="btn btn-sm btn-outline-danger btn-circle" 
                                            title="Remove item"

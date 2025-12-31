@@ -37,6 +37,12 @@ app = Flask(__name__,
             static_folder=_static_folder,      # Absolute path to api/static
             static_url_path='/static')         # Static URL path
 
+# Add custom Jinja2 filter to check if item is a dict
+@app.template_filter('is_dict')
+def is_dict_filter(value):
+    """Check if value is a dictionary-like object"""
+    return isinstance(value, dict)
+
 # Use environment variable for secret key if available, otherwise use default
 app.secret_key = os.getenv('FLASK_SECRET_KEY', 'supersecretkey')  # Needed for flash messages
 
@@ -596,6 +602,16 @@ def normalize_expiration_date(date_str):
 
 def normalize_pantry_item(item):
     """Normalize a pantry item to ensure consistent format"""
+    if item is None:
+        # Return a default item if None is passed
+        return {
+            'id': str(uuid.uuid4()),
+            'name': '',
+            'quantity': '1',
+            'expirationDate': None,
+            'addedDate': datetime.now().isoformat()
+        }
+    
     if isinstance(item, dict):
         # Create a copy to avoid modifying the original
         normalized_item = item.copy()
@@ -610,12 +626,16 @@ def normalize_pantry_item(item):
             normalized_item['quantity'] = '1'
         if 'addedDate' not in normalized_item:
             normalized_item['addedDate'] = datetime.now().isoformat()
+        # Ensure name exists and is a string
+        if 'name' not in normalized_item or not normalized_item['name']:
+            normalized_item['name'] = str(normalized_item.get('name', ''))
         return normalized_item
     else:
         # Convert string to dict format
+        item_str = str(item).strip() if item else ''
         return {
             'id': str(uuid.uuid4()),
-            'name': str(item),
+            'name': item_str,
             'quantity': '1',
             'expirationDate': None,
             'addedDate': datetime.now().isoformat()
@@ -626,8 +646,21 @@ def get_user_pantry(user_id):
     users = load_users()
     if user_id in users:
         pantry = users[user_id].get('pantry', [])
+        # Ensure pantry is a list
+        if not isinstance(pantry, list):
+            print(f"Warning: Pantry for user {user_id} is not a list, resetting to empty list")
+            pantry = []
         # Normalize all items to ensure consistent format
-        normalized_pantry = [normalize_pantry_item(item.copy() if isinstance(item, dict) else item) for item in pantry]
+        normalized_pantry = []
+        for item in pantry:
+            try:
+                if isinstance(item, dict):
+                    normalized_pantry.append(normalize_pantry_item(item.copy()))
+                elif item is not None:
+                    normalized_pantry.append(normalize_pantry_item(item))
+            except Exception as e:
+                print(f"Warning: Failed to normalize item {item}: {e}")
+                continue
         print(f"Retrieved pantry for user {user_id}: {len(normalized_pantry)} items")
         return normalized_pantry
     print(f"Warning: User {user_id} not found in users database")
@@ -650,8 +683,23 @@ def update_user_pantry(user_id, pantry_items):
     print(f"✅ User {user_id} found in database")
     print(f"   Username: {users[user_id].get('username', 'unknown')}")
     
+    # Ensure pantry_items is a list
+    if not isinstance(pantry_items, list):
+        print(f"Warning: pantry_items is not a list, converting to list")
+        pantry_items = []
+    
     # Normalize all items before saving
-    normalized_items = [normalize_pantry_item(item.copy() if isinstance(item, dict) else item) for item in pantry_items]
+    normalized_items = []
+    for item in pantry_items:
+        try:
+            if isinstance(item, dict):
+                normalized_items.append(normalize_pantry_item(item.copy()))
+            elif item is not None:
+                normalized_items.append(normalize_pantry_item(item))
+        except Exception as e:
+            print(f"Warning: Failed to normalize item {item}: {e}")
+            continue
+    
     users[user_id]['pantry'] = normalized_items
     print(f"💾 Saving {len(users)} users to {USERS_FILE}...")
     save_users(users)
@@ -792,15 +840,40 @@ def index():
     # Check if user is logged in
     if 'user_id' in session:
         user_pantry = get_user_pantry(session['user_id'])
+        # Ensure user_pantry is a list
+        if not isinstance(user_pantry, list):
+            user_pantry = []
         # Normalize all items to ensure consistent format
-        normalized_pantry = [normalize_pantry_item(item.copy() if isinstance(item, dict) else item) for item in user_pantry]
+        normalized_pantry = []
+        for item in user_pantry:
+            try:
+                if isinstance(item, dict):
+                    normalized_pantry.append(normalize_pantry_item(item.copy()))
+                elif item is not None:
+                    normalized_pantry.append(normalize_pantry_item(item))
+            except Exception as e:
+                print(f"Warning: Failed to normalize item {item}: {e}")
+                continue
         return render_template("index.html", items=normalized_pantry, username=session.get('username'))
     else:
         # Use session-based pantry for anonymous users (consistent with add_items and delete_item)
         if 'web_pantry' not in session:
             session['web_pantry'] = []
+        # Ensure web_pantry is a list
+        web_pantry = session.get('web_pantry', [])
+        if not isinstance(web_pantry, list):
+            web_pantry = []
         # Normalize anonymous pantry items
-        normalized_web_pantry = [normalize_pantry_item(item.copy() if isinstance(item, dict) else item) for item in session['web_pantry']]
+        normalized_web_pantry = []
+        for item in web_pantry:
+            try:
+                if isinstance(item, dict):
+                    normalized_web_pantry.append(normalize_pantry_item(item.copy()))
+                elif item is not None:
+                    normalized_web_pantry.append(normalize_pantry_item(item))
+            except Exception as e:
+                print(f"Warning: Failed to normalize item {item}: {e}")
+                continue
         return render_template("index.html", items=normalized_web_pantry, username=None)
 
 # Add items
@@ -823,105 +896,106 @@ def add_items():
             return jsonify({'success': False, 'error': 'Item name is required'}), 400
         return redirect(url_for("index"))
     
-    if item:
-        # Sanitize and validate input
-        item = item.strip()
-        if len(item) > 100:  # Prevent extremely long items
-            flash("Item name too long. Please keep it under 100 characters.", "danger")
-            return redirect(url_for("index"))
+    # Sanitize and validate input
+    item = item.strip()
+    if len(item) > 100:  # Prevent extremely long items
+        flash("Item name too long. Please keep it under 100 characters.", "danger")
+        if is_ajax:
+            return jsonify({'success': False, 'error': 'Item name too long'}), 400
+        return redirect(url_for("index"))
+    
+    # Validate and normalize expiration date
+    normalized_expiration = None
+    if expiration_date:
+        normalized_expiration = normalize_expiration_date(expiration_date)
+        if normalized_expiration is None:
+            flash(f"Warning: Invalid expiration date format '{expiration_date}'. Item added without expiration date.", "warning")
+    
+    # Ensure quantity is a string
+    if not quantity or quantity == "":
+        quantity = "1"
+    
+    if 'user_id' in session:
+        # Add to user's pantry
+        user_id = session['user_id']
+        print(f"Adding item '{item}' to pantry for user {user_id}")
+        user_pantry = get_user_pantry(user_id)
+        print(f"Current pantry before add: {user_pantry} (type: {type(user_pantry)})")
         
-        # Validate and normalize expiration date
-        normalized_expiration = None
-        if expiration_date:
-            normalized_expiration = normalize_expiration_date(expiration_date)
-            if normalized_expiration is None:
-                flash(f"Warning: Invalid expiration date format '{expiration_date}'. Item added without expiration date.", "warning")
+        # Ensure pantry is a list
+        if not isinstance(user_pantry, list):
+            print(f"WARNING: Pantry is not a list, resetting to empty list")
+            user_pantry = []
         
-        # Ensure quantity is a string
-        if not quantity or quantity == "":
-            quantity = "1"
-        
-        if 'user_id' in session:
-            # Add to user's pantry
-            user_id = session['user_id']
-            print(f"Adding item '{item}' to pantry for user {user_id}")
-            user_pantry = get_user_pantry(user_id)
-            print(f"Current pantry before add: {user_pantry} (type: {type(user_pantry)})")
-            
-            # Ensure pantry is a list
-            if not isinstance(user_pantry, list):
-                print(f"WARNING: Pantry is not a list, resetting to empty list")
-                user_pantry = []
-            
-            # Convert to list of dicts if needed, check for duplicates
-            pantry_list = []
-            item_exists = False
-            for pantry_item in user_pantry:
-                if isinstance(pantry_item, dict):
-                    pantry_list.append(pantry_item)
-                    if pantry_item.get('name', '').lower() == item.lower():
-                        item_exists = True
-                else:
-                    pantry_list.append({
-                        'id': str(uuid.uuid4()),
-                        'name': pantry_item,
-                        'quantity': '1',
-                        'expirationDate': None,
-                        'addedDate': datetime.now().isoformat()
-                    })
-                    if pantry_item.lower() == item.lower():
-                        item_exists = True
-            
-            if not item_exists:
-                # Add new item with quantity and expiration date
-                new_item = {
-                    'id': str(uuid.uuid4()),
-                    'name': item,
-                    'quantity': quantity,
-                    'expirationDate': normalized_expiration,
-                    'addedDate': datetime.now().isoformat()
-                }
-                pantry_list.append(new_item)
-                update_user_pantry(user_id, pantry_list)
-                if normalized_expiration:
-                    flash(f"{item} (qty: {quantity}, expires: {normalized_expiration}) added to pantry.", "success")
-                else:
-                    flash(f"{item} (qty: {quantity}) added to pantry.", "success")
+        # Convert to list of dicts if needed, check for duplicates
+        pantry_list = []
+        item_exists = False
+        for pantry_item in user_pantry:
+            if isinstance(pantry_item, dict):
+                pantry_list.append(pantry_item)
+                if pantry_item.get('name', '').lower() == item.lower():
+                    item_exists = True
             else:
-                flash(f"{item} is already in your pantry.", "warning")
+                pantry_list.append({
+                    'id': str(uuid.uuid4()),
+                    'name': pantry_item,
+                    'quantity': '1',
+                    'expirationDate': None,
+                    'addedDate': datetime.now().isoformat()
+                })
+                if pantry_item.lower() == item.lower():
+                    item_exists = True
+        
+        if not item_exists:
+            # Add new item with quantity and expiration date
+            new_item = {
+                'id': str(uuid.uuid4()),
+                'name': item,
+                'quantity': quantity,
+                'expirationDate': normalized_expiration,
+                'addedDate': datetime.now().isoformat()
+            }
+            pantry_list.append(new_item)
+            update_user_pantry(user_id, pantry_list)
+            if normalized_expiration:
+                flash(f"{item} (qty: {quantity}, expires: {normalized_expiration}) added to pantry.", "success")
+            else:
+                flash(f"{item} (qty: {quantity}) added to pantry.", "success")
         else:
-            # Add to anonymous web pantry (stored in session for persistence)
-            if 'web_pantry' not in session:
-                session['web_pantry'] = []
-            
-            # Check for duplicates (case-insensitive)
-            item_exists = False
-            for pantry_item in session['web_pantry']:
-                if isinstance(pantry_item, dict):
-                    if pantry_item.get('name', '').lower() == item.lower():
-                        item_exists = True
-                        break
-                else:
-                    if str(pantry_item).lower() == item.lower():
-                        item_exists = True
-                        break
-            
-            if not item_exists:
-                # Add new item as dictionary with quantity and expiration date
-                new_item = {
-                    'id': str(uuid.uuid4()),
-                    'name': item,
-                    'quantity': quantity,
-                    'expirationDate': normalized_expiration,
-                    'addedDate': datetime.now().isoformat()
-                }
-                session['web_pantry'].append(new_item)
-                if normalized_expiration:
-                    flash(f"{item} (qty: {quantity}, expires: {normalized_expiration}) added to pantry.", "success")
-                else:
-                    flash(f"{item} (qty: {quantity}) added to pantry.", "success")
+            flash(f"{item} is already in your pantry.", "warning")
+    else:
+        # Add to anonymous web pantry (stored in session for persistence)
+        if 'web_pantry' not in session:
+            session['web_pantry'] = []
+        
+        # Check for duplicates (case-insensitive)
+        item_exists = False
+        for pantry_item in session['web_pantry']:
+            if isinstance(pantry_item, dict):
+                if pantry_item.get('name', '').lower() == item.lower():
+                    item_exists = True
+                    break
             else:
-                flash(f"{item} is already in your pantry.", "warning")
+                if str(pantry_item).lower() == item.lower():
+                    item_exists = True
+                    break
+        
+        if not item_exists:
+            # Add new item as dictionary with quantity and expiration date
+            new_item = {
+                'id': str(uuid.uuid4()),
+                'name': item,
+                'quantity': quantity,
+                'expirationDate': normalized_expiration,
+                'addedDate': datetime.now().isoformat()
+            }
+            session['web_pantry'].append(new_item)
+            if normalized_expiration:
+                flash(f"{item} (qty: {quantity}, expires: {normalized_expiration}) added to pantry.", "success")
+            else:
+                flash(f"{item} (qty: {quantity}) added to pantry.", "success")
+        else:
+            flash(f"{item} is already in your pantry.", "warning")
     
     # Return JSON response for AJAX requests, otherwise redirect
     if is_ajax:
@@ -942,20 +1016,25 @@ def delete_item(item_name):
         item_found = False
         for pantry_item in user_pantry:
             if isinstance(pantry_item, dict):
-                if pantry_item.get('name', '').lower() != item_name.lower():
+                pantry_name = pantry_item.get('name', '')
+                if pantry_name and pantry_name.lower() != item_name.lower():
                     pantry_list.append(pantry_item)
-                else:
+                elif pantry_name and pantry_name.lower() == item_name.lower():
                     item_found = True
+                else:
+                    # Keep items with empty names (shouldn't happen, but be safe)
+                    pantry_list.append(pantry_item)
             else:
-                if pantry_item.lower() != item_name.lower():
+                pantry_str = str(pantry_item) if pantry_item else ''
+                if pantry_str and pantry_str.lower() != item_name.lower():
                     pantry_list.append({
                         'id': str(uuid.uuid4()),
-                        'name': pantry_item,
+                        'name': pantry_str,
                         'quantity': '1',
                         'expirationDate': None,
                         'addedDate': datetime.now().isoformat()
                     })
-                else:
+                elif pantry_str and pantry_str.lower() == item_name.lower():
                     item_found = True
         
         if item_found:
@@ -970,14 +1049,19 @@ def delete_item(item_name):
         item_found = False
         for pantry_item in session['web_pantry']:
             if isinstance(pantry_item, dict):
-                if pantry_item.get('name', '').lower() != item_name.lower():
+                pantry_name = pantry_item.get('name', '')
+                if pantry_name and pantry_name.lower() != item_name.lower():
                     pantry_list.append(pantry_item)
-                else:
+                elif pantry_name and pantry_name.lower() == item_name.lower():
                     item_found = True
-            else:
-                if pantry_item.lower() != item_name.lower():
-                    pantry_list.append(pantry_item)
                 else:
+                    # Keep items with empty names (shouldn't happen, but be safe)
+                    pantry_list.append(pantry_item)
+            else:
+                pantry_str = str(pantry_item) if pantry_item else ''
+                if pantry_str and pantry_str.lower() != item_name.lower():
+                    pantry_list.append(pantry_item)
+                elif pantry_str and pantry_str.lower() == item_name.lower():
                     item_found = True
         
         if item_found:
@@ -1149,9 +1233,11 @@ Format as JSON:
         except (json.JSONDecodeError, ValueError) as e:
             # If JSON parsing fails, create a fallback recipe
             flash(f"Using fallback recipe generation: {str(e)}", "info")
+            # Ensure pantry is a list of strings for fallback
+            fallback_pantry = pantry_items_list[:5] if pantry_items_list else ["ingredients"]
             recipes = [{
                 "name": "Pantry Surprise",
-                "ingredients": pantry[:5],  # Use first 5 pantry items
+                "ingredients": fallback_pantry,
                 "instructions": [
                     "Combine your pantry items creatively",
                     "Season to taste",
@@ -1166,19 +1252,27 @@ Format as JSON:
         # Validate that recipes use 50%+ pantry ingredients
         validated_recipes = []
         for recipe in recipes:
-            pantry_count = sum(1 for ingredient in recipe['ingredients'] if any(pantry_item.lower() in ingredient.lower() for pantry_item in pantry))
-            total_ingredients = len(recipe['ingredients'])
+            ingredients = recipe.get('ingredients', [])
+            if not ingredients:
+                continue  # Skip recipes without ingredients
+            # pantry_items_list is already a list of strings, use that for comparison
+            pantry_count = sum(1 for ingredient in ingredients if any(pantry_item.lower() in ingredient.lower() for pantry_item in pantry_items_list))
+            total_ingredients = len(ingredients)
             pantry_percentage = (pantry_count / total_ingredients) * 100 if total_ingredients > 0 else 0
             
             if pantry_percentage >= 50:
                 validated_recipes.append(recipe)
             else:
                 # If recipe doesn't meet 50% requirement, try to adjust it
-                flash(f"Recipe '{recipe['name']}' only uses {pantry_percentage:.0f}% pantry ingredients. Adjusting...", "warning")
+                recipe_name = recipe.get('name', 'Unknown Recipe')
+                flash(f"Recipe '{recipe_name}' only uses {pantry_percentage:.0f}% pantry ingredients. Adjusting...", "warning")
                 # Add more pantry ingredients to meet requirement
                 needed_pantry = max(1, (total_ingredients // 2) - pantry_count)
-                additional_pantry = pantry[:needed_pantry]
-                recipe['ingredients'].extend(additional_pantry)
+                if pantry_items_list and len(pantry_items_list) > 0:
+                    additional_pantry = pantry_items_list[:min(needed_pantry, len(pantry_items_list))]
+                    if 'ingredients' not in recipe:
+                        recipe['ingredients'] = []
+                    recipe['ingredients'].extend(additional_pantry)
                 validated_recipes.append(recipe)
         
         recipes = validated_recipes
@@ -1198,12 +1292,29 @@ Format as JSON:
         # Fallback to simple recipe suggestions
         recipes = []
         
-        if pantry and len(pantry) > 0:
+        # Use pantry_items_list if it has items, otherwise use current_pantry
+        # pantry_items_list is always defined (set before try block), but might be empty
+        pantry_for_fallback = pantry_items_list if (pantry_items_list and len(pantry_items_list) > 0) else (current_pantry if current_pantry else [])
+        
+        if pantry_for_fallback and len(pantry_for_fallback) > 0:
+            # Convert pantry to string list if needed
+            pantry_strings = []
+            for p in pantry_for_fallback:
+                if isinstance(p, dict):
+                    name = p.get('name', '')
+                    if name:
+                        pantry_strings.append(name)
+                else:
+                    pantry_str = str(p).strip()
+                    if pantry_str:
+                        pantry_strings.append(pantry_str)
+            pantry_strings = [p for p in pantry_strings if p]  # Remove empty strings
+            
             # Create recipes based on available pantry items
-            if len(pantry) >= 1:
+            if len(pantry_strings) >= 1:
                 recipes.append({
-                    "name": f"Simple {pantry[0].title()} Dish",
-                    "ingredients": pantry[:3] + ["salt", "pepper", "oil"],
+                    "name": f"Simple {pantry_strings[0].title()} Dish",
+                    "ingredients": pantry_strings[:3] + ["salt", "pepper", "oil"],
                     "instructions": [
                         "Prepare your main ingredients",
                         "Season with salt and pepper",
@@ -1216,10 +1327,10 @@ Format as JSON:
                     "health_explanation": "Simple cooking with fresh ingredients."
                 })
             
-            if len(pantry) >= 2:
+            if len(pantry_strings) >= 2:
                 recipes.append({
-                    "name": f"Quick {pantry[1].title()} Recipe",
-                    "ingredients": pantry[1:4] + ["garlic", "herbs"],
+                    "name": f"Quick {pantry_strings[1].title()} Recipe",
+                    "ingredients": pantry_strings[1:4] + ["garlic", "herbs"],
                     "instructions": [
                         "Chop ingredients finely",
                         "Sauté with garlic",
@@ -1232,10 +1343,10 @@ Format as JSON:
                     "health_explanation": "Quick and nutritious meal."
                 })
             
-            if len(pantry) >= 3:
+            if len(pantry_strings) >= 3:
                 recipes.append({
                     "name": "Pantry Fusion",
-                    "ingredients": pantry[:5] + ["spices"],
+                    "ingredients": pantry_strings[:5] + ["spices"],
                     "instructions": [
                         "Mix all ingredients together",
                         "Add your favorite spices",
@@ -1310,8 +1421,23 @@ def generate_new_recipes():
 @app.route("/upload_photo", methods=["POST"])
 def upload_photo():
     photo = request.files.get("photo")
-    if not photo:
+    if not photo or photo.filename == '':
         flash("No photo uploaded.", "danger")
+        return redirect(url_for("index"))
+    
+    # Validate file type
+    allowed_extensions = {'.jpg', '.jpeg', '.png', '.gif', '.webp'}
+    file_ext = os.path.splitext(photo.filename)[1].lower() if photo.filename else ''
+    if file_ext not in allowed_extensions:
+        flash(f"Invalid file type. Allowed types: {', '.join(allowed_extensions)}", "danger")
+        return redirect(url_for("index"))
+    
+    # Validate file size (max 10MB)
+    photo.seek(0, os.SEEK_END)
+    file_size = photo.tell()
+    photo.seek(0)
+    if file_size > 10 * 1024 * 1024:  # 10MB
+        flash("File too large. Maximum size is 10MB.", "danger")
         return redirect(url_for("index"))
     
     # Save photo to uploads folder
@@ -1321,8 +1447,22 @@ def upload_photo():
     else:
         upload_folder = os.path.join(os.path.dirname(__file__), "uploads")
     os.makedirs(upload_folder, exist_ok=True)
-    photo_path = os.path.join(upload_folder, photo.filename)
-    photo.save(photo_path)
+    
+    # Generate safe filename
+    safe_filename = photo.filename or 'upload.jpg'
+    # Remove any path components for security
+    safe_filename = os.path.basename(safe_filename)
+    # Add timestamp to avoid collisions
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    name, ext = os.path.splitext(safe_filename)
+    safe_filename = f"{name}_{timestamp}{ext}"
+    
+    photo_path = os.path.join(upload_folder, safe_filename)
+    try:
+        photo.save(photo_path)
+    except Exception as e:
+        flash(f"Error saving photo: {str(e)}", "danger")
+        return redirect(url_for("index"))
 
     # Send image to OpenAI vision API
     import base64
@@ -1569,9 +1709,13 @@ Format as JSON:
     pantry_items_list = []
     for pantry_item in current_pantry:
         if isinstance(pantry_item, dict):
-            pantry_items_list.append(pantry_item.get('name', ''))
+            name = pantry_item.get('name', '')
+            if name:  # Only add non-empty names
+                pantry_items_list.append(name)
         else:
-            pantry_items_list.append(pantry_item)
+            pantry_str = str(pantry_item) if pantry_item else ''
+            if pantry_str:  # Only add non-empty strings
+                pantry_items_list.append(pantry_str)
 
     return render_template("suggest_recipe.html", recipes=recipes_with_nutrition, pantry_items=pantry_items_list)
 
@@ -1593,26 +1737,34 @@ def recipe_detail(recipe_name):
     recipe = None
     
     # Try exact match first
-    recipe = next((r for r in recipes if r["name"] == decoded_recipe_name), None)
+    recipe = next((r for r in recipes if r.get("name") == decoded_recipe_name), None)
     
     # If not found, try case-insensitive match
     if not recipe:
-        recipe = next((r for r in recipes if r["name"].lower() == decoded_recipe_name.lower()), None)
+        recipe = next((r for r in recipes if r.get("name", "").lower() == decoded_recipe_name.lower()), None)
     
     # If still not found, try partial match
     if not recipe:
-        recipe = next((r for r in recipes if decoded_recipe_name.lower() in r["name"].lower()), None)
+        recipe = next((r for r in recipes if decoded_recipe_name.lower() in r.get("name", "").lower()), None)
     
     if not recipe:
-        available_names = [r["name"] for r in recipes]
-        flash(f"Recipe '{decoded_recipe_name}' not found. Available recipes: {', '.join(available_names)}", "danger")
+        available_names = [r.get("name", "Unnamed Recipe") for r in recipes if r.get("name")]
+        flash(f"Recipe '{decoded_recipe_name}' not found. Available recipes: {', '.join(available_names) if available_names else 'None'}", "danger")
         return redirect(url_for("suggest_recipe"))
 
     # Generate detailed cooking instructions with timers using AI
-    ingredients_text = ", ".join(recipe['ingredients'])
-    instructions_text = " | ".join(recipe['instructions'])
+    ingredients = recipe.get('ingredients', [])
+    instructions = recipe.get('instructions', [])
+    recipe_name = recipe.get('name', 'Unknown Recipe')
     
-    prompt = f"""For this recipe: {recipe['name']}
+    if not ingredients or not instructions:
+        flash("Recipe data is incomplete. Please generate new recipes.", "warning")
+        return redirect(url_for("suggest_recipe"))
+    
+    ingredients_text = ", ".join(ingredients)
+    instructions_text = " | ".join(instructions)
+    
+    prompt = f"""For this recipe: {recipe_name}
 Ingredients: {ingredients_text}
 Basic Instructions: {instructions_text}
 
@@ -1911,6 +2063,10 @@ def api_get_pantry():
         # Use anonymous pantry
         pantry_to_use = mobile_pantry if client_type == 'mobile' else web_pantry
     
+    # Ensure pantry_to_use is a list
+    if not isinstance(pantry_to_use, list):
+        pantry_to_use = []
+    
     # Convert pantry items to new format if needed (backward compatibility)
     items = []
     for item in pantry_to_use:
@@ -2074,6 +2230,9 @@ def api_add_item():
         # Use anonymous pantry
         global mobile_pantry, web_pantry  # Declare globals BEFORE using them
         pantry_to_use = mobile_pantry if client_type == 'mobile' else web_pantry
+        # Ensure pantry_to_use is a list
+        if not isinstance(pantry_to_use, list):
+            pantry_to_use = []
         # Convert to list of dicts if needed
         pantry_list = []
         for item in pantry_to_use:
@@ -2178,6 +2337,9 @@ def api_delete_item(item_id):
     else:
         # Use anonymous pantry
         pantry_to_use = mobile_pantry if client_type == 'mobile' else web_pantry
+        # Ensure pantry_to_use is a list
+        if not isinstance(pantry_to_use, list):
+            pantry_to_use = []
         # Convert to list of dicts if needed
         pantry_list = []
         for item in pantry_to_use:
@@ -2632,6 +2794,10 @@ def api_health():
         pantry_to_use = get_user_pantry(user_id)
     else:
         pantry_to_use = mobile_pantry if client_type == 'mobile' else web_pantry
+    
+    # Ensure pantry_to_use is a list
+    if not isinstance(pantry_to_use, list):
+        pantry_to_use = []
     
     return jsonify({
         'success': True,
