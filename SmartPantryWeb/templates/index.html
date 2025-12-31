@@ -153,11 +153,19 @@
                                                     </div>
                                                 {% endif %}
                                                 {% if item.get('expirationDate') %}
-                                                    <div>
-                                                        <span class="expiration-badge expiration-fresh" data-exp-date="{{ item.get('expirationDate') }}" style="font-size: 0.75rem;">
-                                                            <i class="bi bi-calendar3 me-1"></i>{{ item.get('expirationDate') }}
-                                                        </span>
-                                                    </div>
+                                                    {% set exp_date = item.get('expirationDate') %}
+                                                    {% if exp_date %}
+                                                        <div>
+                                                            <span class="expiration-badge expiration-fresh" data-exp-date="{{ exp_date }}" style="font-size: 0.75rem;">
+                                                                <i class="bi bi-calendar3 me-1"></i>
+                                                                {% if exp_date|length == 10 %}
+                                                                    {{ exp_date }}
+                                                                {% else %}
+                                                                    {{ exp_date[:10] }}
+                                                                {% endif %}
+                                                            </span>
+                                                        </div>
+                                                    {% endif %}
                                                 {% endif %}
                                             {% endif %}
                                         </div>
@@ -588,43 +596,88 @@
                 }
             });
         }
-        
-        // Update expiration badge colors based on dates
+    });
+    
+    // Function to update expiration badge colors - can be called multiple times
+    function updateExpirationBadges() {
         document.querySelectorAll('[data-exp-date]').forEach(function(badge) {
             try {
-                const expDate = badge.getAttribute('data-exp-date');
-                if (expDate && expDate.trim() !== '') {
-                    const today = new Date();
-                    today.setHours(0, 0, 0, 0);
-                    const expiration = new Date(expDate);
-                    
-                    // Check if date is valid
-                    if (isNaN(expiration.getTime())) {
-                        badge.classList.add('expiration-none');
-                        return;
-                    }
-                    
-                    expiration.setHours(0, 0, 0, 0);
-                    const daysDiff = Math.floor((expiration - today) / (1000 * 60 * 60 * 24));
-                    
-                    badge.classList.remove('expiration-expired', 'expiration-soon', 'expiration-fresh', 'expiration-none');
-                    if (daysDiff < 0) {
-                        badge.classList.add('expiration-expired');
-                    } else if (daysDiff < 3) {
-                        badge.classList.add('expiration-soon');
-                    } else if (daysDiff < 7) {
-                        badge.classList.add('expiration-soon');
-                    } else {
-                        badge.classList.add('expiration-fresh');
-                    }
+                const expDateStr = badge.getAttribute('data-exp-date');
+                if (!expDateStr || expDateStr.trim() === '') {
+                    badge.classList.remove('expiration-expired', 'expiration-soon', 'expiration-fresh');
+                    badge.classList.add('expiration-none');
+                    return;
+                }
+                
+                // Parse date string - handle both YYYY-MM-DD and ISO datetime formats
+                let expiration;
+                const dateStr = expDateStr.trim();
+                
+                // Check if it's a simple date format (YYYY-MM-DD)
+                if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+                    // Parse YYYY-MM-DD format (most reliable)
+                    const [year, month, day] = dateStr.split('-').map(Number);
+                    expiration = new Date(year, month - 1, day);
+                } else if (dateStr.includes('T')) {
+                    // ISO datetime format
+                    expiration = new Date(dateStr);
+                } else {
+                    // Try parsing as date string
+                    expiration = new Date(dateStr);
+                }
+                
+                // Check if date is valid
+                if (isNaN(expiration.getTime())) {
+                    console.warn('Invalid expiration date format:', dateStr);
+                    badge.classList.remove('expiration-expired', 'expiration-soon', 'expiration-fresh');
+                    badge.classList.add('expiration-none');
+                    return;
+                }
+                
+                // Calculate days difference
+                const today = new Date();
+                today.setHours(0, 0, 0, 0);
+                expiration.setHours(0, 0, 0, 0);
+                const daysDiff = Math.floor((expiration - today) / (1000 * 60 * 60 * 24));
+                
+                // Remove all expiration classes first
+                badge.classList.remove('expiration-expired', 'expiration-soon', 'expiration-fresh', 'expiration-none');
+                
+                // Apply appropriate class based on days until expiration
+                if (daysDiff < 0) {
+                    // Expired (past date)
+                    badge.classList.add('expiration-expired');
+                } else if (daysDiff < 3) {
+                    // Expiring very soon (0-2 days) - red/orange
+                    badge.classList.add('expiration-soon');
+                } else if (daysDiff < 7) {
+                    // Expiring soon (3-6 days) - orange/yellow
+                    badge.classList.add('expiration-soon');
+                } else {
+                    // Fresh (7+ days) - green
+                    badge.classList.add('expiration-fresh');
                 }
             } catch (e) {
                 // If there's any error parsing the date, use default styling
-                console.warn('Error parsing expiration date:', e);
+                console.error('Error parsing expiration date:', badge.getAttribute('data-exp-date'), e);
+                badge.classList.remove('expiration-expired', 'expiration-soon', 'expiration-fresh');
                 badge.classList.add('expiration-none');
             }
         });
-    });
+    }
+    
+    // Run expiration badge updates on page load
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', function() {
+            updateExpirationBadges();
+            // Also run after a short delay to ensure all elements are rendered
+            setTimeout(updateExpirationBadges, 200);
+        });
+    } else {
+        // DOM already loaded
+        updateExpirationBadges();
+        setTimeout(updateExpirationBadges, 200);
+    }
     
     // Handle add item form submission
     function handleAddItem(event) {

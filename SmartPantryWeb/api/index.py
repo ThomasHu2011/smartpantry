@@ -1,5 +1,7 @@
 # Vercel serverless function entry point
 # This file imports the Flask app - Vercel copies app.py to api/ during build
+# IMPORTANT: Vercel's Python runtime auto-detects Flask apps when exported as 'app'
+# Do NOT export as 'handler' - that triggers HTTP handler detection and causes errors
 
 import sys
 import os
@@ -28,8 +30,7 @@ except ImportError:
 if not app:
     raise ValueError("Flask app is None")
 
-# Export handler for Vercel
-# Vercel expects a WSGI application (Flask app is WSGI-compatible)
-# Export the Flask app instance directly - Vercel will detect it as WSGI
-handler = app
+# Export app directly - Vercel auto-detects Flask WSGI apps when exported as 'app'
+# Do NOT use 'handler = app' - that causes Vercel to treat it as an HTTP handler class
+# and triggers the issubclass() TypeError
 

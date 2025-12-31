@@ -262,19 +262,77 @@ def update_user_password(user_id, new_password):
     
     return True, None
 
+def normalize_expiration_date(date_str):
+    """Normalize expiration date to YYYY-MM-DD format"""
+    if not date_str or not isinstance(date_str, str):
+        return None
+    
+    date_str = date_str.strip()
+    if not date_str:
+        return None
+    
+    try:
+        # If already in YYYY-MM-DD format, return as-is
+        if len(date_str) == 10 and date_str.count('-') == 2:
+            datetime.strptime(date_str, "%Y-%m-%d")
+            return date_str
+        
+        # Try parsing ISO format
+        if 'T' in date_str:
+            parsed = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
+        else:
+            parsed = datetime.fromisoformat(date_str)
+        
+        return parsed.strftime("%Y-%m-%d")
+    except (ValueError, TypeError, AttributeError):
+        return None
+
+def normalize_pantry_item(item):
+    """Normalize a pantry item to ensure consistent format"""
+    if isinstance(item, dict):
+        # Create a copy to avoid modifying the original
+        normalized_item = item.copy()
+        # Normalize expiration date format
+        if 'expirationDate' in normalized_item and normalized_item['expirationDate']:
+            normalized_date = normalize_expiration_date(normalized_item['expirationDate'])
+            normalized_item['expirationDate'] = normalized_date
+        # Ensure all required fields exist
+        if 'id' not in normalized_item:
+            normalized_item['id'] = str(uuid.uuid4())
+        if 'quantity' not in normalized_item:
+            normalized_item['quantity'] = '1'
+        if 'addedDate' not in normalized_item:
+            normalized_item['addedDate'] = datetime.now().isoformat()
+        return normalized_item
+    else:
+        # Convert string to dict format
+        return {
+            'id': str(uuid.uuid4()),
+            'name': str(item),
+            'quantity': '1',
+            'expirationDate': None,
+            'addedDate': datetime.now().isoformat()
+        }
+
 def get_user_pantry(user_id):
     """Get user's pantry items"""
     users = load_users()
     if user_id in users:
-        return users[user_id]['pantry']
+        pantry = users[user_id].get('pantry', [])
+        # Normalize all items to ensure consistent format
+        return [normalize_pantry_item(item.copy() if isinstance(item, dict) else item) for item in pantry]
     return []
 
 def update_user_pantry(user_id, pantry_items):
     """Update user's pantry items"""
     users = load_users()
-    if user_id in users:
-        users[user_id]['pantry'] = pantry_items
-        save_users(users)
+    if user_id not in users:
+        users[user_id] = {'pantry': []}
+    
+    # Normalize all items before saving
+    normalized_items = [normalize_pantry_item(item.copy() if isinstance(item, dict) else item) for item in pantry_items]
+    users[user_id]['pantry'] = normalized_items
+    save_users(users)
 
 def get_expiring_items(pantry_items, days_threshold):
     """Filter pantry items expiring within N days
@@ -298,22 +356,38 @@ def get_expiring_items(pantry_items, days_threshold):
             expiration_date_str = item.get('expirationDate')
             if expiration_date_str:
                 try:
-                    # Parse ISO format date string
-                    if isinstance(expiration_date_str, str):
-                        # Handle both date-only and datetime strings
-                        if 'T' in expiration_date_str:
-                            exp_date = datetime.fromisoformat(expiration_date_str.replace('Z', '+00:00')).date()
-                        else:
-                            exp_date = datetime.fromisoformat(expiration_date_str).date()
+                    # Parse expiration date string
+                    if isinstance(expiration_date_str, str) and expiration_date_str.strip():
+                        exp_date = None
+                        date_str = expiration_date_str.strip()
                         
-                        days_until_exp = (exp_date - today).days
-                        if 0 <= days_until_exp <= days_threshold:
-                            expiring_items.append(item)
+                        # Handle YYYY-MM-DD format (most common from date inputs)
+                        if len(date_str) == 10 and date_str.count('-') == 2:
+                            try:
+                                exp_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+                            except ValueError:
+                                # Try ISO format as fallback
+                                if 'T' in date_str:
+                                    exp_date = datetime.fromisoformat(date_str.replace('Z', '+00:00')).date()
+                                else:
+                                    exp_date = datetime.fromisoformat(date_str).date()
+                        # Handle ISO datetime format
+                        elif 'T' in date_str:
+                            exp_date = datetime.fromisoformat(date_str.replace('Z', '+00:00')).date()
+                        else:
+                            # Try ISO date format
+                            exp_date = datetime.fromisoformat(date_str).date()
+                        
+                        if exp_date:
+                            days_until_exp = (exp_date - today).days
+                            if 0 <= days_until_exp <= days_threshold:
+                                expiring_items.append(item)
                     else:
-                        # If expirationDate is not a string, skip it
+                        # If expirationDate is not a valid string, skip it
                         continue
-                except (ValueError, AttributeError) as e:
-                    # Invalid date format - skip this item
+                except (ValueError, TypeError, AttributeError) as e:
+                    # Invalid date format - skip this item (don't break the loop)
+                    print(f"Warning: Could not parse expiration date '{expiration_date_str}' for item {item.get('name', 'unknown')}: {e}")
                     continue
             # If no expiration date, skip (don't include in expiring items)
         else:
@@ -419,9 +493,14 @@ def index():
     # Check if user is logged in
     if 'user_id' in session:
         user_pantry = get_user_pantry(session['user_id'])
-        return render_template("index.html", items=user_pantry, username=session.get('username'))
+        # Normalize all items to ensure consistent format
+        normalized_pantry = [normalize_pantry_item(item.copy() if isinstance(item, dict) else item) for item in user_pantry]
+        return render_template("index.html", items=normalized_pantry, username=session.get('username'))
     else:
-        return render_template("index.html", items=web_pantry, username=None)
+        # Normalize anonymous pantry items
+        global web_pantry
+        normalized_web_pantry = [normalize_pantry_item(item.copy() if isinstance(item, dict) else item) for item in web_pantry]
+        return render_template("index.html", items=normalized_web_pantry, username=None)
 
 # Add items
 @app.route("/add", methods=["POST"])
@@ -452,19 +531,35 @@ def add_items():
     if expiration_date and expiration_date.strip():
         try:
             expiration_date = expiration_date.strip()
+            parsed_date = None
+            
             # Date input fields return YYYY-MM-DD format
             if len(expiration_date) == 10 and expiration_date.count('-') == 2:
-                # Validate it's a valid date
-                datetime.strptime(expiration_date, "%Y-%m-%d")
-                expiration_date_formatted = expiration_date
+                # Validate and use YYYY-MM-DD format directly
+                try:
+                    parsed_date = datetime.strptime(expiration_date, "%Y-%m-%d")
+                    expiration_date_formatted = expiration_date  # Already in correct format
+                except ValueError:
+                    # Try ISO format as fallback
+                    if 'T' in expiration_date:
+                        parsed_date = datetime.fromisoformat(expiration_date.replace('Z', '+00:00'))
+                    else:
+                        parsed_date = datetime.fromisoformat(expiration_date)
+            elif 'T' in expiration_date:
+                # ISO datetime format
+                parsed_date = datetime.fromisoformat(expiration_date.replace('Z', '+00:00'))
             else:
-                # Try to parse other formats as fallback
+                # Try parsing as date string
                 parsed_date = datetime.strptime(expiration_date, "%Y-%m-%d")
+            
+            # Ensure we always store in YYYY-MM-DD format
+            if parsed_date:
                 expiration_date_formatted = parsed_date.strftime("%Y-%m-%d")
         except (ValueError, TypeError, AttributeError) as e:
             # Invalid date format - ignore expiration date
             expiration_date_formatted = None
-            flash(f"Invalid expiration date format: {expiration_date}. Date ignored.", "warning")
+            print(f"Warning: Invalid expiration date format '{expiration_date}': {e}")
+            flash(f"Invalid expiration date format. Date ignored.", "warning")
     
     # Create pantry item dictionary (matching API format)
     pantry_item = {
@@ -478,19 +573,11 @@ def add_items():
     if 'user_id' in session:
         # Add to user's pantry
         user_pantry = get_user_pantry(session['user_id'])
-        # Convert to list of dicts if needed (backward compatibility)
+        # Normalize and convert to list of dicts if needed (backward compatibility)
         pantry_list = []
         for item in user_pantry:
-            if isinstance(item, dict):
-                pantry_list.append(item)
-            else:
-                pantry_list.append({
-                    'id': str(uuid.uuid4()),
-                    'name': item,
-                    'quantity': '1',
-                    'expirationDate': None,
-                    'addedDate': datetime.now().isoformat()
-                })
+            normalized_item = normalize_pantry_item(item.copy() if isinstance(item, dict) else item)
+            pantry_list.append(normalized_item)
         
         # Check for duplicates (case-insensitive name match)
         if any(i.get('name', '').lower() == item_name.lower() for i in pantry_list):
@@ -505,19 +592,11 @@ def add_items():
     else:
         # Add to anonymous web pantry
         global web_pantry
-        # Convert to list of dicts if needed (backward compatibility)
+        # Normalize and convert to list of dicts if needed (backward compatibility)
         pantry_list = []
         for item in web_pantry:
-            if isinstance(item, dict):
-                pantry_list.append(item)
-            else:
-                pantry_list.append({
-                    'id': str(uuid.uuid4()),
-                    'name': item,
-                    'quantity': '1',
-                    'expirationDate': None,
-                    'addedDate': datetime.now().isoformat()
-                })
+            normalized_item = normalize_pantry_item(item.copy() if isinstance(item, dict) else item)
+            pantry_list.append(normalized_item)
         
         # Check for duplicates
         if any(i.get('name', '').lower() == item_name.lower() for i in pantry_list):
