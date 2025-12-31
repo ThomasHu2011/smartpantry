@@ -2497,9 +2497,6 @@ def api_delete_item(item_id):
                 if pantry_str == item_id_clean:
                     item_to_delete = pantry_list.pop(i)
                     break
-            elif not isinstance(pantry_item, dict) and pantry_item.lower() == item_id.lower():
-                item_to_delete = pantry_list.pop(i)
-                break
         
         if item_to_delete:
             if client_type == 'mobile':
