@@ -569,15 +569,67 @@ def authenticate_user(username, password, client_type='web'):
         print(f"   Available emails: {[u.get('email', 'N/A') for u in user_list]}")
         return None, f"Username or email '{username}' not found. Please check your username/email or sign up for a new account."
 
+def normalize_expiration_date(date_str):
+    """Normalize expiration date to YYYY-MM-DD format"""
+    if not date_str or not isinstance(date_str, str):
+        return None
+    
+    date_str = date_str.strip()
+    if not date_str:
+        return None
+    
+    try:
+        # If already in YYYY-MM-DD format, return as-is
+        if len(date_str) == 10 and date_str.count('-') == 2:
+            datetime.strptime(date_str, "%Y-%m-%d")
+            return date_str
+        
+        # Try parsing ISO format
+        if 'T' in date_str:
+            parsed = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
+        else:
+            parsed = datetime.fromisoformat(date_str)
+        
+        return parsed.strftime("%Y-%m-%d")
+    except (ValueError, TypeError, AttributeError):
+        return None
+
+def normalize_pantry_item(item):
+    """Normalize a pantry item to ensure consistent format"""
+    if isinstance(item, dict):
+        # Create a copy to avoid modifying the original
+        normalized_item = item.copy()
+        # Normalize expiration date format
+        if 'expirationDate' in normalized_item and normalized_item['expirationDate']:
+            normalized_date = normalize_expiration_date(normalized_item['expirationDate'])
+            normalized_item['expirationDate'] = normalized_date
+        # Ensure all required fields exist
+        if 'id' not in normalized_item:
+            normalized_item['id'] = str(uuid.uuid4())
+        if 'quantity' not in normalized_item:
+            normalized_item['quantity'] = '1'
+        if 'addedDate' not in normalized_item:
+            normalized_item['addedDate'] = datetime.now().isoformat()
+        return normalized_item
+    else:
+        # Convert string to dict format
+        return {
+            'id': str(uuid.uuid4()),
+            'name': str(item),
+            'quantity': '1',
+            'expirationDate': None,
+            'addedDate': datetime.now().isoformat()
+        }
+
 def get_user_pantry(user_id):
     """Get user's pantry items"""
     users = load_users()
     if user_id in users:
         pantry = users[user_id].get('pantry', [])
-        # Return a copy of the list to avoid reference issues
-        pantry_copy = list(pantry) if pantry else []
-        print(f"Retrieved pantry for user {user_id}: {len(pantry_copy)} items")
-        return pantry_copy
+        # Normalize all items to ensure consistent format
+        normalized_pantry = [normalize_pantry_item(item.copy() if isinstance(item, dict) else item) for item in pantry]
+        print(f"Retrieved pantry for user {user_id}: {len(normalized_pantry)} items")
+        return normalized_pantry
     print(f"Warning: User {user_id} not found in users database")
     return []
 
@@ -592,30 +644,32 @@ def update_user_pantry(user_id, pantry_items):
     users = load_users()
     print(f"Total users in database: {len(users)}")
     
-    if user_id in users:
-        print(f"✅ User {user_id} found in database")
-        print(f"   Username: {users[user_id].get('username', 'unknown')}")
-        users[user_id]['pantry'] = pantry_items
-        print(f"💾 Saving {len(users)} users to {USERS_FILE}...")
-        save_users(users)
-        print(f"✅ Updated pantry for user {user_id}: {len(pantry_items)} items saved to {USERS_FILE}")
-        
-        # Verify the update
-        print(f"🔍 Verifying save...")
-        verify_users = load_users()
-        if user_id in verify_users:
-            verify_pantry = verify_users[user_id].get('pantry', [])
-            if len(verify_pantry) == len(pantry_items):
-                print(f"✅ Verified: Pantry update saved correctly ({len(verify_pantry)} items)")
-            else:
-                print(f"⚠️ Warning: Saved {len(pantry_items)} items but file contains {len(verify_pantry)} items")
-                print(f"   Expected items: {[item.get('name', 'unknown') if isinstance(item, dict) else str(item) for item in pantry_items[:5]]}")
-                print(f"   Saved items: {[item.get('name', 'unknown') if isinstance(item, dict) else str(item) for item in verify_pantry[:5]]}")
+    if user_id not in users:
+        users[user_id] = {'pantry': []}
+    
+    print(f"✅ User {user_id} found in database")
+    print(f"   Username: {users[user_id].get('username', 'unknown')}")
+    
+    # Normalize all items before saving
+    normalized_items = [normalize_pantry_item(item.copy() if isinstance(item, dict) else item) for item in pantry_items]
+    users[user_id]['pantry'] = normalized_items
+    print(f"💾 Saving {len(users)} users to {USERS_FILE}...")
+    save_users(users)
+    print(f"✅ Updated pantry for user {user_id}: {len(normalized_items)} items saved to {USERS_FILE}")
+    
+    # Verify the update
+    print(f"🔍 Verifying save...")
+    verify_users = load_users()
+    if user_id in verify_users:
+        verify_pantry = verify_users[user_id].get('pantry', [])
+        if len(verify_pantry) == len(normalized_items):
+            print(f"✅ Verified: Pantry update saved correctly ({len(verify_pantry)} items)")
         else:
-            print(f"❌ Error: User {user_id} not found after save!")
+            print(f"⚠️ Warning: Saved {len(normalized_items)} items but file contains {len(verify_pantry)} items")
+            print(f"   Expected items: {[item.get('name', 'unknown') if isinstance(item, dict) else str(item) for item in normalized_items[:5]]}")
+            print(f"   Saved items: {[item.get('name', 'unknown') if isinstance(item, dict) else str(item) for item in verify_pantry[:5]]}")
     else:
-        print(f"❌ Error: Cannot update pantry - user {user_id} not found in users database")
-        print(f"   Available user IDs: {list(users.keys())[:5]}...")
+        print(f"❌ Error: User {user_id} not found after save!")
     print(f"{'='*60}\n")
 
  
@@ -689,29 +743,15 @@ def logout():
 def index():
     # Check if user is logged in
     if 'user_id' in session:
-        user_id = session['user_id']
-        user_pantry = get_user_pantry(user_id)
-        # Convert to string list for web template (backward compatibility)
-        items_list = []
-        for item in user_pantry:
-            if isinstance(item, dict):
-                items_list.append(item.get('name', ''))
-            else:
-                items_list.append(item)
-        print(f"Loading index page for user {user_id}, pantry has {len(items_list)} items: {items_list}")
-        return render_template("index.html", items=items_list, username=session.get('username'))
+        user_pantry = get_user_pantry(session['user_id'])
+        # Normalize all items to ensure consistent format
+        normalized_pantry = [normalize_pantry_item(item.copy() if isinstance(item, dict) else item) for item in user_pantry]
+        return render_template("index.html", items=normalized_pantry, username=session.get('username'))
     else:
-        # For anonymous users, use session to persist pantry across server restarts
-        if 'web_pantry' not in session:
-            session['web_pantry'] = []
-        # Convert to string list for web template
-        items_list = []
-        for item in session.get('web_pantry', []):
-            if isinstance(item, dict):
-                items_list.append(item.get('name', ''))
-            else:
-                items_list.append(item)
-        return render_template("index.html", items=items_list, username=None)
+        # Normalize anonymous pantry items
+        global web_pantry
+        normalized_web_pantry = [normalize_pantry_item(item.copy() if isinstance(item, dict) else item) for item in web_pantry]
+        return render_template("index.html", items=normalized_web_pantry, username=None)
 
 # Add items
 @app.route("/add", methods=["POST"])
@@ -2399,9 +2439,8 @@ def api_health():
         'ai_available': bool(client and api_key)
     })
 
-# Export handler for Vercel serverless functions
-# This is required for Vercel to properly invoke the Flask app
-handler = app
+# Note: handler is exported in api/index.py for Vercel serverless functions
+# Do not export handler here to avoid conflicts with Vercel's handler detection
 
 if __name__ == "__main__":
     # On startup, check for old users and migrate them
