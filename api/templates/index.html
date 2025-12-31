@@ -190,7 +190,7 @@
                     </div>
                 </div>
                 <div class="card-body p-4">
-                    {% if items and items|length > 0 %}
+                    {% if items is defined and items is not none and items|length > 0 %}
                     <div class="row g-3" id="pantryItemsContainer">
                         {% for item in items %}
                         {% set item_name = item.get('name', item) if item|is_dict else item %}
@@ -645,27 +645,36 @@
     // Reset modal when closed
     if (photoModal) {
         photoModal.addEventListener('hidden.bs.modal', () => {
-        stopCamera();
-        selectedFile = null;
-        if (photoInput) photoInput.value = '';
-        if (mobileCameraInput) mobileCameraInput.value = '';
-        if (cameraView) cameraView.style.display = 'none';
-        if (previewSection) previewSection.style.display = 'none';
-        if (uploadZone) uploadZone.style.display = 'block';
-        if (uploadBtn) uploadBtn.disabled = false;
-        if (uploadBtnText) uploadBtnText.textContent = 'Analyze & Add Items';
-        
-        // Ensure backdrop is removed and body is restored
-        setTimeout(() => {
-            const backdrop = document.querySelector('.modal-backdrop');
-            if (backdrop) {
-                backdrop.remove();
+            stopCamera();
+            selectedFile = null;
+            if (photoInput) photoInput.value = '';
+            if (mobileCameraInput) mobileCameraInput.value = '';
+            if (cameraView) cameraView.style.display = 'none';
+            if (previewSection) previewSection.style.display = 'none';
+            if (uploadZone) uploadZone.style.display = 'block';
+            if (uploadBtn) {
+                uploadBtn.disabled = false;
             }
-            // Remove modal-open class from body and restore scrolling
-            document.body.classList.remove('modal-open');
-            document.body.style.overflow = '';
-            document.body.style.paddingRight = '';
-        }, 100);
+            if (uploadBtnText) {
+                uploadBtnText.textContent = 'Analyze & Add Items';
+            }
+            
+            // Ensure backdrop is removed and body is restored
+            setTimeout(() => {
+                const backdrops = document.querySelectorAll('.modal-backdrop');
+                backdrops.forEach(backdrop => backdrop.remove());
+                
+                // Remove modal-open class from body and restore scrolling
+                document.body.classList.remove('modal-open');
+                document.body.style.overflow = '';
+                document.body.style.paddingRight = '';
+                
+                // Force remove any remaining backdrop
+                const remainingBackdrop = document.querySelector('.modal-backdrop');
+                if (remainingBackdrop) {
+                    remainingBackdrop.remove();
+                }
+            }, 150);
         });
         
         // Ensure modal is properly initialized when shown
@@ -675,6 +684,12 @@
             if (modalContent) {
                 modalContent.style.pointerEvents = 'auto';
             }
+        });
+        
+        // Also handle when modal starts hiding
+        photoModal.addEventListener('hide.bs.modal', () => {
+            // Start cleanup early
+            stopCamera();
         });
     }
 
@@ -795,9 +810,17 @@
     // Sort pantry items
     function sortPantry(sortType) {
         const container = document.getElementById('pantryItemsContainer');
-        if (!container) return;
+        if (!container) {
+            console.warn('Pantry container not found');
+            return;
+        }
         
         const items = Array.from(container.querySelectorAll('.pantry-item-wrapper'));
+        
+        if (items.length === 0) {
+            console.warn('No items to sort');
+            return;
+        }
         
         items.sort((a, b) => {
             if (sortType === 'name') {

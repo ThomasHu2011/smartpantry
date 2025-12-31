@@ -858,8 +858,11 @@ def index():
                     normalized_item = normalize_pantry_item(item)
                 
                 # Only add items with valid names
-                if normalized_item and normalized_item.get('name') and normalized_item.get('name').strip():
-                    normalized_pantry.append(normalized_item)
+                if normalized_item and normalized_item.get('name'):
+                    name_str = str(normalized_item.get('name', '')).strip()
+                    if name_str:
+                        normalized_item['name'] = name_str
+                        normalized_pantry.append(normalized_item)
             except Exception as e:
                 print(f"Warning: Failed to normalize item {item}: {e}")
                 import traceback
@@ -867,7 +870,9 @@ def index():
                 continue
         print(f"DEBUG: Rendering index with {len(normalized_pantry)} items for user {session.get('username')}")
         print(f"DEBUG: Items: {[item.get('name', 'NO_NAME') for item in normalized_pantry[:3]]}")
-        return render_template("index.html", items=normalized_pantry, username=session.get('username'))
+        # Ensure items is always a list, never None
+        items_to_render = normalized_pantry if normalized_pantry else []
+        return render_template("index.html", items=items_to_render, username=session.get('username'))
     else:
         # Use session-based pantry for anonymous users (consistent with add_items and delete_item)
         if 'web_pantry' not in session:
@@ -887,8 +892,11 @@ def index():
                     normalized_item = normalize_pantry_item(item)
                 
                 # Only add items with valid names
-                if normalized_item and normalized_item.get('name') and normalized_item.get('name').strip():
-                    normalized_web_pantry.append(normalized_item)
+                if normalized_item and normalized_item.get('name'):
+                    name_str = str(normalized_item.get('name', '')).strip()
+                    if name_str:
+                        normalized_item['name'] = name_str
+                        normalized_web_pantry.append(normalized_item)
             except Exception as e:
                 print(f"Warning: Failed to normalize item {item}: {e}")
                 import traceback
@@ -896,7 +904,9 @@ def index():
                 continue
         print(f"DEBUG: Rendering index with {len(normalized_web_pantry)} items for anonymous user")
         print(f"DEBUG: Items: {[item.get('name', 'NO_NAME') for item in normalized_web_pantry[:3]]}")
-        return render_template("index.html", items=normalized_web_pantry, username=None)
+        # Ensure items is always a list, never None
+        items_to_render = normalized_web_pantry if normalized_web_pantry else []
+        return render_template("index.html", items=items_to_render, username=None)
 
 # Add items
 @app.route("/add", methods=["POST"])
@@ -1124,7 +1134,39 @@ def get_expiring_items(pantry_items, expiring_days=None):
 # Suggest recipes based on pantry
 @app.route("/suggest")
 def suggest_recipe():
-    # Get expiring_days parameter from query string
+    # CRITICAL: Check for existing recipes FIRST before any processing
+    # This prevents regeneration when user navigates back from recipe detail page
+    existing_recipes = session.get('current_recipes', [])
+    if existing_recipes and isinstance(existing_recipes, list) and len(existing_recipes) > 0:
+        # Use existing recipes - get pantry items for display only
+        print(f"DEBUG: Using existing {len(existing_recipes)} recipes from session")
+        
+        # Refresh session to prevent expiration
+        session['current_recipes'] = existing_recipes
+        
+        # Get pantry items for display (but don't regenerate recipes)
+        if 'user_id' in session:
+            current_pantry = get_user_pantry(session['user_id'])
+        else:
+            if 'web_pantry' not in session:
+                session['web_pantry'] = []
+            current_pantry = session['web_pantry']
+        
+        # Convert pantry to string list for template compatibility
+        pantry_items_list = []
+        for pantry_item in current_pantry:
+            if isinstance(pantry_item, dict):
+                name = pantry_item.get('name', '')
+                if name:
+                    pantry_items_list.append(name)
+            else:
+                if pantry_item:
+                    pantry_items_list.append(str(pantry_item))
+        
+        flash("Showing your current recipes. Click 'Generate New Recipes' for fresh ideas!", "info")
+        return render_template("suggest_recipe.html", recipes=existing_recipes, pantry_items=pantry_items_list)
+    
+    # Get expiring_days parameter from query string (only if generating new recipes)
     expiring_days = request.args.get('expiring_days', type=int)
     
     # Get appropriate pantry based on login status
@@ -1162,13 +1204,6 @@ def suggest_recipe():
     if not pantry_items_list or len(pantry_items_list) == 0:
         flash("Your pantry is empty. Add items first.", "warning")
         return redirect(url_for("index"))
-
-    # Check if we already have recipes in session
-    existing_recipes = session.get('current_recipes', [])
-    if existing_recipes:
-        # Use existing recipes instead of generating new ones
-        flash("Showing your current recipes. Click 'Generate New Recipes' for fresh ideas!", "info")
-        return render_template("suggest_recipe.html", recipes=existing_recipes, pantry_items=pantry_items_list)
 
     # Generate AI-powered recipes based on pantry items (only if no existing recipes)
     pantry_items = ", ".join(pantry_items_list)
@@ -1748,12 +1783,17 @@ def recipe_detail(recipe_name):
     import urllib.parse
     decoded_recipe_name = urllib.parse.unquote(recipe_name)
     
-    # Get recipes from session
+    # Get recipes from session - preserve them
     recipes = session.get('current_recipes', [])
     
     if not recipes:
         flash("No recipes found in session. Please generate recipes first.", "warning")
         return redirect(url_for("suggest_recipe"))
+    
+    # Ensure recipes are preserved in session (don't modify them)
+    # This prevents regeneration when user goes back
+    if 'current_recipes' not in session or not session.get('current_recipes'):
+        session['current_recipes'] = recipes
     
     # Find the specific recipe with flexible matching
     recipe = None
@@ -1921,6 +1961,14 @@ Provide nutrition facts per serving in JSON format:
             "sodium": "400 mg"
         }
 
+    # CRITICAL: Preserve recipes in session so they don't regenerate when user goes back
+    # Only update session if it's missing or empty, don't overwrite existing recipes
+    if 'current_recipes' not in session or not session.get('current_recipes') or len(session.get('current_recipes', [])) == 0:
+        session['current_recipes'] = recipes
+    else:
+        # Ensure recipes are still in session (refresh to prevent expiration)
+        session['current_recipes'] = session.get('current_recipes', recipes)
+    
     return render_template("recipe_detail.html", recipe=recipe, detailed_recipe=detailed_recipe, nutrition=nutrition_info)
 
 # =============================================================================

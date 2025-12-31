@@ -72,6 +72,31 @@
             font-size: 1.5rem;
         }
         
+        /* Fix dropdown menu styling */
+        .dropdown-menu {
+            z-index: 1051 !important;
+            background: white !important;
+            border: 1px solid rgba(0,0,0,0.1) !important;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15) !important;
+        }
+        
+        .dropdown-item {
+            color: #1e293b !important;
+            background: transparent !important;
+            padding: 10px 16px !important;
+        }
+        
+        .dropdown-item:hover,
+        .dropdown-item:focus {
+            background: rgba(139, 92, 246, 0.1) !important;
+            color: #8B5CF6 !important;
+        }
+        
+        .dropdown-item:active {
+            background: rgba(139, 92, 246, 0.2) !important;
+            color: #8B5CF6 !important;
+        }
+        
         .card {
             box-shadow: 0 4px 20px rgba(0, 0, 0, 0.06);
             border: none;
@@ -600,12 +625,12 @@
                             <a class="nav-link dropdown-toggle" href="#" id="navbarDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
                                 <i class="bi bi-person-circle-fill me-1"></i>{{ username }}
                             </a>
-                            <ul class="dropdown-menu dropdown-menu-end" style="z-index: 1051; position: absolute;">
-                                <li><a class="dropdown-item" href="{{ url_for('profile') }}">
+                            <ul class="dropdown-menu dropdown-menu-end" style="z-index: 1051 !important; position: absolute !important; background: white !important; box-shadow: 0 4px 12px rgba(0,0,0,0.15) !important;">
+                                <li><a class="dropdown-item" href="{{ url_for('profile') }}" style="color: #1e293b !important; background: transparent !important;">
                                     <i class="bi bi-person-fill me-2"></i>Profile
                                 </a></li>
                                 <li><hr class="dropdown-divider"></li>
-                                <li><a class="dropdown-item" href="{{ url_for('logout') }}">
+                                <li><a class="dropdown-item" href="{{ url_for('logout') }}" style="color: #1e293b !important; background: transparent !important;">
                                     <i class="bi bi-box-arrow-right me-2"></i>Logout
                                 </a></li>
                             </ul>
