@@ -20,10 +20,6 @@
       "maxDuration": 30,
       "runtime": "python3.11"
     }
-  },
-  "includeFiles": [
-    "api/templates/**",
-    "api/static/**"
-  ]
+  }
 }
 
