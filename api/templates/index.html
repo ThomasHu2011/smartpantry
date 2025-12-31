@@ -13,17 +13,28 @@
         animation: fadeInUp 0.5s ease-out forwards;
         opacity: 0;
         position: relative;
-        z-index: 3;
+        z-index: 10;
     }
     
     .pantry-item-wrapper {
         position: relative;
-        z-index: 3;
+        z-index: 10;
     }
     
     #pantryItemsContainer {
         position: relative;
-        z-index: 2;
+        z-index: 10;
+    }
+    
+    /* Ensure pantry items appear above card header */
+    .card-body {
+        position: relative;
+        z-index: 5;
+    }
+    
+    .card-header {
+        position: relative;
+        z-index: 1;
     }
     
     @keyframes fadeInUp {
@@ -188,7 +199,7 @@
 
             <!-- Pantry Overview - Cleaner Design -->
             <div class="card shadow-sm border-0" style="border-radius: 20px; overflow: visible; position: relative; z-index: 1;">
-                <div class="card-header border-0" style="background: linear-gradient(135deg, rgba(139, 92, 246, 0.1) 0%, rgba(59, 130, 246, 0.08) 100%); padding: 20px 24px; position: relative; z-index: 1;">
+                <div class="card-header border-0" style="background: linear-gradient(135deg, rgba(139, 92, 246, 0.1) 0%, rgba(59, 130, 246, 0.08) 100%); padding: 20px 24px; position: relative; z-index: 1; overflow: visible;">
                     <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
                         <h5 class="mb-0 fw-bold" style="color: #1e293b; font-size: 1.25rem;">
                             <i class="bi bi-basket-fill me-2" style="color: #8B5CF6;"></i>Your Pantry
@@ -216,16 +227,16 @@
                         </div>
                     </div>
                 </div>
-                <div class="card-body p-4" style="position: relative; z-index: 2;">
+                <div class="card-body p-4" style="position: relative; z-index: 5; overflow: visible;">
                     {% if items is defined and items is not none and items|length > 0 %}
-                    <div class="row g-3" id="pantryItemsContainer" style="position: relative; z-index: 2;">
+                    <div class="row g-3" id="pantryItemsContainer" style="position: relative; z-index: 10;">
                         {% for item in items %}
                         {% set item_name = item.get('name', item) if item|is_dict else item %}
                         {% set exp_date = item.get('expirationDate', '') if item|is_dict else '' %}
                         <div class="col-md-6 col-lg-4 pantry-item-wrapper" 
                              data-item-name="{{ item_name|lower }}"
                              data-expiration-date="{{ exp_date[:10] if exp_date and exp_date|length >= 10 else '9999-12-31' }}"
-                             style="position: relative; z-index: 3;">
+                             style="position: relative; z-index: 10;">
                             <div class="pantry-item-card card border-0 bg-white h-100 animate-fade-in" 
                                  style="border-radius: 18px; transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1); border: 1px solid #e2e8f0; cursor: pointer;"
                                  data-animation-delay="{{ loop.index0 * 0.05 }}"
@@ -270,15 +281,15 @@
                                             {% endif %}
                                         </div>
                                         {% set item_name = item.get('name', item) if item|is_dict else item %}
-                                        <a href="{{ url_for('delete_item', item_name=item_name|urlencode) }}" 
-                                           class="btn btn-sm btn-outline-danger" 
+                                        <button type="button"
+                                           class="btn btn-sm btn-outline-danger delete-item-btn" 
                                            style="border-radius: 50%; width: 36px; height: 36px; padding: 0; display: flex; align-items: center; justify-content: center; transition: all 0.2s ease; flex-shrink: 0;"
                                            title="Remove item"
+                                           data-item-name="{{ item_name|urlencode }}"
                                            onmouseover="this.style.background='#ef4444'; this.style.color='white'; this.style.transform='scale(1.1)';"
-                                           onmouseout="this.style.background='transparent'; this.style.color='#ef4444'; this.style.transform='scale(1)';"
-                                           onclick="return confirm('Remove {{ item_name }} from pantry?')">
+                                           onmouseout="this.style.background='transparent'; this.style.color='#ef4444'; this.style.transform='scale(1)';">
                                             <i class="bi bi-x-lg"></i>
-                                        </a>
+                                        </button>
                                     </div>
                                 </div>
                             </div>
@@ -655,7 +666,8 @@
             });
 
             if (response.ok) {
-                window.location.reload();
+                // Update pantry items without reloading page
+                await reloadPantryItems();
             } else {
                 const data = await response.text();
                 alert('Upload failed: ' + data);
@@ -1007,8 +1019,8 @@
                             if (quantityInput) quantityInput.value = '1';
                             if (expirationDateInput) expirationDateInput.value = '';
                         }
-                        // Reload page immediately to show new item (no delay to prevent flicker)
-                        window.location.reload();
+                        // Update pantry items without reloading page
+                        await reloadPantryItems();
                     } else {
                         // Error from server
                         if (feedback) {
@@ -1020,8 +1032,8 @@
             } else {
                 // HTML response (redirect) - Flask redirects return 302, then 200
                 if (response.ok || response.status === 200 || response.status === 302) {
-                    // Success - reload page to show new item
-                    window.location.reload();
+                    // Update pantry items without reloading page
+                    await reloadPantryItems();
                 } else {
                     // Error response
                     return response.text().then(text => {
@@ -1072,6 +1084,154 @@
             }
         }, 5000);
     }
+    
+    // Reload pantry items without refreshing the page
+    async function reloadPantryItems() {
+        try {
+            const response = await fetch(window.location.pathname, {
+                method: 'GET',
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest'
+                }
+            });
+            
+            if (response.ok) {
+                const html = await response.text();
+                const parser = new DOMParser();
+                const doc = parser.parseFromString(html, 'text/html');
+                
+                // Extract pantry items container and related elements
+                const newContainer = doc.querySelector('#pantryItemsContainer');
+                const newCardBody = doc.querySelector('.card-body');
+                const newBadge = doc.querySelector('.badge');
+                const newEmptyState = doc.querySelector('.empty-state');
+                const newSortDropdown = doc.querySelector('#sortDropdown')?.parentElement;
+                
+                const currentCardBody = document.querySelector('.card-body');
+                
+                if (newContainer && document.getElementById('pantryItemsContainer')) {
+                    // Update items container
+                    document.getElementById('pantryItemsContainer').innerHTML = newContainer.innerHTML;
+                    
+                    // Update item count badge
+                    if (newBadge) {
+                        const currentBadge = document.querySelector('.badge');
+                        if (currentBadge) {
+                            currentBadge.outerHTML = newBadge.outerHTML;
+                        } else {
+                            // Insert badge if it doesn't exist
+                            const headerDiv = document.querySelector('.card-header .d-flex');
+                            if (headerDiv && newBadge) {
+                                headerDiv.insertBefore(newBadge.cloneNode(true), headerDiv.querySelector('.dropdown'));
+                            }
+                        }
+                    }
+                    
+                    // Update sort dropdown visibility
+                    if (newSortDropdown) {
+                        const currentSortDropdown = document.querySelector('.dropdown');
+                        if (currentSortDropdown && newContainer.children.length > 1) {
+                            // Keep dropdown visible
+                        } else if (currentSortDropdown && newContainer.children.length <= 1) {
+                            currentSortDropdown.style.display = 'none';
+                        }
+                    }
+                    
+                    // Re-initialize delete buttons
+                    initializeDeleteButtons();
+                    
+                    // Re-initialize animations
+                    initializeItemAnimations();
+                } else if (newEmptyState && currentCardBody) {
+                    // If no items, update the entire card body
+                    currentCardBody.innerHTML = newCardBody.innerHTML;
+                    
+                    // Hide sort dropdown if it exists
+                    const sortDropdown = document.querySelector('.dropdown');
+                    if (sortDropdown) {
+                        sortDropdown.style.display = 'none';
+                    }
+                    
+                    // Hide badge if it exists
+                    const badge = document.querySelector('.badge');
+                    if (badge) {
+                        badge.style.display = 'none';
+                    }
+                }
+            }
+        } catch (error) {
+            console.error('Error reloading pantry items:', error);
+            // Fallback to page reload if AJAX fails
+            window.location.reload();
+        }
+    }
+    
+    // Handle delete item via AJAX
+    async function handleDeleteItem(itemName) {
+        if (!confirm(`Remove ${decodeURIComponent(itemName)} from pantry?`)) {
+            return;
+        }
+        
+        try {
+            const response = await fetch(`/delete/${itemName}`, {
+                method: 'GET',
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest'
+                }
+            });
+            
+            if (response.ok) {
+                // Reload pantry items without refreshing page
+                await reloadPantryItems();
+                
+                // Show success feedback
+                const feedback = document.getElementById('addItemFeedback');
+                if (feedback) {
+                    showFeedback('Item removed successfully!', 'success');
+                }
+            } else {
+                throw new Error('Failed to delete item');
+            }
+        } catch (error) {
+            console.error('Error deleting item:', error);
+            alert('Failed to delete item. Please try again.');
+        }
+    }
+    
+    // Initialize delete buttons
+    function initializeDeleteButtons() {
+        const deleteButtons = document.querySelectorAll('.delete-item-btn');
+        deleteButtons.forEach(btn => {
+            // Remove existing listeners
+            const newBtn = btn.cloneNode(true);
+            btn.parentNode.replaceChild(newBtn, btn);
+            
+            // Add new listener
+            newBtn.addEventListener('click', function() {
+                const itemName = this.getAttribute('data-item-name');
+                handleDeleteItem(itemName);
+            });
+        });
+    }
+    
+    // Initialize item animations
+    function initializeItemAnimations() {
+        const items = document.querySelectorAll('.pantry-item-card');
+        items.forEach((item, index) => {
+            const delay = item.getAttribute('data-animation-delay') || (index * 0.05);
+            item.style.animationDelay = `${delay}s`;
+            item.style.opacity = '0';
+            setTimeout(() => {
+                item.style.opacity = '1';
+            }, delay * 1000);
+        });
+    }
+    
+    // Initialize on page load
+    document.addEventListener('DOMContentLoaded', function() {
+        initializeDeleteButtons();
+        initializeItemAnimations();
+    });
 </script>
 {% endblock %}
 

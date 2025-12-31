@@ -1086,6 +1086,9 @@ def delete_item(item_name):
         
         if item_found:
             update_user_pantry(session['user_id'], pantry_list)
+            # Check if AJAX request
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return jsonify({'success': True, 'message': f'{item_name} removed from pantry.'}), 200
             flash(f"{item_name} removed from pantry.", "info")
         else:
             # Debug: print available item names
@@ -1100,6 +1103,9 @@ def delete_item(item_name):
                     if name:
                         available_names.append(name)
             print(f"DEBUG: Item '{item_name}' not found. Available items: {available_names}")
+            # Check if AJAX request
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return jsonify({'success': False, 'error': f"Item '{item_name}' not found in pantry."}), 404
             flash(f"Item '{item_name}' not found in pantry.", "warning")
     else:
         # Remove from anonymous web pantry (stored in session)
@@ -1135,6 +1141,9 @@ def delete_item(item_name):
             session['web_pantry'] = pantry_list
             # Mark session as modified to ensure it's saved
             session.modified = True
+            # Check if AJAX request
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return jsonify({'success': True, 'message': f'{item_name} removed from pantry.'}), 200
             flash(f"{item_name} removed from pantry.", "info")
         else:
             # Debug: print available item names
@@ -1149,8 +1158,14 @@ def delete_item(item_name):
                     if name:
                         available_names.append(name)
             print(f"DEBUG: Item '{item_name}' not found. Available items: {available_names}")
+            # Check if AJAX request
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return jsonify({'success': False, 'error': f"Item '{item_name}' not found in pantry."}), 404
             flash(f"Item '{item_name}' not found in pantry.", "warning")
     
+    # Check if AJAX request
+    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        return jsonify({'success': True, 'message': 'Item deleted successfully.'}), 200
     return redirect(url_for("index"))
 
 def get_expiring_items(pantry_items, expiring_days=None):
