@@ -854,6 +854,7 @@ def index():
             except Exception as e:
                 print(f"Warning: Failed to normalize item {item}: {e}")
                 continue
+        print(f"DEBUG: Rendering index with {len(normalized_pantry)} items for user {session.get('username')}")
         return render_template("index.html", items=normalized_pantry, username=session.get('username'))
     else:
         # Use session-based pantry for anonymous users (consistent with add_items and delete_item)
@@ -874,6 +875,7 @@ def index():
             except Exception as e:
                 print(f"Warning: Failed to normalize item {item}: {e}")
                 continue
+        print(f"DEBUG: Rendering index with {len(normalized_web_pantry)} items for anonymous user")
         return render_template("index.html", items=normalized_web_pantry, username=None)
 
 # Add items
@@ -958,9 +960,9 @@ def add_items():
             pantry_list.append(new_item)
             update_user_pantry(user_id, pantry_list)
             if normalized_expiration:
-                flash(f"{item} (qty: {quantity}, expires: {normalized_expiration}) added to pantry.", "success")
+                flash(f"{item} added to pantry.", "success")
             else:
-                flash(f"{item} (qty: {quantity}) added to pantry.", "success")
+                flash(f"{item} added to pantry.", "success")
         else:
             flash(f"{item} is already in your pantry.", "warning")
     else:
@@ -991,9 +993,9 @@ def add_items():
             }
             session['web_pantry'].append(new_item)
             if normalized_expiration:
-                flash(f"{item} (qty: {quantity}, expires: {normalized_expiration}) added to pantry.", "success")
+                flash(f"{item} added to pantry.", "success")
             else:
-                flash(f"{item} (qty: {quantity}) added to pantry.", "success")
+                flash(f"{item} added to pantry.", "success")
         else:
             flash(f"{item} is already in your pantry.", "warning")
     

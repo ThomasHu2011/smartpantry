@@ -42,9 +42,7 @@
         <div class="row align-items-center">
             <div class="col-lg-8">
                 <div class="d-flex align-items-center mb-4">
-                    <div class="me-3" style="width: 80px; height: 80px; background: linear-gradient(135deg, rgba(255,255,255,0.2) 0%, rgba(255,255,255,0.1) 100%); border-radius: 20px; display: flex; align-items: center; justify-content: center; box-shadow: 0 8px 24px rgba(0,0,0,0.15); backdrop-filter: blur(10px);">
-                        <img src="{{ url_for('static', filename='logo.png') }}" alt="Smart Pantry" height="50">
-                    </div>
+                    <img src="{{ url_for('static', filename='logo.png') }}" alt="Smart Pantry" height="50" class="me-3">
                     <div>
                         <h1 class="display-4 fw-bold mb-1" style="text-shadow: 0 2px 8px rgba(0,0,0,0.2);">SmartPantry</h1>
                         <p class="mb-0 opacity-90" style="font-size: 1.1rem;">Your intelligent kitchen companion</p>
@@ -144,22 +142,42 @@
             <!-- Pantry Overview - Cleaner Design -->
             <div class="card shadow-sm border-0" style="border-radius: 20px; overflow: hidden;">
                 <div class="card-header border-0" style="background: linear-gradient(135deg, rgba(139, 92, 246, 0.1) 0%, rgba(59, 130, 246, 0.08) 100%); padding: 20px 24px;">
-                    <div class="d-flex justify-content-between align-items-center">
+                    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
                         <h5 class="mb-0 fw-bold" style="color: #1e293b; font-size: 1.25rem;">
                             <i class="bi bi-basket-fill me-2" style="color: #8B5CF6;"></i>Your Pantry
                         </h5>
-                        {% if items %}
-                        <span class="badge px-3 py-2" style="background: linear-gradient(135deg, #8B5CF6 0%, #3B82F6 100%); color: white; border-radius: 10px; font-size: 0.875rem; font-weight: 600;">
-                            <i class="bi bi-basket-fill me-1"></i>{{ items|length }} {{ 'item' if items|length == 1 else 'items' }}
-                        </span>
-                        {% endif %}
+                        <div class="d-flex align-items-center gap-2">
+                            {% if items %}
+                            <span class="badge px-3 py-2" style="background: linear-gradient(135deg, #8B5CF6 0%, #3B82F6 100%); color: white; border-radius: 10px; font-size: 0.875rem; font-weight: 600;">
+                                <i class="bi bi-basket-fill me-1"></i>{{ items|length }} {{ 'item' if items|length == 1 else 'items' }}
+                            </span>
+                            {% endif %}
+                            {% if items and items|length > 1 %}
+                            <div class="dropdown">
+                                <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" id="sortDropdown" data-bs-toggle="dropdown" aria-expanded="false" style="border-radius: 8px;">
+                                    <i class="bi bi-sort-down me-1"></i>Sort
+                                </button>
+                                <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="sortDropdown">
+                                    <li><a class="dropdown-item" href="#" onclick="sortPantry('name'); return false;"><i class="bi bi-sort-alpha-down me-2"></i>Name (A-Z)</a></li>
+                                    <li><a class="dropdown-item" href="#" onclick="sortPantry('name-desc'); return false;"><i class="bi bi-sort-alpha-up me-2"></i>Name (Z-A)</a></li>
+                                    <li><hr class="dropdown-divider"></li>
+                                    <li><a class="dropdown-item" href="#" onclick="sortPantry('expiration'); return false;"><i class="bi bi-calendar-check me-2"></i>Expiration (Soonest)</a></li>
+                                    <li><a class="dropdown-item" href="#" onclick="sortPantry('expiration-desc'); return false;"><i class="bi bi-calendar-x me-2"></i>Expiration (Latest)</a></li>
+                                </ul>
+                            </div>
+                            {% endif %}
+                        </div>
                     </div>
                 </div>
                 <div class="card-body p-4">
                     {% if items %}
-                    <div class="row g-3">
+                    <div class="row g-3" id="pantryItemsContainer">
                         {% for item in items %}
-                        <div class="col-md-6 col-lg-4">
+                        {% set item_name = item.get('name', item) if item|is_dict else item %}
+                        {% set exp_date = item.get('expirationDate', '') if item|is_dict else '' %}
+                        <div class="col-md-6 col-lg-4 pantry-item-wrapper" 
+                             data-item-name="{{ item_name|lower }}"
+                             data-expiration-date="{{ exp_date[:10] if exp_date and exp_date|length >= 10 else '9999-12-31' }}">
                             <div class="pantry-item-card card border-0 bg-white h-100 animate-fade-in" 
                                  style="border-radius: 18px; transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1); border: 1px solid #e2e8f0; cursor: pointer;"
                                  data-animation-delay="{{ loop.index0 * 0.05 }}"
@@ -228,16 +246,6 @@
                         </div>
                         <h4 class="mt-4 mb-2 fw-bold" style="color: #1e293b;">Your pantry is empty</h4>
                         <p class="mb-4 text-muted" style="font-size: 1rem;">Start adding items to get personalized recipe suggestions!</p>
-                        <div class="d-flex justify-content-center gap-3 flex-wrap">
-                            <button class="btn btn-primary btn-lg" onclick="document.getElementById('itemInput').focus()" 
-                                    style="border-radius: 12px; padding: 12px 24px; font-weight: 600; box-shadow: 0 4px 12px rgba(139, 92, 246, 0.3);">
-                                <i class="bi bi-plus-circle-fill me-2"></i>Add Item
-                            </button>
-                            <button class="btn btn-success btn-lg" data-bs-toggle="modal" data-bs-target="#photoModal"
-                                    style="border-radius: 12px; padding: 12px 24px; font-weight: 600; box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);">
-                                <i class="bi bi-camera-fill me-2"></i>Upload Photo
-                            </button>
-                        </div>
                     </div>
                     {% endif %}
                 </div>
@@ -704,6 +712,63 @@
         });
     }
     
+    // Set default expiration date to one week from now
+    function setDefaultExpirationDate() {
+        const expirationInput = document.getElementById('expirationInput');
+        if (expirationInput && !expirationInput.value) {
+            const today = new Date();
+            const oneWeekLater = new Date(today);
+            oneWeekLater.setDate(today.getDate() + 7);
+            const year = oneWeekLater.getFullYear();
+            const month = String(oneWeekLater.getMonth() + 1).padStart(2, '0');
+            const day = String(oneWeekLater.getDate()).padStart(2, '0');
+            expirationInput.value = `${year}-${month}-${day}`;
+        }
+    }
+    
+    // Sort pantry items
+    function sortPantry(sortType) {
+        const container = document.getElementById('pantryItemsContainer');
+        if (!container) return;
+        
+        const items = Array.from(container.querySelectorAll('.pantry-item-wrapper'));
+        
+        items.sort((a, b) => {
+            if (sortType === 'name') {
+                const nameA = a.getAttribute('data-item-name') || '';
+                const nameB = b.getAttribute('data-item-name') || '';
+                return nameA.localeCompare(nameB);
+            } else if (sortType === 'name-desc') {
+                const nameA = a.getAttribute('data-item-name') || '';
+                const nameB = b.getAttribute('data-item-name') || '';
+                return nameB.localeCompare(nameA);
+            } else if (sortType === 'expiration') {
+                const dateA = a.getAttribute('data-expiration-date') || '9999-12-31';
+                const dateB = b.getAttribute('data-expiration-date') || '9999-12-31';
+                return dateA.localeCompare(dateB);
+            } else if (sortType === 'expiration-desc') {
+                const dateA = a.getAttribute('data-expiration-date') || '9999-12-31';
+                const dateB = b.getAttribute('data-expiration-date') || '9999-12-31';
+                return dateB.localeCompare(dateA);
+            }
+            return 0;
+        });
+        
+        // Clear container and re-append sorted items
+        container.innerHTML = '';
+        items.forEach((item, index) => {
+            // Update animation delay
+            const card = item.querySelector('.pantry-item-card');
+            if (card) {
+                card.style.animationDelay = (index * 0.05) + 's';
+            }
+            container.appendChild(item);
+        });
+        
+        // Update expiration badges after sorting
+        setTimeout(updateExpirationBadges, 100);
+    }
+    
     // Set animation delays from data attributes
     function setAnimationDelays() {
         document.querySelectorAll('[data-animation-delay]').forEach(function(element) {
@@ -717,6 +782,7 @@
     // Run expiration badge updates on page load
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', function() {
+            setDefaultExpirationDate();
             setAnimationDelays();
             updateExpirationBadges();
             // Also run after a short delay to ensure all elements are rendered
@@ -724,6 +790,7 @@
         });
     } else {
         // DOM already loaded
+        setDefaultExpirationDate();
         setAnimationDelays();
         updateExpirationBadges();
         setTimeout(updateExpirationBadges, 200);
