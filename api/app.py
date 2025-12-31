@@ -738,6 +738,54 @@ def logout():
     flash("You have been logged out", "info")
     return redirect(url_for("login"))
 
+def update_user_password(user_id, new_password):
+    """Update user's password"""
+    users = load_users()
+    if user_id in users:
+        users[user_id]['password_hash'] = hash_password(new_password)
+        save_users(users)
+        return True, None
+    return False, "User not found"
+
+@app.route("/profile", methods=["GET", "POST"])
+def profile():
+    """User profile page with password change functionality"""
+    # Check if user is logged in
+    if 'user_id' not in session:
+        flash("Please log in to access your profile", "warning")
+        return redirect(url_for("login"))
+    
+    user_id = session['user_id']
+    users = load_users()
+    
+    if user_id not in users:
+        flash("User not found", "danger")
+        session.clear()
+        return redirect(url_for("login"))
+    
+    user_data = users[user_id]
+    
+    # Handle POST request (password change)
+    if request.method == "POST":
+        new_password = request.form.get("new_password")
+        confirm_password = request.form.get("confirm_password")
+        
+        if not new_password or len(new_password) < 6:
+            flash("Password must be at least 6 characters long", "danger")
+        elif new_password != confirm_password:
+            flash("Passwords do not match", "danger")
+        else:
+            success, error = update_user_password(user_id, new_password)
+            if success:
+                flash("Password updated successfully!", "success")
+            else:
+                flash(error or "Failed to update password", "danger")
+    
+    # Render profile page (GET request or after POST)
+    return render_template("profile.html", 
+                         username=user_data.get('username'),
+                         email=user_data.get('email'))
+
 # Home page (pantry list)
 @app.route("/")
 def index():
@@ -748,21 +796,50 @@ def index():
         normalized_pantry = [normalize_pantry_item(item.copy() if isinstance(item, dict) else item) for item in user_pantry]
         return render_template("index.html", items=normalized_pantry, username=session.get('username'))
     else:
+        # Use session-based pantry for anonymous users (consistent with add_items and delete_item)
+        if 'web_pantry' not in session:
+            session['web_pantry'] = []
         # Normalize anonymous pantry items
-        global web_pantry
-        normalized_web_pantry = [normalize_pantry_item(item.copy() if isinstance(item, dict) else item) for item in web_pantry]
+        normalized_web_pantry = [normalize_pantry_item(item.copy() if isinstance(item, dict) else item) for item in session['web_pantry']]
         return render_template("index.html", items=normalized_web_pantry, username=None)
 
 # Add items
 @app.route("/add", methods=["POST"])
 def add_items():
     item = request.form.get("item")
+    # Get quantity, default to "1" if empty or None
+    quantity_raw = request.form.get("quantity", "").strip()
+    quantity = quantity_raw if quantity_raw else "1"
+    # Get expiration date, return None if empty
+    expiration_date_raw = request.form.get("expiration_date", "").strip()
+    expiration_date = expiration_date_raw if expiration_date_raw else None
+    
+    # Check if this is an AJAX request
+    is_ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest'
+    
+    if not item or not item.strip():
+        flash("Please enter an item name", "danger")
+        if is_ajax:
+            return jsonify({'success': False, 'error': 'Item name is required'}), 400
+        return redirect(url_for("index"))
+    
     if item:
         # Sanitize and validate input
         item = item.strip()
         if len(item) > 100:  # Prevent extremely long items
             flash("Item name too long. Please keep it under 100 characters.", "danger")
             return redirect(url_for("index"))
+        
+        # Validate and normalize expiration date
+        normalized_expiration = None
+        if expiration_date:
+            normalized_expiration = normalize_expiration_date(expiration_date)
+            if normalized_expiration is None:
+                flash(f"Warning: Invalid expiration date format '{expiration_date}'. Item added without expiration date.", "warning")
+        
+        # Ensure quantity is a string
+        if not quantity or quantity == "":
+            quantity = "1"
         
         if 'user_id' in session:
             # Add to user's pantry
@@ -796,27 +873,59 @@ def add_items():
                         item_exists = True
             
             if not item_exists:
-                # Add new item
-                pantry_list.append({
+                # Add new item with quantity and expiration date
+                new_item = {
                     'id': str(uuid.uuid4()),
                     'name': item,
-                    'quantity': '1',
-                    'expirationDate': None,
+                    'quantity': quantity,
+                    'expirationDate': normalized_expiration,
                     'addedDate': datetime.now().isoformat()
-                })
+                }
+                pantry_list.append(new_item)
                 update_user_pantry(user_id, pantry_list)
-                flash(f"{item} added to pantry.", "success")
+                if normalized_expiration:
+                    flash(f"{item} (qty: {quantity}, expires: {normalized_expiration}) added to pantry.", "success")
+                else:
+                    flash(f"{item} (qty: {quantity}) added to pantry.", "success")
             else:
                 flash(f"{item} is already in your pantry.", "warning")
         else:
             # Add to anonymous web pantry (stored in session for persistence)
             if 'web_pantry' not in session:
                 session['web_pantry'] = []
-            if item not in session['web_pantry']:  # Prevent duplicates
-                session['web_pantry'].append(item)
-                flash(f"{item} added to pantry.", "success")
+            
+            # Check for duplicates (case-insensitive)
+            item_exists = False
+            for pantry_item in session['web_pantry']:
+                if isinstance(pantry_item, dict):
+                    if pantry_item.get('name', '').lower() == item.lower():
+                        item_exists = True
+                        break
+                else:
+                    if str(pantry_item).lower() == item.lower():
+                        item_exists = True
+                        break
+            
+            if not item_exists:
+                # Add new item as dictionary with quantity and expiration date
+                new_item = {
+                    'id': str(uuid.uuid4()),
+                    'name': item,
+                    'quantity': quantity,
+                    'expirationDate': normalized_expiration,
+                    'addedDate': datetime.now().isoformat()
+                }
+                session['web_pantry'].append(new_item)
+                if normalized_expiration:
+                    flash(f"{item} (qty: {quantity}, expires: {normalized_expiration}) added to pantry.", "success")
+                else:
+                    flash(f"{item} (qty: {quantity}) added to pantry.", "success")
             else:
                 flash(f"{item} is already in your pantry.", "warning")
+    
+    # Return JSON response for AJAX requests, otherwise redirect
+    if is_ajax:
+        return jsonify({'success': True, 'message': 'Item added successfully'}), 200
     return redirect(url_for("index"))
 
 # Delete item
@@ -876,9 +985,42 @@ def delete_item(item_name):
             flash(f"{item_name} removed from pantry.", "info")
     return redirect(url_for("index"))
 
+def get_expiring_items(pantry_items, expiring_days=None):
+    """Filter pantry items that are expiring within specified days"""
+    if not pantry_items:
+        return []
+    
+    if expiring_days is None:
+        return pantry_items  # Return all items if no filter specified
+    
+    today = datetime.now().date()
+    expiring_items = []
+    
+    for item in pantry_items:
+        if isinstance(item, dict):
+            exp_date_str = item.get('expirationDate')
+            if exp_date_str:
+                try:
+                    # Normalize date format
+                    normalized_date = normalize_expiration_date(exp_date_str)
+                    if normalized_date:
+                        exp_date = datetime.strptime(normalized_date, "%Y-%m-%d").date()
+                        days_left = (exp_date - today).days
+                        if 0 <= days_left <= expiring_days:
+                            expiring_items.append(item)
+                except (ValueError, TypeError):
+                    pass
+        # If item has no expiration date and we're filtering, skip it
+        # (only include items with expiration dates when filtering)
+    
+    return expiring_items if expiring_items else pantry_items  # Fallback to all if none match
+
 # Suggest recipes based on pantry
 @app.route("/suggest")
 def suggest_recipe():
+    # Get expiring_days parameter from query string
+    expiring_days = request.args.get('expiring_days', type=int)
+    
     # Get appropriate pantry based on login status
     if 'user_id' in session:
         current_pantry = get_user_pantry(session['user_id'])
@@ -888,13 +1030,27 @@ def suggest_recipe():
             session['web_pantry'] = []
         current_pantry = session['web_pantry']
     
+    # Filter by expiration if requested
+    if expiring_days is not None:
+        current_pantry = get_expiring_items(current_pantry, expiring_days)
+        if not current_pantry:
+            flash(f"No items expiring within {expiring_days} days. Showing all items.", "info")
+            # Fallback to all items
+            if 'user_id' in session:
+                current_pantry = get_user_pantry(session['user_id'])
+            else:
+                current_pantry = session.get('web_pantry', [])
+    
     # Convert pantry to string list for template compatibility
     pantry_items_list = []
     for pantry_item in current_pantry:
         if isinstance(pantry_item, dict):
-            pantry_items_list.append(pantry_item.get('name', ''))
+            name = pantry_item.get('name', '')
+            if name:
+                pantry_items_list.append(name)
         else:
-            pantry_items_list.append(pantry_item)
+            if pantry_item:
+                pantry_items_list.append(str(pantry_item))
     
     # Check if pantry is empty (handle both None and empty list)
     if not pantry_items_list or len(pantry_items_list) == 0:
@@ -958,16 +1114,17 @@ Format as JSON:
 
     try:
         # Check if client is properly initialized
-        if not client or not api_key:
-            raise ValueError("OpenAI client not properly initialized")
+        if not client:
+            raise ValueError("OpenAI API key not configured. Please set OPENAI_API_KEY environment variable.")
             
         response = client.chat.completions.create(
             model="gpt-4o",
             messages=[
-                {"role": "system", "content": "You are a creative chef and recipe developer. Create practical, delicious recipes using available ingredients."},
+                {"role": "system", "content": "You are a creative chef and recipe developer. Create practical, delicious recipes using available ingredients. Always return valid JSON."},
                 {"role": "user", "content": prompt}
             ],
-            max_tokens=1000
+            max_tokens=2000,
+            temperature=0.7
         )
         
         import json
@@ -1032,52 +1189,96 @@ Format as JSON:
         session['current_recipes'] = recipes
         
     except Exception as e:
-        flash(f"AI unavailable: {str(e)}. Using fallback recipes.", "warning")
+        error_msg = str(e)
+        print(f"ERROR generating recipes: {error_msg}")
+        import traceback
+        traceback.print_exc()
+        
+        flash(f"AI unavailable: {error_msg}. Using fallback recipes.", "warning")
         # Fallback to simple recipe suggestions
-        recipes = [
-            {
-                "name": f"Simple {pantry[0].title()} Dish" if pantry else "Basic Recipe",
-                "ingredients": pantry[:3] + ["salt", "pepper", "oil"],
+        recipes = []
+        
+        if pantry and len(pantry) > 0:
+            # Create recipes based on available pantry items
+            if len(pantry) >= 1:
+                recipes.append({
+                    "name": f"Simple {pantry[0].title()} Dish",
+                    "ingredients": pantry[:3] + ["salt", "pepper", "oil"],
+                    "instructions": [
+                        "Prepare your main ingredients",
+                        "Season with salt and pepper",
+                        "Cook in oil until tender",
+                        "Serve hot"
+                    ],
+                    "cooking_time": "15 minutes",
+                    "difficulty": "Easy",
+                    "health_rating": "Healthy",
+                    "health_explanation": "Simple cooking with fresh ingredients."
+                })
+            
+            if len(pantry) >= 2:
+                recipes.append({
+                    "name": f"Quick {pantry[1].title()} Recipe",
+                    "ingredients": pantry[1:4] + ["garlic", "herbs"],
+                    "instructions": [
+                        "Chop ingredients finely",
+                        "Sauté with garlic",
+                        "Add herbs for flavor",
+                        "Cook until golden"
+                    ],
+                    "cooking_time": "10 minutes",
+                    "difficulty": "Easy",
+                    "health_rating": "Healthy",
+                    "health_explanation": "Quick and nutritious meal."
+                })
+            
+            if len(pantry) >= 3:
+                recipes.append({
+                    "name": "Pantry Fusion",
+                    "ingredients": pantry[:5] + ["spices"],
+                    "instructions": [
+                        "Mix all ingredients together",
+                        "Add your favorite spices",
+                        "Cook until well combined",
+                        "Let flavors meld"
+                    ],
+                    "cooking_time": "25 minutes",
+                    "difficulty": "Medium",
+                    "health_rating": "Moderately Healthy",
+                    "health_explanation": "Creative combination of available ingredients."
+                })
+        else:
+            # If no pantry items, create a generic recipe
+            recipes.append({
+                "name": "Basic Pantry Meal",
+                "ingredients": pantry_items_list[:3] + ["salt", "pepper", "oil"] if pantry_items_list else ["ingredients", "salt", "pepper"],
                 "instructions": [
-                    "Prepare your main ingredients",
-                    "Season with salt and pepper",
-                    "Cook in oil until tender",
+                    "Gather your pantry items",
+                    "Season to taste",
+                    "Cook until done",
                     "Serve hot"
                 ],
-                "cooking_time": "15 minutes",
+                "cooking_time": "20 minutes",
                 "difficulty": "Easy",
                 "health_rating": "Healthy",
-                "health_explanation": "Simple cooking with fresh ingredients."
-            },
-            {
-                "name": f"Quick {pantry[1].title()} Recipe" if len(pantry) > 1 else "Quick Pantry Meal",
-                "ingredients": pantry[1:4] + ["garlic", "herbs"],
+                "health_explanation": "A simple meal using available ingredients."
+            })
+        
+        # Ensure we have at least one recipe
+        if not recipes:
+            recipes = [{
+                "name": "Pantry Surprise",
+                "ingredients": pantry_items_list[:5] if pantry_items_list else ["ingredients"],
                 "instructions": [
-                    "Chop ingredients finely",
-                    "Sauté with garlic",
-                    "Add herbs for flavor",
-                    "Cook until golden"
+                    "Combine your pantry items creatively",
+                    "Season to taste",
+                    "Cook until done"
                 ],
-                "cooking_time": "10 minutes",
+                "cooking_time": "20 minutes",
                 "difficulty": "Easy",
                 "health_rating": "Healthy",
-                "health_explanation": "Quick and nutritious meal."
-            },
-            {
-                "name": "Pantry Fusion",
-                "ingredients": pantry[:5] + ["spices"],
-                "instructions": [
-                    "Mix all ingredients together",
-                    "Add your favorite spices",
-                    "Cook until well combined",
-                    "Let flavors meld"
-                ],
-                "cooking_time": "25 minutes",
-                "difficulty": "Medium",
-                "health_rating": "Moderately Healthy",
-                "health_explanation": "Creative combination of available ingredients."
-            }
-        ]
+                "health_explanation": "This recipe uses fresh ingredients from your pantry."
+            }]
         
         # Store fallback recipes in session
         session['current_recipes'] = recipes

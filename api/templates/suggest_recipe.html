@@ -2,6 +2,41 @@
 
 {% block title %}AI Recipe Suggestions - SmartPantry{% endblock %}
 
+{% block extra_head %}
+<style>
+    /* Orange-themed animated background for recipes page - Matching Swift App */
+    body::before {
+        content: '';
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: linear-gradient(135deg, 
+            rgba(255, 159, 10, 0.30) 0%, 
+            rgba(255, 159, 10, 0.25) 33%,
+            rgba(236, 72, 153, 0.23) 66%,
+            rgba(255, 193, 7, 0.20) 100%);
+        background-size: 200% 200%;
+        animation: gradientShiftOrange 15s ease-in-out infinite;
+        z-index: -1;
+        pointer-events: none;
+    }
+    
+    @keyframes gradientShiftOrange {
+        0% {
+            background-position: 0% 0%;
+        }
+        50% {
+            background-position: 100% 100%;
+        }
+        100% {
+            background-position: 0% 0%;
+        }
+    }
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="container py-4">
     <!-- Header Section -->
@@ -10,7 +45,7 @@
             <div class="d-flex justify-content-between align-items-center">
                 <div>
                     <h2 class="text-primary mb-2">
-                        <i class="bi bi-magic me-2"></i>AI Recipe Suggestions
+                        <i class="bi bi-book me-2"></i>AI Recipe Suggestions
                     </h2>
                     <p class="text-muted mb-0">Recipes generated based on your pantry items</p>
                 </div>
@@ -24,7 +59,7 @@
     <!-- Pantry Items Used -->
     {% if pantry_items %}
     <div class="alert alert-info mb-4">
-        <h6 class="mb-2"><i class="bi bi-box-seam me-2"></i>Using these pantry items:</h6>
+        <h6 class="mb-2"><i class="bi bi-basket-fill me-2"></i>Using these pantry items:</h6>
         <div class="d-flex flex-wrap gap-2">
             {% for item in pantry_items %}
             <span class="badge bg-light text-dark">{{ item }}</span>
