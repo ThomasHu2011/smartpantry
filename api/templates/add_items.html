@@ -108,7 +108,7 @@
                                             {% endif %}
                                         </div>
                                         {% set item_name = item.get('name', item) if item|is_dict else item %}
-                                        <a href="{{ url_for('delete_item', item_name=item_name) }}" 
+                                        <a href="{{ url_for('delete_item', item_name=item_name|urlencode) }}" 
                                            class="btn btn-sm btn-outline-danger btn-circle" 
                                            title="Remove item"
                                            onclick="return confirm('Remove {{ item_name }} from pantry?')">

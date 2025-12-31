@@ -72,12 +72,22 @@
             font-size: 1.5rem;
         }
         
-        /* Fix dropdown menu styling */
+        /* Fix dropdown menu styling - ensure it's above everything */
+        .navbar {
+            z-index: 1030;
+        }
+        
+        .nav-item.dropdown {
+            z-index: 9999 !important;
+            position: relative;
+        }
+        
         .dropdown-menu {
-            z-index: 1051 !important;
+            z-index: 9999 !important;
             background: white !important;
             border: 1px solid rgba(0,0,0,0.1) !important;
             box-shadow: 0 4px 12px rgba(0,0,0,0.15) !important;
+            position: absolute !important;
         }
         
         .dropdown-item {
@@ -621,11 +631,11 @@
                         <i class="bi bi-book me-1"></i>Recipes
                     </a>
                     {% if username %}
-                        <div class="nav-item dropdown" style="position: relative; z-index: 1050;">
+                        <div class="nav-item dropdown" style="position: relative; z-index: 9999 !important;">
                             <a class="nav-link dropdown-toggle" href="#" id="navbarDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
                                 <i class="bi bi-person-circle-fill me-1"></i>{{ username }}
                             </a>
-                            <ul class="dropdown-menu dropdown-menu-end" style="z-index: 1051 !important; position: absolute !important; background: white !important; box-shadow: 0 4px 12px rgba(0,0,0,0.15) !important;">
+                            <ul class="dropdown-menu dropdown-menu-end" style="z-index: 9999 !important; position: absolute !important; background: white !important; box-shadow: 0 4px 12px rgba(0,0,0,0.15) !important;">
                                 <li><a class="dropdown-item" href="{{ url_for('profile') }}" style="color: #1e293b !important; background: transparent !important;">
                                     <i class="bi bi-person-fill me-2"></i>Profile
                                 </a></li>

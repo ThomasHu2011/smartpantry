@@ -997,6 +997,9 @@ def add_items():
             flash(f"{item} is already in your pantry.", "warning")
     else:
         # Add to anonymous web pantry (stored in session for persistence)
+        # CRITICAL: Mark session as permanent for anonymous users to persist pantry items
+        session.permanent = True
+        
         if 'web_pantry' not in session:
             session['web_pantry'] = []
         
@@ -1022,6 +1025,8 @@ def add_items():
                 'addedDate': datetime.now().isoformat()
             }
             session['web_pantry'].append(new_item)
+            # Mark session as modified to ensure it's saved
+            session.modified = True
             if normalized_expiration:
                 flash(f"{item} added to pantry.", "success")
             else:
@@ -1038,27 +1043,39 @@ def add_items():
 @app.route("/delete/<item_name>")
 def delete_item(item_name):
     from urllib.parse import unquote
-    item_name = unquote(item_name)
+    # Decode URL-encoded item name and strip whitespace
+    item_name = unquote(item_name).strip()
+    
+    print(f"DEBUG: Attempting to delete item: '{item_name}'")
     
     if 'user_id' in session:
         # Remove from user's pantry
         user_pantry = get_user_pantry(session['user_id'])
+        print(f"DEBUG: User pantry has {len(user_pantry) if isinstance(user_pantry, list) else 0} items")
+        
+        # Ensure pantry is a list
+        if not isinstance(user_pantry, list):
+            user_pantry = []
+        
         # Convert to list of dicts if needed
         pantry_list = []
         item_found = False
         for pantry_item in user_pantry:
             if isinstance(pantry_item, dict):
-                pantry_name = pantry_item.get('name', '')
-                if pantry_name and pantry_name.lower() != item_name.lower():
-                    pantry_list.append(pantry_item)
-                elif pantry_name and pantry_name.lower() == item_name.lower():
+                pantry_name = pantry_item.get('name', '').strip() if pantry_item.get('name') else ''
+                # Compare with stripped names (case-insensitive)
+                if pantry_name and pantry_name.lower() == item_name.lower():
                     item_found = True
+                    print(f"DEBUG: Found matching item: '{pantry_name}' == '{item_name}'")
                 else:
-                    # Keep items with empty names (shouldn't happen, but be safe)
                     pantry_list.append(pantry_item)
             else:
-                pantry_str = str(pantry_item) if pantry_item else ''
-                if pantry_str and pantry_str.lower() != item_name.lower():
+                pantry_str = str(pantry_item).strip() if pantry_item else ''
+                if pantry_str and pantry_str.lower() == item_name.lower():
+                    item_found = True
+                    print(f"DEBUG: Found matching item (string): '{pantry_str}' == '{item_name}'")
+                elif pantry_str:
+                    # Convert old string format to dict format
                     pantry_list.append({
                         'id': str(uuid.uuid4()),
                         'name': pantry_str,
@@ -1066,39 +1083,74 @@ def delete_item(item_name):
                         'expirationDate': None,
                         'addedDate': datetime.now().isoformat()
                     })
-                elif pantry_str and pantry_str.lower() == item_name.lower():
-                    item_found = True
         
         if item_found:
             update_user_pantry(session['user_id'], pantry_list)
             flash(f"{item_name} removed from pantry.", "info")
+        else:
+            # Debug: print available item names
+            available_names = []
+            for item in user_pantry:
+                if isinstance(item, dict):
+                    name = item.get('name', '').strip()
+                    if name:
+                        available_names.append(name)
+                else:
+                    name = str(item).strip()
+                    if name:
+                        available_names.append(name)
+            print(f"DEBUG: Item '{item_name}' not found. Available items: {available_names}")
+            flash(f"Item '{item_name}' not found in pantry.", "warning")
     else:
         # Remove from anonymous web pantry (stored in session)
+        # CRITICAL: Mark session as permanent for anonymous users
+        session.permanent = True
+        
         if 'web_pantry' not in session:
             session['web_pantry'] = []
+        
+        print(f"DEBUG: Anonymous pantry has {len(session['web_pantry'])} items")
+        
         # Convert to list of dicts if needed
         pantry_list = []
         item_found = False
         for pantry_item in session['web_pantry']:
             if isinstance(pantry_item, dict):
-                pantry_name = pantry_item.get('name', '')
-                if pantry_name and pantry_name.lower() != item_name.lower():
-                    pantry_list.append(pantry_item)
-                elif pantry_name and pantry_name.lower() == item_name.lower():
+                pantry_name = pantry_item.get('name', '').strip() if pantry_item.get('name') else ''
+                # Compare with stripped names (case-insensitive)
+                if pantry_name and pantry_name.lower() == item_name.lower():
                     item_found = True
+                    print(f"DEBUG: Found matching item: '{pantry_name}' == '{item_name}'")
                 else:
-                    # Keep items with empty names (shouldn't happen, but be safe)
                     pantry_list.append(pantry_item)
             else:
-                pantry_str = str(pantry_item) if pantry_item else ''
-                if pantry_str and pantry_str.lower() != item_name.lower():
-                    pantry_list.append(pantry_item)
-                elif pantry_str and pantry_str.lower() == item_name.lower():
+                pantry_str = str(pantry_item).strip() if pantry_item else ''
+                if pantry_str and pantry_str.lower() == item_name.lower():
                     item_found = True
+                    print(f"DEBUG: Found matching item (string): '{pantry_str}' == '{item_name}'")
+                elif pantry_str:
+                    pantry_list.append(pantry_item)
         
         if item_found:
             session['web_pantry'] = pantry_list
+            # Mark session as modified to ensure it's saved
+            session.modified = True
             flash(f"{item_name} removed from pantry.", "info")
+        else:
+            # Debug: print available item names
+            available_names = []
+            for item in session['web_pantry']:
+                if isinstance(item, dict):
+                    name = item.get('name', '').strip()
+                    if name:
+                        available_names.append(name)
+                else:
+                    name = str(item).strip()
+                    if name:
+                        available_names.append(name)
+            print(f"DEBUG: Item '{item_name}' not found. Available items: {available_names}")
+            flash(f"Item '{item_name}' not found in pantry.", "warning")
+    
     return redirect(url_for("index"))
 
 def get_expiring_items(pantry_items, expiring_days=None):
@@ -1615,6 +1667,9 @@ If you cannot determine a quantity, use "1" as the default. Return ONLY valid JS
             update_user_pantry(session['user_id'], pantry_list)
         else:
             # Add to anonymous web pantry (stored in session for persistence)
+            # CRITICAL: Mark session as permanent for anonymous users
+            session.permanent = True
+            
             if 'web_pantry' not in session:
                 session['web_pantry'] = []
             
@@ -1635,6 +1690,8 @@ If you cannot determine a quantity, use "1" as the default. Return ONLY valid JS
             # Add new items
             pantry_list.extend(pantry_items)
             session['web_pantry'] = pantry_list
+            # Mark session as modified to ensure it's saved
+            session.modified = True
         
         item_names = [item['name'] for item in pantry_items]
         flash(f"Successfully analyzed photo! Added {len(pantry_items)} items: {', '.join(item_names)}", "success")
@@ -2836,9 +2893,14 @@ If you cannot determine a quantity, use "1" as the default. Return ONLY valid JS
                 mobile_pantry.extend(detected_items)
             else:
                 # Add to anonymous web pantry (stored in session)
+                # CRITICAL: Mark session as permanent for anonymous users
+                session.permanent = True
+                
                 if 'web_pantry' not in session:
                     session['web_pantry'] = []
                 session['web_pantry'].extend(detected_items)
+                # Mark session as modified to ensure it's saved
+                session.modified = True
         
         return jsonify({
             'success': True,

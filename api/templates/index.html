@@ -38,6 +38,7 @@
         background-color: rgba(0, 0, 0, 0.3) !important;
         backdrop-filter: blur(2px);
         z-index: 1040 !important;
+        pointer-events: auto !important;
     }
     
     .modal-backdrop.show {
@@ -50,6 +51,20 @@
     
     /* Ensure modal content is clickable */
     .modal-content {
+        pointer-events: auto !important;
+        z-index: 1056 !important;
+    }
+    
+    /* Ensure modal backdrop doesn't block clicks when modal is open */
+    body.modal-open .modal-backdrop {
+        pointer-events: auto !important;
+    }
+    
+    body.modal-open .modal {
+        pointer-events: none !important;
+    }
+    
+    body.modal-open .modal-content {
         pointer-events: auto !important;
     }
 </style>
@@ -172,7 +187,7 @@
                                 <i class="bi bi-basket-fill me-1"></i>{{ items|length }} {{ 'item' if items|length == 1 else 'items' }}
                             </span>
                             {% endif %}
-                            {% if items and items|length > 1 %}
+                            {% if items is defined and items is not none and items|length > 1 %}
                             <div class="dropdown">
                                 <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" id="sortDropdown" data-bs-toggle="dropdown" aria-expanded="false" style="border-radius: 8px;">
                                     <i class="bi bi-sort-down me-1"></i>Sort
@@ -242,7 +257,7 @@
                                             {% endif %}
                                         </div>
                                         {% set item_name = item.get('name', item) if item|is_dict else item %}
-                                        <a href="{{ url_for('delete_item', item_name=item_name) }}" 
+                                        <a href="{{ url_for('delete_item', item_name=item_name|urlencode) }}" 
                                            class="btn btn-sm btn-outline-danger" 
                                            style="border-radius: 50%; width: 36px; height: 36px; padding: 0; display: flex; align-items: center; justify-content: center; transition: all 0.2s ease; flex-shrink: 0;"
                                            title="Remove item"
@@ -644,6 +659,24 @@
 
     // Reset modal when closed
     if (photoModal) {
+        // Handle modal shown
+        photoModal.addEventListener('show.bs.modal', () => {
+            // Ensure modal content is clickable
+            const modalContent = photoModal.querySelector('.modal-content');
+            if (modalContent) {
+                modalContent.style.pointerEvents = 'auto';
+            }
+            // Ensure body can scroll
+            document.body.style.overflow = 'hidden';
+        });
+        
+        // Handle modal hiding (before close animation)
+        photoModal.addEventListener('hide.bs.modal', () => {
+            // Start cleanup early
+            stopCamera();
+        });
+        
+        // Handle modal fully closed (after animation)
         photoModal.addEventListener('hidden.bs.modal', () => {
             stopCamera();
             selectedFile = null;
@@ -659,37 +692,34 @@
                 uploadBtnText.textContent = 'Analyze & Add Items';
             }
             
-            // Ensure backdrop is removed and body is restored
-            setTimeout(() => {
+            // Comprehensive cleanup - remove all backdrops and restore body
+            const cleanup = () => {
+                // Remove all modal backdrops
                 const backdrops = document.querySelectorAll('.modal-backdrop');
-                backdrops.forEach(backdrop => backdrop.remove());
+                backdrops.forEach(backdrop => {
+                    backdrop.remove();
+                });
                 
-                // Remove modal-open class from body and restore scrolling
+                // Remove modal-open class from body
                 document.body.classList.remove('modal-open');
+                
+                // Restore body styles
                 document.body.style.overflow = '';
                 document.body.style.paddingRight = '';
+                document.body.style.pointerEvents = '';
                 
-                // Force remove any remaining backdrop
-                const remainingBackdrop = document.querySelector('.modal-backdrop');
-                if (remainingBackdrop) {
-                    remainingBackdrop.remove();
-                }
-            }, 150);
-        });
-        
-        // Ensure modal is properly initialized when shown
-        photoModal.addEventListener('show.bs.modal', () => {
-            // Ensure modal content is clickable
-            const modalContent = photoModal.querySelector('.modal-content');
-            if (modalContent) {
-                modalContent.style.pointerEvents = 'auto';
-            }
-        });
-        
-        // Also handle when modal starts hiding
-        photoModal.addEventListener('hide.bs.modal', () => {
-            // Start cleanup early
-            stopCamera();
+                // Force remove any remaining backdrop elements
+                const remainingBackdrops = document.querySelectorAll('.modal-backdrop');
+                remainingBackdrops.forEach(backdrop => backdrop.remove());
+                
+                // Ensure no backdrop classes remain
+                document.body.classList.remove('modal-open');
+            };
+            
+            // Cleanup immediately and also after delays to catch any delayed Bootstrap cleanup
+            cleanup();
+            setTimeout(cleanup, 100);
+            setTimeout(cleanup, 300);
         });
     }
 
@@ -964,10 +994,8 @@
                             if (quantityInput) quantityInput.value = '1';
                             if (expirationDateInput) expirationDateInput.value = '';
                         }
-                        // Reload page after short delay to show new item
-                        setTimeout(() => {
-                            window.location.reload();
-                        }, 500);
+                        // Reload page immediately to show new item (no delay to prevent flicker)
+                        window.location.reload();
                     } else {
                         // Error from server
                         if (feedback) {
