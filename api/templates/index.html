@@ -56,16 +56,16 @@
         animation: fadeIn 0.6s ease-out;
     }
     
-    /* Fix modal backdrop darkness and ensure it doesn't block clicks */
+    /* Fix modal backdrop - reduce blur and ensure proper cleanup */
     .modal-backdrop {
-        background-color: rgba(0, 0, 0, 0.3) !important;
-        backdrop-filter: blur(2px);
+        background-color: rgba(0, 0, 0, 0.25) !important;
+        backdrop-filter: blur(1px) !important;
+        -webkit-backdrop-filter: blur(1px) !important;
         z-index: 1040 !important;
-        pointer-events: auto !important;
     }
     
     .modal-backdrop.show {
-        opacity: 1;
+        opacity: 1 !important;
     }
     
     .modal {
@@ -76,19 +76,136 @@
     .modal-content {
         pointer-events: auto !important;
         z-index: 1056 !important;
+        position: relative;
     }
     
-    /* Ensure modal backdrop doesn't block clicks when modal is open */
-    body.modal-open .modal-backdrop {
-        pointer-events: auto !important;
+    /* Prevent backdrop from staying after modal closes */
+    body:not(.modal-open) .modal-backdrop {
+        display: none !important;
+        opacity: 0 !important;
     }
     
-    body.modal-open .modal {
-        pointer-events: none !important;
+    /* Fix text overflow in pantry item names */
+    .pantry-item-card .fw-bold {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        max-width: 100%;
+        display: block;
     }
     
-    body.modal-open .modal-content {
-        pointer-events: auto !important;
+    /* Prevent card hover overflow */
+    .pantry-item-wrapper {
+        overflow: visible;
+    }
+    
+    .pantry-item-card {
+        overflow: hidden;
+        will-change: transform;
+    }
+    
+    /* Fix mobile responsiveness */
+    @media (max-width: 768px) {
+        .pantry-item-card {
+            margin-bottom: 12px;
+        }
+        
+        .card-body {
+            padding: 16px !important;
+        }
+        
+        .card-header {
+            padding: 16px !important;
+        }
+        
+        .hero-section {
+            padding: 40px 0 !important;
+        }
+        
+        .hero-section h1 {
+            font-size: 2rem !important;
+        }
+        
+        .btn-lg {
+            padding: 12px 24px !important;
+            font-size: 0.9rem !important;
+        }
+        
+        .badge {
+            font-size: 0.75rem !important;
+            padding: 6px 12px !important;
+        }
+        
+        .dropdown-menu {
+            max-width: 100%;
+            white-space: normal;
+        }
+        
+        .dropdown-item {
+            white-space: normal;
+            word-wrap: break-word;
+        }
+    }
+    
+    /* Fix button text overflow */
+    .btn {
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+    
+    .btn-lg {
+        white-space: normal;
+    }
+    
+    /* Fix badge display on small screens */
+    .badge {
+        max-width: 100%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        display: inline-block;
+    }
+    
+    /* Ensure cards don't overflow container */
+    .card {
+        max-width: 100%;
+        overflow: hidden;
+    }
+    
+    /* Fix flex-grow text overflow */
+    .flex-grow-1 {
+        min-width: 0;
+        overflow: hidden;
+    }
+    
+    /* Recipe card improvements */
+    .recipe-card {
+        overflow: hidden;
+    }
+    
+    .recipe-card .card-title {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+    
+    /* Fix sort dropdown on mobile */
+    @media (max-width: 576px) {
+        .dropdown-toggle {
+            font-size: 0.875rem;
+            padding: 6px 12px;
+        }
+        
+        .card-header .d-flex {
+            flex-direction: column;
+            align-items: flex-start !important;
+            gap: 12px;
+        }
+        
+        .card-header .d-flex > div:last-child {
+            width: 100%;
+        }
     }
 </style>
 {% endblock %}
@@ -216,6 +333,8 @@
                                     <i class="bi bi-sort-down me-1"></i>Sort
                                 </button>
                                 <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="sortDropdown">
+                                    <li><a class="dropdown-item" href="#" onclick="sortPantry('category'); return false;"><i class="bi bi-grid-3x3-gap me-2"></i>Category</a></li>
+                                    <li><hr class="dropdown-divider"></li>
                                     <li><a class="dropdown-item" href="#" onclick="sortPantry('name'); return false;"><i class="bi bi-sort-alpha-down me-2"></i>Name (A-Z)</a></li>
                                     <li><a class="dropdown-item" href="#" onclick="sortPantry('name-desc'); return false;"><i class="bi bi-sort-alpha-up me-2"></i>Name (Z-A)</a></li>
                                     <li><hr class="dropdown-divider"></li>
@@ -231,10 +350,13 @@
                     {% if items is defined and items is not none and items|length > 0 %}
                     <div class="row g-3" id="pantryItemsContainer" style="position: relative; z-index: 10;">
                         {% for item in items %}
-                        {% set item_name = item.get('name', item) if item|is_dict else item %}
-                        {% set exp_date = item.get('expirationDate', '') if item|is_dict else '' %}
+                        {% set item_name = (item.get('name', '') if item|is_dict else (item if item else ''))|string|trim %}
+                        {% set item_name = item_name if item_name else 'Unnamed Item' %}
+                        {% set exp_date = (item.get('expirationDate', '') if item|is_dict else '')|string|trim %}
+                        {% set quantity = (item.get('quantity', '1') if item|is_dict else '1')|string|trim %}
+                        {% set quantity = quantity if quantity else '1' %}
                         <div class="col-md-6 col-lg-4 pantry-item-wrapper" 
-                             data-item-name="{{ item_name|lower }}"
+                             data-item-name="{{ item_name|lower|default('unnamed') }}"
                              data-expiration-date="{{ exp_date[:10] if exp_date and exp_date|length >= 10 else '9999-12-31' }}"
                              style="position: relative; z-index: 10;">
                             <div class="pantry-item-card card border-0 bg-white h-100 animate-fade-in" 
@@ -244,43 +366,35 @@
                                  onmouseout="this.style.transform='translateY(0) scale(1)'; this.style.boxShadow='0 2px 8px rgba(0,0,0,0.05)'; this.style.borderColor='#e2e8f0';">
                                 <div class="card-body p-3">
                                     <div class="d-flex justify-content-between align-items-start">
-                                        <div class="flex-grow-1">
+                                        <div class="flex-grow-1" style="min-width: 0; overflow: hidden;">
                                             <div class="d-flex align-items-center mb-2">
                                                 <div class="me-2" style="width: 12px; height: 12px; background: linear-gradient(135deg, #10B981 0%, #059669 100%); border-radius: 50%; flex-shrink: 0; box-shadow: 0 2px 6px rgba(16, 185, 129, 0.4); animation: pulse 2s ease-in-out infinite;"></div>
-                                                <span class="fw-bold text-dark" style="font-size: 1.05rem; line-height: 1.4; letter-spacing: -0.01em;">
-                                                    {% if item|is_dict %}
-                                                        {{ item.get('name', item) }}
-                                                    {% else %}
-                                                        {{ item }}
-                                                    {% endif %}
+                                                <span class="fw-bold text-dark" style="font-size: 1.05rem; line-height: 1.4; letter-spacing: -0.01em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0;" title="{{ item_name }}">
+                                                    {{ item_name }}
                                                 </span>
                                             </div>
                                             {% if item|is_dict %}
-                                                {% if item.get('quantity') and item.get('quantity') != '1' %}
+                                                {% if quantity and quantity != '1' %}
                                                     <div class="mb-2">
                                                         <span class="badge" style="background: rgba(139, 92, 246, 0.1); color: #8B5CF6; border-radius: 8px; font-size: 0.75rem;">
-                                                            <i class="bi bi-123 me-1"></i>{{ item.get('quantity') }}
+                                                            <i class="bi bi-123 me-1"></i>{{ quantity }}
                                                         </span>
                                                     </div>
                                                 {% endif %}
-                                                {% if item.get('expirationDate') %}
-                                                    {% set exp_date = item.get('expirationDate') %}
-                                                    {% if exp_date %}
-                                                        <div>
-                                                            <span class="expiration-badge expiration-fresh" data-exp-date="{{ exp_date }}" style="font-size: 0.75rem;">
-                                                                <i class="bi bi-calendar3 me-1"></i>
-                                                                {% if exp_date|length == 10 %}
-                                                                    {{ exp_date }}
-                                                                {% else %}
-                                                                    {{ exp_date[:10] }}
-                                                                {% endif %}
-                                                            </span>
-                                                        </div>
-                                                    {% endif %}
+                                                {% if exp_date and exp_date != 'None' and exp_date != '' %}
+                                                    <div>
+                                                        <span class="expiration-badge expiration-fresh" data-exp-date="{{ exp_date }}" style="font-size: 0.75rem;">
+                                                            <i class="bi bi-calendar3 me-1"></i>
+                                                            {% if exp_date|length >= 10 %}
+                                                                {{ exp_date[:10] }}
+                                                            {% else %}
+                                                                {{ exp_date }}
+                                                            {% endif %}
+                                                        </span>
+                                                    </div>
                                                 {% endif %}
                                             {% endif %}
                                         </div>
-                                        {% set item_name = item.get('name', item) if item|is_dict else item %}
                                         <button type="button"
                                            class="btn btn-sm btn-outline-danger delete-item-btn" 
                                            style="border-radius: 50%; width: 36px; height: 36px; padding: 0; display: flex; align-items: center; justify-content: center; transition: all 0.2s ease; flex-shrink: 0;"
@@ -722,6 +836,9 @@
                 // Remove all modal backdrops
                 const backdrops = document.querySelectorAll('.modal-backdrop');
                 backdrops.forEach(backdrop => {
+                    backdrop.style.display = 'none';
+                    backdrop.style.opacity = '0';
+                    backdrop.style.visibility = 'hidden';
                     backdrop.remove();
                 });
                 
@@ -732,19 +849,33 @@
                 document.body.style.overflow = '';
                 document.body.style.paddingRight = '';
                 document.body.style.pointerEvents = '';
+                document.body.style.position = '';
                 
                 // Force remove any remaining backdrop elements
                 const remainingBackdrops = document.querySelectorAll('.modal-backdrop');
-                remainingBackdrops.forEach(backdrop => backdrop.remove());
+                remainingBackdrops.forEach(backdrop => {
+                    backdrop.style.display = 'none';
+                    backdrop.remove();
+                });
                 
                 // Ensure no backdrop classes remain
                 document.body.classList.remove('modal-open');
+                
+                // Add style to prevent backdrop from showing
+                if (!document.querySelector('style[data-modal-cleanup]')) {
+                    const style = document.createElement('style');
+                    style.setAttribute('data-modal-cleanup', 'true');
+                    style.textContent = 'body:not(.modal-open) .modal-backdrop { display: none !important; opacity: 0 !important; visibility: hidden !important; }';
+                    document.head.appendChild(style);
+                }
             };
             
             // Cleanup immediately and also after delays to catch any delayed Bootstrap cleanup
             cleanup();
+            setTimeout(cleanup, 50);
             setTimeout(cleanup, 100);
-            setTimeout(cleanup, 300);
+            setTimeout(cleanup, 200);
+            setTimeout(cleanup, 500);
         });
     }
 
@@ -782,10 +913,19 @@
     
     // Function to update expiration badge colors - can be called multiple times
     function updateExpirationBadges() {
-        document.querySelectorAll('[data-exp-date]').forEach(function(badge) {
+        const badges = document.querySelectorAll('[data-exp-date]');
+        if (!badges || badges.length === 0) {
+            return;  // No badges to update
+        }
+        
+        badges.forEach(function(badge) {
             try {
+                if (!badge || !badge.getAttribute) {
+                    return;  // Invalid badge element
+                }
+                
                 const expDateStr = badge.getAttribute('data-exp-date');
-                if (!expDateStr || expDateStr.trim() === '') {
+                if (!expDateStr || expDateStr.trim() === '' || expDateStr === '9999-12-31' || expDateStr === 'None' || expDateStr === 'null') {
                     badge.classList.remove('expiration-expired', 'expiration-soon', 'expiration-fresh');
                     badge.classList.add('expiration-none');
                     return;
@@ -798,8 +938,12 @@
                 // Check if it's a simple date format (YYYY-MM-DD)
                 if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
                     // Parse YYYY-MM-DD format (most reliable)
-                    const [year, month, day] = dateStr.split('-').map(Number);
-                    expiration = new Date(year, month - 1, day);
+                    const parts = dateStr.split('-').map(Number);
+                    if (parts.length === 3 && parts[0] > 1900 && parts[0] < 2100 && parts[1] >= 1 && parts[1] <= 12 && parts[2] >= 1 && parts[2] <= 31) {
+                        expiration = new Date(parts[0], parts[1] - 1, parts[2]);
+                    } else {
+                        throw new Error('Invalid date parts');
+                    }
                 } else if (dateStr.includes('T')) {
                     // ISO datetime format
                     expiration = new Date(dateStr);
@@ -809,7 +953,7 @@
                 }
                 
                 // Check if date is valid
-                if (isNaN(expiration.getTime())) {
+                if (!expiration || isNaN(expiration.getTime())) {
                     console.warn('Invalid expiration date format:', dateStr);
                     badge.classList.remove('expiration-expired', 'expiration-soon', 'expiration-fresh');
                     badge.classList.add('expiration-none');
@@ -841,9 +985,11 @@
                 }
             } catch (e) {
                 // If there's any error parsing the date, use default styling
-                console.error('Error parsing expiration date:', badge.getAttribute('data-exp-date'), e);
-                badge.classList.remove('expiration-expired', 'expiration-soon', 'expiration-fresh');
-                badge.classList.add('expiration-none');
+                console.error('Error parsing expiration date:', badge?.getAttribute('data-exp-date'), e);
+                if (badge && badge.classList) {
+                    badge.classList.remove('expiration-expired', 'expiration-soon', 'expiration-fresh');
+                    badge.classList.add('expiration-none');
+                }
             }
         });
     }
@@ -863,6 +1009,54 @@
     }
     
     // Sort pantry items
+    // Category detection function
+    function getItemCategory(itemName) {
+        const name = itemName.toLowerCase();
+        
+        // Proteins
+        const proteins = ['chicken', 'beef', 'pork', 'fish', 'salmon', 'tuna', 'turkey', 'egg', 'eggs', 'tofu', 'meat', 'protein', 'steak', 'bacon', 'sausage', 'ham', 'shrimp', 'prawn', 'crab', 'lobster', 'lamb', 'duck'];
+        if (proteins.some(p => name.includes(p))) return 'proteins';
+        
+        // Vegetables
+        const vegetables = ['broccoli', 'carrot', 'tomato', 'onion', 'garlic', 'lettuce', 'spinach', 'cucumber', 'pepper', 'potato', 'celery', 'corn', 'peas', 'bean', 'vegetable', 'cabbage', 'cauliflower', 'zucchini', 'eggplant', 'asparagus', 'mushroom', 'kale'];
+        if (vegetables.some(v => name.includes(v))) return 'vegetables';
+        
+        // Dairy
+        const dairy = ['milk', 'cheese', 'yogurt', 'butter', 'cream', 'dairy', 'sour cream', 'cottage cheese', 'mozzarella', 'cheddar', 'parmesan', 'feta'];
+        if (dairy.some(d => name.includes(d))) return 'dairy';
+        
+        // Fruits
+        const fruits = ['apple', 'banana', 'orange', 'berry', 'strawberry', 'blueberry', 'grape', 'mango', 'pineapple', 'peach', 'pear', 'cherry', 'kiwi', 'lemon', 'lime', 'fruit', 'avocado'];
+        if (fruits.some(f => name.includes(f))) return 'fruits';
+        
+        // Snacks
+        const snacks = ['chip', 'cracker', 'cookie', 'biscuit', 'pretzel', 'popcorn', 'nuts', 'almond', 'peanut', 'cashew', 'trail mix', 'granola', 'bar', 'candy', 'chocolate'];
+        if (snacks.some(s => name.includes(s))) return 'snacks';
+        
+        // Grains
+        const grains = ['bread', 'rice', 'pasta', 'noodle', 'flour', 'wheat', 'oats', 'quinoa', 'barley', 'cereal'];
+        if (grains.some(g => name.includes(g))) return 'grains';
+        
+        // Beverages
+        const beverages = ['juice', 'soda', 'water', 'coffee', 'tea', 'beer', 'wine', 'drink', 'beverage'];
+        if (beverages.some(b => name.includes(b))) return 'beverages';
+        
+        // Default
+        return 'other';
+    }
+    
+    // Category order for sorting
+    const categoryOrder = {
+        'proteins': 1,
+        'vegetables': 2,
+        'fruits': 3,
+        'dairy': 4,
+        'grains': 5,
+        'snacks': 6,
+        'beverages': 7,
+        'other': 8
+    };
+    
     function sortPantry(sortType) {
         const container = document.getElementById('pantryItemsContainer');
         if (!container) {
@@ -878,7 +1072,19 @@
         }
         
         items.sort((a, b) => {
-            if (sortType === 'name') {
+            if (sortType === 'category') {
+                const nameA = a.getAttribute('data-item-name') || '';
+                const nameB = b.getAttribute('data-item-name') || '';
+                const catA = getItemCategory(nameA);
+                const catB = getItemCategory(nameB);
+                
+                // Sort by category first
+                if (catA !== catB) {
+                    return (categoryOrder[catA] || 99) - (categoryOrder[catB] || 99);
+                }
+                // Then by name within category
+                return nameA.localeCompare(nameB);
+            } else if (sortType === 'name') {
                 const nameA = a.getAttribute('data-item-name') || '';
                 const nameB = b.getAttribute('data-item-name') || '';
                 return nameA.localeCompare(nameB);
@@ -1002,12 +1208,12 @@
                 'X-Requested-With': 'XMLHttpRequest' // Identify as AJAX request
             }
         })
-        .then(response => {
+        .then(async response => {
             // Check if response is JSON (success) or HTML (redirect/error)
             const contentType = response.headers.get('content-type');
             if (contentType && contentType.includes('application/json')) {
                 // JSON response (AJAX mode)
-                return response.json().then(data => {
+                return response.json().then(async data => {
                     if (data.success) {
                         // Success - show feedback and reload
                         if (feedback) {
@@ -1020,7 +1226,10 @@
                             if (expirationDateInput) expirationDateInput.value = '';
                         }
                         // Update pantry items without reloading page
-                        await reloadPantryItems();
+                        // Add small delay to ensure server has finished saving
+                        setTimeout(async () => {
+                            await reloadPantryItems();
+                        }, 300);
                     } else {
                         // Error from server
                         if (feedback) {
@@ -1033,7 +1242,10 @@
                 // HTML response (redirect) - Flask redirects return 302, then 200
                 if (response.ok || response.status === 200 || response.status === 302) {
                     // Update pantry items without reloading page
-                    await reloadPantryItems();
+                    // Add small delay to ensure server has finished saving
+                    setTimeout(async () => {
+                        await reloadPantryItems();
+                    }, 300);
                 } else {
                     // Error response
                     return response.text().then(text => {
@@ -1088,76 +1300,132 @@
     // Reload pantry items without refreshing the page
     async function reloadPantryItems() {
         try {
-            const response = await fetch(window.location.pathname, {
+            // Add cache busting to ensure we get fresh data
+            const url = window.location.pathname + '?t=' + Date.now();
+            const response = await fetch(url, {
                 method: 'GET',
                 headers: {
                     'X-Requested-With': 'XMLHttpRequest'
-                }
+                },
+                cache: 'no-cache'  // Prevent browser caching
             });
             
-            if (response.ok) {
-                const html = await response.text();
-                const parser = new DOMParser();
-                const doc = parser.parseFromString(html, 'text/html');
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            
+            const html = await response.text();
+            if (!html || html.trim().length === 0) {
+                throw new Error('Empty response from server');
+            }
+            
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(html, 'text/html');
+            
+            // Check for parsing errors
+            const parserError = doc.querySelector('parsererror');
+            if (parserError) {
+                throw new Error('Failed to parse HTML response');
+            }
+            
+            // Extract pantry items container and related elements
+            // Find the pantry card specifically (the one with "Your Pantry" header)
+            const pantryCard = doc.querySelector('.card.shadow-sm.border-0') || doc.querySelector('.card');
+            const newContainer = pantryCard ? pantryCard.querySelector('#pantryItemsContainer') : doc.querySelector('#pantryItemsContainer');
+            const newCardBody = pantryCard ? pantryCard.querySelector('.card-body') : doc.querySelector('.card-body');
+            // Select the badge specifically from the pantry card header, not any badge on the page
+            const pantryCardHeader = pantryCard ? pantryCard.querySelector('.card-header') : doc.querySelector('.card-header');
+            const newBadge = pantryCardHeader ? pantryCardHeader.querySelector('.badge') : null;
+            const newEmptyState = pantryCard ? pantryCard.querySelector('.empty-state') : doc.querySelector('.empty-state');
+            const newSortDropdown = doc.querySelector('#sortDropdown')?.parentElement;
+            
+            // Find current elements - specifically the pantry card
+            const currentPantryCard = document.querySelector('.card.shadow-sm.border-0') || document.querySelector('.card');
+            const currentCardBody = currentPantryCard ? currentPantryCard.querySelector('.card-body') : document.querySelector('.card-body');
+            const currentContainer = document.getElementById('pantryItemsContainer');
+            const currentCardHeader = currentPantryCard ? currentPantryCard.querySelector('.card-header') : document.querySelector('.card-header');
+            
+            // Check if we have items or empty state
+            if (newContainer && newContainer.children.length > 0 && currentContainer) {
+                // Update items container - items exist
+                currentContainer.innerHTML = newContainer.innerHTML;
+                currentContainer.style.display = '';
                 
-                // Extract pantry items container and related elements
-                const newContainer = doc.querySelector('#pantryItemsContainer');
-                const newCardBody = doc.querySelector('.card-body');
-                const newBadge = doc.querySelector('.badge');
-                const newEmptyState = doc.querySelector('.empty-state');
-                const newSortDropdown = doc.querySelector('#sortDropdown')?.parentElement;
+                // Hide empty state if it exists
+                const emptyState = currentCardBody?.querySelector('.empty-state');
+                if (emptyState) {
+                    emptyState.style.display = 'none';
+                }
                 
-                const currentCardBody = document.querySelector('.card-body');
-                
-                if (newContainer && document.getElementById('pantryItemsContainer')) {
-                    // Update items container
-                    document.getElementById('pantryItemsContainer').innerHTML = newContainer.innerHTML;
-                    
-                    // Update item count badge
-                    if (newBadge) {
-                        const currentBadge = document.querySelector('.badge');
+                // Update item count badge - select specifically from pantry card header
+                if (newBadge && currentCardHeader) {
+                    const headerDiv = currentCardHeader.querySelector('.d-flex');
+                    if (headerDiv) {
+                        // Find existing badge in header
+                        const currentBadge = headerDiv.querySelector('.badge');
                         if (currentBadge) {
                             currentBadge.outerHTML = newBadge.outerHTML;
                         } else {
                             // Insert badge if it doesn't exist
-                            const headerDiv = document.querySelector('.card-header .d-flex');
-                            if (headerDiv && newBadge) {
-                                headerDiv.insertBefore(newBadge.cloneNode(true), headerDiv.querySelector('.dropdown'));
+                            const dropdown = headerDiv.querySelector('.dropdown');
+                            if (dropdown) {
+                                headerDiv.insertBefore(newBadge.cloneNode(true), dropdown);
+                            } else {
+                                headerDiv.appendChild(newBadge.cloneNode(true));
                             }
                         }
                     }
-                    
-                    // Update sort dropdown visibility
-                    if (newSortDropdown) {
-                        const currentSortDropdown = document.querySelector('.dropdown');
-                        if (currentSortDropdown && newContainer.children.length > 1) {
-                            // Keep dropdown visible
-                        } else if (currentSortDropdown && newContainer.children.length <= 1) {
-                            currentSortDropdown.style.display = 'none';
+                }
+                
+                // Show sort dropdown if we have more than 1 item
+                const currentSortDropdown = currentCardHeader ? currentCardHeader.querySelector('.dropdown') : document.querySelector('.dropdown');
+                if (currentSortDropdown) {
+                    currentSortDropdown.style.display = newContainer.children.length > 1 ? '' : 'none';
+                }
+                
+                // Re-initialize delete buttons
+                initializeDeleteButtons();
+                
+                // Re-initialize animations
+                initializeItemAnimations();
+                
+                // Update expiration badges
+                setTimeout(updateExpirationBadges, 100);
+            } else if (newEmptyState && currentCardBody) {
+                // If no items, show empty state
+                currentCardBody.innerHTML = newCardBody.innerHTML;
+                
+                // Hide container if it exists
+                if (currentContainer) {
+                    currentContainer.style.display = 'none';
+                }
+                
+                // Hide sort dropdown if it exists
+                const sortDropdown = currentCardHeader ? currentCardHeader.querySelector('.dropdown') : document.querySelector('.dropdown');
+                if (sortDropdown) {
+                    sortDropdown.style.display = 'none';
+                }
+                
+                // Hide badge if it exists - select specifically from pantry card header
+                if (currentCardHeader) {
+                    const headerDiv = currentCardHeader.querySelector('.d-flex');
+                    if (headerDiv) {
+                        const badge = headerDiv.querySelector('.badge');
+                        if (badge) {
+                            badge.style.display = 'none';
                         }
                     }
-                    
-                    // Re-initialize delete buttons
-                    initializeDeleteButtons();
-                    
-                    // Re-initialize animations
-                    initializeItemAnimations();
-                } else if (newEmptyState && currentCardBody) {
-                    // If no items, update the entire card body
-                    currentCardBody.innerHTML = newCardBody.innerHTML;
-                    
-                    // Hide sort dropdown if it exists
-                    const sortDropdown = document.querySelector('.dropdown');
-                    if (sortDropdown) {
-                        sortDropdown.style.display = 'none';
-                    }
-                    
-                    // Hide badge if it exists
-                    const badge = document.querySelector('.badge');
-                    if (badge) {
-                        badge.style.display = 'none';
-                    }
                 }
+            } else if (currentContainer && newContainer) {
+                // Fallback: just update the container
+                currentContainer.innerHTML = newContainer.innerHTML;
+                initializeDeleteButtons();
+                initializeItemAnimations();
+                setTimeout(updateExpirationBadges, 100);
+            } else {
+                // Last resort: reload page if we can't find elements
+                console.warn('Could not find pantry container, reloading page');
+                window.location.reload();
             }
         } catch (error) {
             console.error('Error reloading pantry items:', error);
@@ -1168,21 +1436,33 @@
     
     // Handle delete item via AJAX
     async function handleDeleteItem(itemName) {
-        if (!confirm(`Remove ${decodeURIComponent(itemName)} from pantry?`)) {
+        if (!itemName) {
+            console.error('Item name is required for deletion');
+            return;
+        }
+        
+        // Decode and sanitize item name
+        const decodedName = decodeURIComponent(itemName);
+        if (!confirm(`Remove "${decodedName}" from pantry?`)) {
             return;
         }
         
         try {
-            const response = await fetch(`/delete/${itemName}`, {
+            // Properly encode the item name for URL
+            const encodedName = encodeURIComponent(itemName);
+            const response = await fetch(`/delete/${encodedName}`, {
                 method: 'GET',
                 headers: {
                     'X-Requested-With': 'XMLHttpRequest'
-                }
+                },
+                cache: 'no-cache'  // Prevent caching
             });
             
             if (response.ok) {
-                // Reload pantry items without refreshing page
-                await reloadPantryItems();
+                // Add small delay to ensure server has finished processing
+                setTimeout(async () => {
+                    await reloadPantryItems();
+                }, 200);
                 
                 // Show success feedback
                 const feedback = document.getElementById('addItemFeedback');
@@ -1190,11 +1470,17 @@
                     showFeedback('Item removed successfully!', 'success');
                 }
             } else {
-                throw new Error('Failed to delete item');
+                const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+                throw new Error(errorData.error || 'Failed to delete item');
             }
         } catch (error) {
             console.error('Error deleting item:', error);
-            alert('Failed to delete item. Please try again.');
+            const feedback = document.getElementById('addItemFeedback');
+            if (feedback) {
+                showFeedback('Failed to delete item: ' + error.message, 'danger');
+            } else {
+                alert('Failed to delete item: ' + error.message);
+            }
         }
     }
     

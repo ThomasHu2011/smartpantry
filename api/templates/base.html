@@ -610,6 +610,78 @@
             outline-offset: 2px;
             border-radius: 4px;
         }
+        
+        /* Fix navbar display bugs */
+        .navbar-brand {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            max-width: 200px;
+        }
+        
+        .nav-link {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        
+        /* Fix dropdown menu overflow */
+        .dropdown-menu {
+            max-width: 100vw;
+            overflow-x: hidden;
+        }
+        
+        .dropdown-item {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        
+        /* Mobile navbar fixes */
+        @media (max-width: 991px) {
+            .navbar-brand {
+                max-width: 150px;
+            }
+            
+            .navbar-collapse {
+                margin-top: 12px;
+            }
+            
+            .nav-link {
+                padding: 10px 16px !important;
+            }
+            
+            .dropdown-menu {
+                position: static !important;
+                transform: none !important;
+                box-shadow: none !important;
+                border: none !important;
+                background: rgba(255, 255, 255, 0.1) !important;
+            }
+            
+            .dropdown-item {
+                color: rgba(255, 255, 255, 0.9) !important;
+                padding: 10px 16px !important;
+            }
+            
+            .dropdown-item:hover {
+                background: rgba(255, 255, 255, 0.2) !important;
+            }
+        }
+        
+        /* Fix alert display */
+        .alert {
+            word-wrap: break-word;
+            overflow-wrap: break-word;
+        }
+        
+        /* Fix badge overflow on small screens */
+        @media (max-width: 576px) {
+            .badge {
+                font-size: 0.7rem !important;
+                padding: 4px 8px !important;
+            }
+        }
     </style>
 </head>
 <body>

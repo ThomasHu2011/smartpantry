@@ -627,12 +627,27 @@ def normalize_pantry_item(item):
         if 'addedDate' not in normalized_item:
             normalized_item['addedDate'] = datetime.now().isoformat()
         # Ensure name exists and is a string
-        if 'name' not in normalized_item:
-            normalized_item['name'] = str(normalized_item.get('name', ''))
-        elif normalized_item['name'] is None:
+        if 'name' not in normalized_item or normalized_item['name'] is None:
             normalized_item['name'] = ''
         else:
             normalized_item['name'] = str(normalized_item['name']).strip()
+        
+        # Ensure quantity is always a valid string
+        if 'quantity' not in normalized_item or normalized_item['quantity'] is None:
+            normalized_item['quantity'] = '1'
+        else:
+            normalized_item['quantity'] = str(normalized_item['quantity']).strip() or '1'
+        
+        # Ensure expirationDate is None or valid string
+        if 'expirationDate' in normalized_item:
+            if normalized_item['expirationDate'] == '' or normalized_item['expirationDate'] is None:
+                normalized_item['expirationDate'] = None
+            else:
+                normalized_item['expirationDate'] = str(normalized_item['expirationDate']).strip()
+        
+        # Validate that name is not empty after normalization
+        if not normalized_item.get('name'):
+            normalized_item['name'] = 'Unnamed Item'
         return normalized_item
     else:
         # Convert string to dict format
@@ -658,12 +673,21 @@ def get_user_pantry(user_id):
         normalized_pantry = []
         for item in pantry:
             try:
+                normalized_item = None
                 if isinstance(item, dict):
-                    normalized_pantry.append(normalize_pantry_item(item.copy()))
+                    normalized_item = normalize_pantry_item(item.copy())
                 elif item is not None:
-                    normalized_pantry.append(normalize_pantry_item(item))
+                    normalized_item = normalize_pantry_item(item)
+                
+                # Only add items with valid names (after normalization, name should never be empty)
+                if normalized_item and normalized_item.get('name') and normalized_item.get('name').strip():
+                    name_str = str(normalized_item.get('name', '')).strip()
+                    if name_str and name_str != 'Unnamed Item':  # Skip placeholder names
+                        normalized_pantry.append(normalized_item)
             except Exception as e:
                 print(f"Warning: Failed to normalize item {item}: {e}")
+                import traceback
+                traceback.print_exc()
                 continue
         print(f"Retrieved pantry for user {user_id}: {len(normalized_pantry)} items")
         return normalized_pantry
@@ -857,10 +881,10 @@ def index():
                 elif item is not None:
                     normalized_item = normalize_pantry_item(item)
                 
-                # Only add items with valid names
-                if normalized_item and normalized_item.get('name'):
+                # Only add items with valid names (after normalization, name should never be empty)
+                if normalized_item and normalized_item.get('name') and normalized_item.get('name').strip():
                     name_str = str(normalized_item.get('name', '')).strip()
-                    if name_str:
+                    if name_str and name_str != 'Unnamed Item':  # Skip placeholder names
                         normalized_item['name'] = name_str
                         normalized_pantry.append(normalized_item)
             except Exception as e:
@@ -962,20 +986,23 @@ def add_items():
         # Convert to list of dicts if needed, check for duplicates
         pantry_list = []
         item_exists = False
+        item_normalized = item.strip().lower()  # Normalize for comparison
         for pantry_item in user_pantry:
             if isinstance(pantry_item, dict):
                 pantry_list.append(pantry_item)
-                if pantry_item.get('name', '').lower() == item.lower():
+                pantry_name = pantry_item.get('name', '').strip().lower() if pantry_item.get('name') else ''
+                if pantry_name == item_normalized:
                     item_exists = True
             else:
+                pantry_str = str(pantry_item).strip().lower() if pantry_item else ''
                 pantry_list.append({
                     'id': str(uuid.uuid4()),
-                    'name': pantry_item,
+                    'name': str(pantry_item).strip() if pantry_item else '',
                     'quantity': '1',
                     'expirationDate': None,
                     'addedDate': datetime.now().isoformat()
                 })
-                if pantry_item.lower() == item.lower():
+                if pantry_str == item_normalized:
                     item_exists = True
         
         if not item_exists:
@@ -1003,15 +1030,18 @@ def add_items():
         if 'web_pantry' not in session:
             session['web_pantry'] = []
         
-        # Check for duplicates (case-insensitive)
+        # Check for duplicates (case-insensitive, normalized)
         item_exists = False
+        item_normalized = item.strip().lower()  # Normalize for comparison
         for pantry_item in session['web_pantry']:
             if isinstance(pantry_item, dict):
-                if pantry_item.get('name', '').lower() == item.lower():
+                pantry_name = pantry_item.get('name', '').strip().lower() if pantry_item.get('name') else ''
+                if pantry_name == item_normalized:
                     item_exists = True
                     break
             else:
-                if str(pantry_item).lower() == item.lower():
+                pantry_str = str(pantry_item).strip().lower() if pantry_item else ''
+                if pantry_str == item_normalized:
                     item_exists = True
                     break
         
@@ -1035,6 +1065,7 @@ def add_items():
             flash(f"{item} is already in your pantry.", "warning")
     
     # Return JSON response for AJAX requests, otherwise redirect
+    # IMPORTANT: Ensure the item is saved before responding
     if is_ajax:
         return jsonify({'success': True, 'message': 'Item added successfully'}), 200
     return redirect(url_for("index"))
@@ -1120,22 +1151,30 @@ def delete_item(item_name):
         # Convert to list of dicts if needed
         pantry_list = []
         item_found = False
+        item_name_normalized = item_name.strip().lower()  # Normalize once for comparison
         for pantry_item in session['web_pantry']:
             if isinstance(pantry_item, dict):
                 pantry_name = pantry_item.get('name', '').strip() if pantry_item.get('name') else ''
                 # Compare with stripped names (case-insensitive)
-                if pantry_name and pantry_name.lower() == item_name.lower():
+                if pantry_name and pantry_name.lower() == item_name_normalized:
                     item_found = True
                     print(f"DEBUG: Found matching item: '{pantry_name}' == '{item_name}'")
                 else:
                     pantry_list.append(pantry_item)
             else:
                 pantry_str = str(pantry_item).strip() if pantry_item else ''
-                if pantry_str and pantry_str.lower() == item_name.lower():
+                if pantry_str and pantry_str.lower() == item_name_normalized:
                     item_found = True
                     print(f"DEBUG: Found matching item (string): '{pantry_str}' == '{item_name}'")
                 elif pantry_str:
-                    pantry_list.append(pantry_item)
+                    # Convert old string format to dict format
+                    pantry_list.append({
+                        'id': str(uuid.uuid4()),
+                        'name': pantry_str,
+                        'quantity': '1',
+                        'expirationDate': None,
+                        'addedDate': datetime.now().isoformat()
+                    })
         
         if item_found:
             session['web_pantry'] = pantry_list
@@ -1677,9 +1716,18 @@ If you cannot determine a quantity, use "1" as the default. Return ONLY valid JS
                         'addedDate': datetime.now().isoformat()
                     })
             
-            # Add new items
-            pantry_list.extend(pantry_items)
-            update_user_pantry(session['user_id'], pantry_list)
+            # Add new items (check for duplicates first)
+            existing_names = {item.get('name', '').strip().lower() for item in pantry_list if item.get('name')}
+            new_items = []
+            for item in pantry_items:
+                item_name = item.get('name', '').strip().lower() if item.get('name') else ''
+                if item_name and item_name not in existing_names:
+                    pantry_list.append(item)
+                    existing_names.add(item_name)
+                    new_items.append(item)
+            
+            if new_items:
+                update_user_pantry(session['user_id'], pantry_list)
         else:
             # Add to anonymous web pantry (stored in session for persistence)
             # CRITICAL: Mark session as permanent for anonymous users
@@ -1702,11 +1750,20 @@ If you cannot determine a quantity, use "1" as the default. Return ONLY valid JS
                         'addedDate': datetime.now().isoformat()
                     })
             
-            # Add new items
-            pantry_list.extend(pantry_items)
-            session['web_pantry'] = pantry_list
-            # Mark session as modified to ensure it's saved
-            session.modified = True
+            # Add new items (check for duplicates first)
+            existing_names = {item.get('name', '').strip().lower() for item in pantry_list if item.get('name')}
+            new_items = []
+            for item in pantry_items:
+                item_name = item.get('name', '').strip().lower() if item.get('name') else ''
+                if item_name and item_name not in existing_names:
+                    pantry_list.append(item)
+                    existing_names.add(item_name)
+                    new_items.append(item)
+            
+            if new_items:
+                session['web_pantry'] = pantry_list
+                # Mark session as modified to ensure it's saved
+                session.modified = True
         
         item_names = [item['name'] for item in pantry_items]
         flash(f"Successfully analyzed photo! Added {len(pantry_items)} items: {', '.join(item_names)}", "success")
@@ -2195,41 +2252,59 @@ def api_login():
 def api_get_pantry():
     """Get all pantry items as JSON"""
     
-    client_type = request.headers.get('X-Client-Type', 'web')
-    user_id = request.headers.get('X-User-ID')
-    
-    # Check if user is authenticated
-    if user_id:
-        pantry_to_use = get_user_pantry(user_id)
-    else:
-        # Use anonymous pantry
-        pantry_to_use = mobile_pantry if client_type == 'mobile' else web_pantry
-    
-    # Ensure pantry_to_use is a list
-    if not isinstance(pantry_to_use, list):
-        pantry_to_use = []
-    
-    # Convert pantry items to new format if needed (backward compatibility)
-    items = []
-    for item in pantry_to_use:
-        if isinstance(item, dict):
-            # Already in new format
-            items.append(item)
+    try:
+        client_type = request.headers.get('X-Client-Type', 'web')
+        user_id = request.headers.get('X-User-ID')
+        
+        # Check if user is authenticated
+        if user_id:
+            pantry_to_use = get_user_pantry(user_id)
         else:
-            # Old string format - convert to new format
-            items.append({
-                'id': str(uuid.uuid4()),
-                'name': item,
-                'quantity': '1',
-                'expirationDate': None,
-                'addedDate': datetime.now().isoformat()
-            })
-    
-    return jsonify({
-        'success': True,
-        'items': items,
-        'count': len(items)
-    })
+            # Use anonymous pantry
+            pantry_to_use = mobile_pantry if client_type == 'mobile' else web_pantry
+        
+        # Ensure pantry_to_use is a list
+        if not isinstance(pantry_to_use, list):
+            pantry_to_use = []
+        
+        # Convert pantry items to new format if needed (backward compatibility)
+        items = []
+        for item in pantry_to_use:
+            try:
+                if isinstance(item, dict):
+                    # Normalize item to ensure all fields are present and valid
+                    normalized_item = normalize_pantry_item(item.copy())
+                    # Only include items with valid names
+                    if normalized_item.get('name') and normalized_item.get('name').strip() and normalized_item.get('name') != 'Unnamed Item':
+                        items.append(normalized_item)
+                elif item is not None:
+                    # Old string format - convert to new format
+                    item_str = str(item).strip() if item else ''
+                    if item_str:
+                        normalized_item = normalize_pantry_item(item_str)
+                        if normalized_item.get('name') and normalized_item.get('name').strip() and normalized_item.get('name') != 'Unnamed Item':
+                            items.append(normalized_item)
+            except Exception as e:
+                print(f"Warning: Failed to process item {item}: {e}")
+                import traceback
+                traceback.print_exc()
+                continue
+        
+        return jsonify({
+            'success': True,
+            'items': items,
+            'count': len(items)
+        })
+    except Exception as e:
+        print(f"Error in api_get_pantry: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'items': [],
+            'count': 0
+        }), 500
 
 @app.route('/api/pantry', methods=['POST'])
 def api_add_item():
@@ -2389,9 +2464,13 @@ def api_add_item():
                     'addedDate': datetime.now().isoformat()
                 })
         
-        # Check for duplicates
-        if any(i.get('name', '').lower() == pantry_item['name'].lower() for i in pantry_list):
-            return jsonify({'success': False, 'error': f'"{pantry_item["name"]}" is already in pantry'}), 409
+        # Check for duplicates (case-insensitive name match) - FIX: Missing duplicate check
+        item_name = pantry_item.get('name', '').strip() if pantry_item.get('name') else ''
+        if item_name:
+            for i in pantry_list:
+                existing_name = i.get('name', '').strip() if i.get('name') else ''
+                if existing_name and existing_name.lower() == item_name.lower():
+                    return jsonify({'success': False, 'error': f'"{item_name}" is already in pantry'}), 409
         
         pantry_list.append(pantry_item)
         if client_type == 'mobile':
@@ -2444,16 +2523,24 @@ def api_delete_item(item_id):
                     'addedDate': datetime.now().isoformat()
                 })
         
-        # Find item by ID or name (for backward compatibility)
+        # Find item by ID (exact match) or name (case-insensitive, trimmed) for backward compatibility
         item_to_delete = None
+        item_id_clean = item_id.strip()
+        item_id_clean_lower = item_id_clean.lower()
         for i, pantry_item in enumerate(pantry_list):
-            if (isinstance(pantry_item, dict) and 
-                (pantry_item.get('id') == item_id or pantry_item.get('name', '').lower() == item_id.lower())):
-                item_to_delete = pantry_list.pop(i)
-                break
-            elif not isinstance(pantry_item, dict) and pantry_item.lower() == item_id.lower():
-                item_to_delete = pantry_list.pop(i)
-                break
+            if isinstance(pantry_item, dict):
+                item_id_from_dict = pantry_item.get('id', '').strip() if pantry_item.get('id') else ''
+                item_name = pantry_item.get('name', '').strip().lower() if pantry_item.get('name') else ''
+                # Try exact ID match first (case-sensitive), then fallback to name match (case-insensitive)
+                if item_id_from_dict == item_id_clean or item_name == item_id_clean_lower:
+                    item_to_delete = pantry_list.pop(i)
+                    break
+            else:
+                # Handle old string format - compare case-insensitively
+                pantry_str = str(pantry_item).strip().lower() if pantry_item else ''
+                if pantry_str == item_id_clean_lower:
+                    item_to_delete = pantry_list.pop(i)
+                    break
         
         if item_to_delete:
             print(f"✅ Found item to delete: {item_to_delete}")
@@ -2496,20 +2583,22 @@ def api_delete_item(item_id):
                     'addedDate': datetime.now().isoformat()
                 })
         
-        # Find item by ID or name (case-insensitive, trimmed)
+        # Find item by ID (exact match) or name (case-insensitive, trimmed) for backward compatibility
         item_to_delete = None
-        item_id_clean = item_id.strip().lower()
+        item_id_clean = item_id.strip()
+        item_id_clean_lower = item_id_clean.lower()
         for i, pantry_item in enumerate(pantry_list):
             if isinstance(pantry_item, dict):
+                item_id_from_dict = pantry_item.get('id', '').strip() if pantry_item.get('id') else ''
                 item_name = pantry_item.get('name', '').strip().lower() if pantry_item.get('name') else ''
-                item_id_from_dict = pantry_item.get('id', '').strip().lower() if pantry_item.get('id') else ''
-                if (item_id_from_dict == item_id_clean or item_name == item_id_clean):
+                # Try exact ID match first (case-sensitive), then fallback to name match (case-insensitive)
+                if item_id_from_dict == item_id_clean or item_name == item_id_clean_lower:
                     item_to_delete = pantry_list.pop(i)
                     break
             else:
-                # Handle old string format
+                # Handle old string format - compare case-insensitively
                 pantry_str = str(pantry_item).strip().lower() if pantry_item else ''
-                if pantry_str == item_id_clean:
+                if pantry_str == item_id_clean_lower:
                     item_to_delete = pantry_list.pop(i)
                     break
         
@@ -2524,6 +2613,142 @@ def api_delete_item(item_id):
                 'message': f'Removed "{item_name}" from pantry',
                 'total_items': len(pantry_list)
             })
+        else:
+            return jsonify({'success': False, 'error': f'Item not found in pantry'}), 404
+
+@app.route('/api/pantry/<item_id>', methods=['PUT'])
+def api_update_item(item_id):
+    """Update an item in pantry via API"""
+    from urllib.parse import unquote
+    item_id = unquote(item_id)
+    
+    print(f"\n{'='*60}")
+    print(f"🔄 API UPDATE ITEM REQUEST")
+    print(f"{'='*60}")
+    print(f"Item ID: {item_id}")
+    print(f"X-User-ID: {request.headers.get('X-User-ID', 'NOT PROVIDED')}")
+    print(f"X-Client-Type: {request.headers.get('X-Client-Type', 'NOT PROVIDED')}")
+    
+    data = request.get_json()
+    if not data:
+        return jsonify({'success': False, 'error': 'No data provided'}), 400
+    
+    client_type = request.headers.get('X-Client-Type', 'web')
+    user_id = request.headers.get('X-User-ID')
+    
+    # Validate required fields
+    item_name = data.get('name', '').strip() if data.get('name') else ''
+    if not item_name:
+        return jsonify({'success': False, 'error': 'Item name cannot be empty'}), 400
+    
+    # Handle expirationDate
+    expiration_date = data.get('expirationDate')
+    if expiration_date == '' or expiration_date is None:
+        expiration_date = None
+    
+    # Handle quantity
+    quantity = data.get('quantity', '1')
+    if not quantity or (isinstance(quantity, str) and quantity.strip() == ''):
+        quantity = '1'
+    elif not isinstance(quantity, str):
+        quantity = str(quantity)
+    
+    updated_item = {
+        'id': item_id,
+        'name': item_name,
+        'quantity': quantity.strip() if isinstance(quantity, str) else str(quantity),
+        'expirationDate': expiration_date,
+        'addedDate': data.get('addedDate', datetime.now().isoformat())
+    }
+    
+    # Check if user is authenticated
+    if user_id:
+        pantry_to_use = get_user_pantry(user_id)
+        # Convert to list of dicts if needed
+        pantry_list = []
+        item_found = False
+        
+        for item in pantry_to_use:
+            if isinstance(item, dict):
+                pantry_list.append(item)
+            else:
+                pantry_list.append({
+                    'id': str(uuid.uuid4()),
+                    'name': item,
+                    'quantity': '1',
+                    'expirationDate': None,
+                    'addedDate': datetime.now().isoformat()
+                })
+        
+        # Find and update item by ID (exact match, case-sensitive for IDs)
+        item_id_clean = item_id.strip()
+        for i, pantry_item in enumerate(pantry_list):
+            if isinstance(pantry_item, dict):
+                item_id_from_dict = pantry_item.get('id', '').strip() if pantry_item.get('id') else ''
+                # Compare IDs exactly (case-sensitive) - IDs should be UUIDs and match exactly
+                if item_id_from_dict == item_id_clean:
+                    pantry_list[i] = updated_item
+                    item_found = True
+                    break
+        
+        if item_found:
+            print(f"💾 Updating pantry for user {user_id} with {len(pantry_list)} items")
+            update_user_pantry(user_id, pantry_list)
+            print(f"✅ Successfully updated item '{updated_item['name']}' in user {user_id}'s pantry")
+            return jsonify({
+                'success': True,
+                'message': f'Updated "{updated_item["name"]}" in pantry',
+                'item': updated_item,
+                'total_items': len(pantry_list)
+            }), 200
+        else:
+            print(f"❌ Item not found in pantry. Item ID: {item_id}")
+            return jsonify({'success': False, 'error': f'Item not found in pantry'}), 404
+    else:
+        # Use anonymous pantry
+        global mobile_pantry, web_pantry
+        pantry_to_use = mobile_pantry if client_type == 'mobile' else web_pantry
+        # Ensure pantry_to_use is a list
+        if not isinstance(pantry_to_use, list):
+            pantry_to_use = []
+        # Convert to list of dicts if needed
+        pantry_list = []
+        item_found = False
+        
+        for item in pantry_to_use:
+            if isinstance(item, dict):
+                pantry_list.append(item)
+            else:
+                pantry_list.append({
+                    'id': str(uuid.uuid4()),
+                    'name': item,
+                    'quantity': '1',
+                    'expirationDate': None,
+                    'addedDate': datetime.now().isoformat()
+                })
+        
+        # Find and update item by ID (exact match, case-sensitive for IDs)
+        item_id_clean = item_id.strip()
+        for i, pantry_item in enumerate(pantry_list):
+            if isinstance(pantry_item, dict):
+                item_id_from_dict = pantry_item.get('id', '').strip() if pantry_item.get('id') else ''
+                # Compare IDs exactly (case-sensitive) - IDs should be UUIDs and match exactly
+                if item_id_from_dict == item_id_clean:
+                    pantry_list[i] = updated_item
+                    item_found = True
+                    break
+        
+        if item_found:
+            if client_type == 'mobile':
+                mobile_pantry = pantry_list
+            else:
+                web_pantry = pantry_list
+            return jsonify({
+                'success': True,
+                'message': f'Updated "{updated_item["name"]}" in pantry',
+                'item': updated_item,
+                'total_items': len(pantry_list)
+            }), 200
         else:
             return jsonify({'success': False, 'error': f'Item not found in pantry'}), 404
 

@@ -34,6 +34,72 @@
             background-position: 0% 0%;
         }
     }
+    
+    /* Fix recipe card display bugs */
+    .recipe-card {
+        overflow: hidden;
+    }
+    
+    .recipe-card .card-header h5 {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        max-width: 100%;
+        flex: 1;
+        min-width: 0;
+    }
+    
+    .recipe-card .card-header .d-flex {
+        gap: 12px;
+    }
+    
+    .recipe-card .badge {
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-width: 150px;
+        display: inline-block;
+    }
+    
+    .recipe-card .card-body {
+        overflow-wrap: break-word;
+        word-wrap: break-word;
+    }
+    
+    .recipe-card ol li {
+        word-wrap: break-word;
+        overflow-wrap: break-word;
+    }
+    
+    /* Fix ingredient badges overflow */
+    .recipe-card .badge {
+        max-width: 100%;
+        white-space: normal;
+        word-wrap: break-word;
+        display: inline-block;
+        margin-bottom: 4px;
+    }
+    
+    /* Mobile responsiveness for recipe cards */
+    @media (max-width: 768px) {
+        .recipe-card .card-header h5 {
+            font-size: 1rem;
+        }
+        
+        .recipe-card .card-header .d-flex {
+            flex-direction: column;
+            align-items: flex-start !important;
+        }
+        
+        .recipe-card .badge {
+            max-width: 100%;
+            font-size: 0.75rem;
+        }
+        
+        .recipe-card .card-body {
+            padding: 16px !important;
+        }
+    }
 </style>
 {% endblock %}
 
@@ -75,9 +141,9 @@
                     <div class="card shadow-sm border-0 h-100 recipe-card" style="animation-delay: {{ loop.index0 * 0.1 }}s;">
                         <div class="card-header bg-gradient-primary text-white border-0" style="position: relative; overflow: hidden;">
                             <div style="position: absolute; top: -50%; right: -50%; width: 200%; height: 200%; background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, transparent 70%); opacity: 0.5;"></div>
-                            <div class="d-flex justify-content-between align-items-center">
-                                <h5 class="mb-0">{{ recipe.name }}</h5>
-                                <div class="text-end">
+                            <div class="d-flex justify-content-between align-items-center" style="gap: 12px;">
+                                <h5 class="mb-0" style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0;">{{ recipe.name }}</h5>
+                                <div class="text-end" style="flex-shrink: 0;">
                                     {% if recipe.health_rating %}
                                         {% if recipe.health_rating == "Healthy" %}
                                         <span class="badge bg-success text-white mb-1">
