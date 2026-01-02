@@ -1943,19 +1943,29 @@ def recipe_detail(recipe_name):
         flash(f"Recipe '{decoded_recipe_name}' not found. Available recipes: {', '.join(available_names) if available_names else 'None'}", "danger")
         return redirect(url_for("suggest_recipe"))
 
-    # Generate detailed cooking instructions with timers using AI
-    ingredients = recipe.get('ingredients', [])
-    instructions = recipe.get('instructions', [])
-    recipe_name = recipe.get('name', 'Unknown Recipe')
+    # Check if detailed recipe and nutrition info are already cached in session
+    # Use recipe name as key to cache detailed recipes per recipe
+    recipe_cache_key = f"detailed_recipe_{decoded_recipe_name}"
+    nutrition_cache_key = f"nutrition_{decoded_recipe_name}"
     
-    if not ingredients or not instructions:
-        flash("Recipe data is incomplete. Please generate new recipes.", "warning")
-        return redirect(url_for("suggest_recipe"))
+    detailed_recipe = session.get(recipe_cache_key)
+    nutrition_info = session.get(nutrition_cache_key)
     
-    ingredients_text = ", ".join(ingredients)
-    instructions_text = " | ".join(instructions)
-    
-    prompt = f"""For this recipe: {recipe_name}
+    # Only generate if not cached
+    if not detailed_recipe:
+        # Generate detailed cooking instructions with timers using AI
+        ingredients = recipe.get('ingredients', [])
+        instructions = recipe.get('instructions', [])
+        recipe_name = recipe.get('name', 'Unknown Recipe')
+        
+        if not ingredients or not instructions:
+            flash("Recipe data is incomplete. Please generate new recipes.", "warning")
+            return redirect(url_for("suggest_recipe"))
+        
+        ingredients_text = ", ".join(ingredients)
+        instructions_text = " | ".join(instructions)
+        
+        prompt = f"""For this recipe: {recipe_name}
 Ingredients: {ingredients_text}
 Basic Instructions: {instructions_text}
 
@@ -1982,67 +1992,74 @@ Format as JSON:
     "cooking_tips": ["tip1", "tip2", "tip3"]
 }}"""
 
-    try:
-        if not client:
-            raise ValueError("OpenAI API key not configured. Please set OPENAI_API_KEY in your .env file.")
-        response = client.chat.completions.create(
-            model="gpt-4o",
-            messages=[
-                {"role": "system", "content": "You are a professional chef creating detailed cooking instructions with precise timing and helpful tips."},
-                {"role": "user", "content": prompt}
-            ],
-            max_tokens=800
-        )
-        
-        import json
-        recipe_text = response.choices[0].message.content
-        
-        # Clean the response text
-        cleaned_text = recipe_text.strip()
-        if cleaned_text.startswith("```json"):
-            cleaned_text = cleaned_text.replace("```json", "").replace("```", "").strip()
-        elif cleaned_text.startswith("```"):
-            cleaned_text = cleaned_text.replace("```", "").strip()
-        
-        detailed_recipe = json.loads(cleaned_text)
-        
-    except Exception as e:
-        # Fallback detailed recipe structure
-        detailed_recipe = {
-            "prep_time": "15 minutes",
-            "cook_time": recipe.get('cooking_time', '20 minutes'),
-            "total_time": "35 minutes",
-            "detailed_steps": [
-                {
-                    "step": 1,
-                    "instruction": "Prepare all ingredients",
-                    "timer": "5 minutes",
-                    "tips": "Read through all instructions first"
-                },
-                {
-                    "step": 2,
-                    "instruction": "Start cooking process",
-                    "timer": recipe.get('cooking_time', '20 minutes'),
-                    "tips": "Follow basic recipe instructions"
-                },
-                {
-                    "step": 3,
-                    "instruction": "Season and serve",
-                    "timer": "5 minutes",
-                    "tips": "Taste and adjust seasoning"
-                }
-            ],
-            "cooking_tips": [
-                "Use fresh ingredients when possible",
-                "Don't rush the cooking process",
-                "Taste as you go and adjust seasoning"
-            ]
-        }
+        try:
+            if not client:
+                raise ValueError("OpenAI API key not configured. Please set OPENAI_API_KEY in your .env file.")
+            response = client.chat.completions.create(
+                model="gpt-4o",
+                messages=[
+                    {"role": "system", "content": "You are a professional chef creating detailed cooking instructions with precise timing and helpful tips."},
+                    {"role": "user", "content": prompt}
+                ],
+                max_tokens=800
+            )
+            
+            import json
+            recipe_text = response.choices[0].message.content
+            
+            # Clean the response text
+            cleaned_text = recipe_text.strip()
+            if cleaned_text.startswith("```json"):
+                cleaned_text = cleaned_text.replace("```json", "").replace("```", "").strip()
+            elif cleaned_text.startswith("```"):
+                cleaned_text = cleaned_text.replace("```", "").strip()
+            
+            detailed_recipe = json.loads(cleaned_text)
+            # Cache the detailed recipe in session
+            session[recipe_cache_key] = detailed_recipe
+            session.modified = True
+            
+        except Exception as e:
+            print(f"Error generating detailed recipe: {e}")
+            # Fallback detailed recipe structure
+            detailed_recipe = {
+                "prep_time": "15 minutes",
+                "cook_time": recipe.get('cooking_time', '20 minutes'),
+                "total_time": "35 minutes",
+                "detailed_steps": [
+                    {
+                        "step": 1,
+                        "instruction": "Prepare all ingredients",
+                        "timer": "5 minutes",
+                        "tips": "Read through all instructions first"
+                    },
+                    {
+                        "step": 2,
+                        "instruction": "Start cooking process",
+                        "timer": recipe.get('cooking_time', '20 minutes'),
+                        "tips": "Follow basic recipe instructions"
+                    },
+                    {
+                        "step": 3,
+                        "instruction": "Season and serve",
+                        "timer": "5 minutes",
+                        "tips": "Taste and adjust seasoning"
+                    }
+                ],
+                "cooking_tips": [
+                    "Use fresh ingredients when possible",
+                    "Don't rush the cooking process",
+                    "Taste as you go and adjust seasoning"
+                ]
+            }
+            # Cache the fallback recipe too
+            session[recipe_cache_key] = detailed_recipe
+            session.modified = True
 
-    # Generate nutrition facts for this recipe
-    nutrition_info = None
-    try:
-        nutrition_prompt = f"""Calculate detailed nutrition facts for this recipe:
+    # Only generate nutrition info if not cached
+    if not nutrition_info:
+        try:
+            nutrition_prompt = f"""Calculate detailed nutrition facts for this recipe:
 
 Recipe: {recipe['name']}
 Ingredients: {', '.join(recipe['ingredients'])}
@@ -2058,37 +2075,44 @@ Provide nutrition facts per serving in JSON format:
     "sodium": "X mg"
 }}"""
 
-        if not client:
-            raise ValueError("OpenAI API key not configured. Please set OPENAI_API_KEY in your .env file.")
-        nutrition_response = client.chat.completions.create(
-            model="gpt-4o",
-            messages=[
-                {"role": "system", "content": "You are a professional nutritionist. Provide accurate nutrition facts for recipes."},
-                {"role": "user", "content": nutrition_prompt}
-            ],
-            max_tokens=200
-        )
-        
-        nutrition_text = nutrition_response.choices[0].message.content
-        cleaned_nutrition = nutrition_text.strip()
-        if cleaned_nutrition.startswith("```json"):
-            cleaned_nutrition = cleaned_nutrition.replace("```json", "").replace("```", "").strip()
-        elif cleaned_nutrition.startswith("```"):
-            cleaned_nutrition = cleaned_nutrition.replace("```", "").strip()
-        
-        nutrition_info = json.loads(cleaned_nutrition)
+            if not client:
+                raise ValueError("OpenAI API key not configured. Please set OPENAI_API_KEY in your .env file.")
+            nutrition_response = client.chat.completions.create(
+                model="gpt-4o",
+                messages=[
+                    {"role": "system", "content": "You are a professional nutritionist. Provide accurate nutrition facts for recipes."},
+                    {"role": "user", "content": nutrition_prompt}
+                ],
+                max_tokens=200
+            )
+            
+            nutrition_text = nutrition_response.choices[0].message.content
+            cleaned_nutrition = nutrition_text.strip()
+            if cleaned_nutrition.startswith("```json"):
+                cleaned_nutrition = cleaned_nutrition.replace("```json", "").replace("```", "").strip()
+            elif cleaned_nutrition.startswith("```"):
+                cleaned_nutrition = cleaned_nutrition.replace("```", "").strip()
+            
+            nutrition_info = json.loads(cleaned_nutrition)
+            # Cache the nutrition info in session
+            session[nutrition_cache_key] = nutrition_info
+            session.modified = True
 
-    except Exception as e:
-        # Fallback nutrition info
-        nutrition_info = {
-            "calories": "250 kcal",
-            "carbs": "30 g",
-            "protein": "12 g",
-            "fat": "8 g",
-            "fiber": "5 g",
-            "sugar": "6 g",
-            "sodium": "400 mg"
-        }
+        except Exception as e:
+            print(f"Error generating nutrition info: {e}")
+            # Fallback nutrition info
+            nutrition_info = {
+                "calories": "250 kcal",
+                "carbs": "30 g",
+                "protein": "12 g",
+                "fat": "8 g",
+                "fiber": "5 g",
+                "sugar": "6 g",
+                "sodium": "400 mg"
+            }
+            # Cache the fallback nutrition info too
+            session[nutrition_cache_key] = nutrition_info
+            session.modified = True
 
     # CRITICAL: Preserve recipes in session so they don't regenerate when user goes back
     # Only update session if it's missing or empty, don't overwrite existing recipes

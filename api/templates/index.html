@@ -79,10 +79,33 @@
         position: relative;
     }
     
+    /* Ensure all modal elements are clickable */
+    .modal.show .modal-content,
+    .modal.show .modal-content * {
+        pointer-events: auto !important;
+    }
+    
+    /* Ensure modal dialog is above backdrop */
+    .modal-dialog {
+        z-index: 1055 !important;
+        position: relative;
+    }
+    
     /* Prevent backdrop from staying after modal closes */
     body:not(.modal-open) .modal-backdrop {
         display: none !important;
         opacity: 0 !important;
+        visibility: hidden !important;
+        pointer-events: none !important;
+    }
+    
+    /* Ensure backdrop doesn't block modal content clicks */
+    .modal-backdrop {
+        pointer-events: auto !important;
+    }
+    
+    .modal.show ~ .modal-backdrop {
+        pointer-events: auto !important;
     }
     
     /* Fix text overflow in pantry item names */
@@ -518,14 +541,14 @@
 </div>
 
 <!-- Photo Upload Modal -->
-<div class="modal fade" id="photoModal" tabindex="-1" aria-labelledby="photoModalLabel" aria-hidden="true" data-bs-backdrop="true" data-bs-keyboard="true">
-    <div class="modal-dialog modal-lg modal-dialog-centered">
-        <div class="modal-content" style="border-radius: 24px; border: none;">
-            <div class="modal-header border-0 pb-0">
+<div class="modal fade" id="photoModal" tabindex="-1" aria-labelledby="photoModalLabel" aria-hidden="true" data-bs-backdrop="true" data-bs-keyboard="true" style="pointer-events: auto;">
+    <div class="modal-dialog modal-lg modal-dialog-centered" style="pointer-events: auto; z-index: 1055;">
+        <div class="modal-content" style="border-radius: 24px; border: none; pointer-events: auto; z-index: 1056; position: relative;">
+            <div class="modal-header border-0 pb-0" style="pointer-events: auto;">
                 <h5 class="modal-title fw-bold" id="photoModalLabel">
                     <i class="bi bi-camera-fill me-2 text-success"></i>Add Items with Photo
                 </h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close" style="pointer-events: auto; cursor: pointer; z-index: 10;"></button>
             </div>
             <div class="modal-body p-4">
                 <!-- Camera View (Hidden by default) -->
@@ -718,11 +741,17 @@
     }
 
     if (closeCameraBtn) {
-        closeCameraBtn.addEventListener('click', () => {
+        closeCameraBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
             stopCamera();
             if (cameraView) cameraView.style.display = 'none';
             if (uploadZone) uploadZone.style.display = 'block';
         });
+        // Ensure button is clickable
+        closeCameraBtn.style.pointerEvents = 'auto';
+        closeCameraBtn.style.cursor = 'pointer';
+        closeCameraBtn.style.zIndex = '10';
     }
 
     if (captureBtn && cameraStreamVideo) {
@@ -780,8 +809,59 @@
             });
 
             if (response.ok) {
+                // Close modal immediately after successful upload
+                if (photoModal) {
+                    // Try to get Bootstrap modal instance
+                    let bootstrapModal = null;
+                    try {
+                        // Bootstrap 5 way to get modal instance
+                        if (typeof bootstrap !== 'undefined' && bootstrap.Modal) {
+                            bootstrapModal = bootstrap.Modal.getInstance(photoModal);
+                        } else if (typeof $ !== 'undefined' && $.fn.modal) {
+                            // jQuery Bootstrap way (fallback)
+                            bootstrapModal = $(photoModal).data('bs.modal');
+                        }
+                    } catch (e) {
+                        console.log('Could not get Bootstrap modal instance:', e);
+                    }
+                    
+                    if (bootstrapModal) {
+                        bootstrapModal.hide();
+                    } else {
+                        // Fallback: manually close modal using Bootstrap's data API
+                        const closeBtn = photoModal.querySelector('[data-bs-dismiss="modal"]');
+                        if (closeBtn) {
+                            closeBtn.click();
+                        } else {
+                            // Last resort: manually close modal
+                            photoModal.classList.remove('show');
+                            photoModal.style.display = 'none';
+                            photoModal.setAttribute('aria-hidden', 'true');
+                            photoModal.removeAttribute('aria-modal');
+                            
+                            // Remove backdrop immediately
+                            const backdrops = document.querySelectorAll('.modal-backdrop');
+                            backdrops.forEach(backdrop => {
+                                backdrop.style.display = 'none';
+                                backdrop.style.pointerEvents = 'none';
+                                backdrop.remove();
+                            });
+                            document.body.classList.remove('modal-open');
+                            document.body.style.overflow = '';
+                            document.body.style.paddingRight = '';
+                            document.body.style.pointerEvents = '';
+                        }
+                    }
+                }
+                
                 // Update pantry items without reloading page
                 await reloadPantryItems();
+                
+                // Show success message
+                const feedback = document.getElementById('addItemFeedback');
+                if (feedback) {
+                    showFeedback('Photo analyzed! Items added to pantry.', 'success');
+                }
             } else {
                 const data = await response.text();
                 alert('Upload failed: ' + data);
@@ -800,13 +880,93 @@
     if (photoModal) {
         // Handle modal shown
         photoModal.addEventListener('show.bs.modal', () => {
-            // Ensure modal content is clickable
+            // Ensure modal content and all children are clickable
             const modalContent = photoModal.querySelector('.modal-content');
+            const modalDialog = photoModal.querySelector('.modal-dialog');
             if (modalContent) {
                 modalContent.style.pointerEvents = 'auto';
+                modalContent.style.zIndex = '1056';
+                modalContent.style.position = 'relative';
+                // Ensure all interactive elements are clickable
+                const allElements = modalContent.querySelectorAll('*');
+                allElements.forEach(el => {
+                    el.style.pointerEvents = 'auto';
+                    if (el.tagName === 'BUTTON' || el.tagName === 'INPUT' || el.tagName === 'A' || el.getAttribute('role') === 'button') {
+                        el.style.cursor = 'pointer';
+                    }
+                });
+            }
+            if (modalDialog) {
+                modalDialog.style.pointerEvents = 'auto';
+                modalDialog.style.zIndex = '1055';
+                modalDialog.style.position = 'relative';
             }
             // Ensure body can scroll
             document.body.style.overflow = 'hidden';
+            
+            // Force enable pointer events on modal
+            photoModal.style.pointerEvents = 'auto';
+            photoModal.style.zIndex = '1055';
+        });
+        
+        // Also handle when modal is fully shown
+        photoModal.addEventListener('shown.bs.modal', () => {
+            // Double-check all elements are clickable
+            const modalContent = photoModal.querySelector('.modal-content');
+            const modalDialog = photoModal.querySelector('.modal-dialog');
+            if (modalContent) {
+                modalContent.style.pointerEvents = 'auto';
+                modalContent.style.zIndex = '1056';
+                const allButtons = modalContent.querySelectorAll('button, input, a, [role="button"], .btn, .btn-close');
+                allButtons.forEach(btn => {
+                    btn.style.pointerEvents = 'auto';
+                    btn.style.cursor = 'pointer';
+                    btn.style.zIndex = '10';
+                });
+            }
+            if (modalDialog) {
+                modalDialog.style.pointerEvents = 'auto';
+                modalDialog.style.zIndex = '1055';
+            }
+            
+            // Ensure close button works
+            const closeBtn = photoModal.querySelector('[data-bs-dismiss="modal"]');
+            if (closeBtn) {
+                closeBtn.style.pointerEvents = 'auto';
+                closeBtn.style.cursor = 'pointer';
+                closeBtn.style.zIndex = '10';
+                // Add click handler as backup
+                closeBtn.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const bootstrapModal = bootstrap.Modal.getInstance(photoModal);
+                    if (bootstrapModal) {
+                        bootstrapModal.hide();
+                    } else {
+                        photoModal.classList.remove('show');
+                        photoModal.style.display = 'none';
+                        const backdrops = document.querySelectorAll('.modal-backdrop');
+                        backdrops.forEach(b => b.remove());
+                        document.body.classList.remove('modal-open');
+                        document.body.style.overflow = '';
+                    }
+                });
+            }
+        });
+        
+        // Add escape key handler
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape' && photoModal.classList.contains('show')) {
+                const bootstrapModal = bootstrap.Modal.getInstance(photoModal);
+                if (bootstrapModal) {
+                    bootstrapModal.hide();
+                } else {
+                    const closeBtn = photoModal.querySelector('[data-bs-dismiss="modal"]');
+                    if (closeBtn) {
+                        closeBtn.click();
+                    }
+                }
+            }
         });
         
         // Handle modal hiding (before close animation)
@@ -839,33 +999,59 @@
                     backdrop.style.display = 'none';
                     backdrop.style.opacity = '0';
                     backdrop.style.visibility = 'hidden';
+                    backdrop.style.pointerEvents = 'none';
                     backdrop.remove();
                 });
                 
                 // Remove modal-open class from body
                 document.body.classList.remove('modal-open');
                 
-                // Restore body styles
+                // Restore body styles completely
                 document.body.style.overflow = '';
                 document.body.style.paddingRight = '';
                 document.body.style.pointerEvents = '';
                 document.body.style.position = '';
+                document.body.style.overflowX = '';
+                document.body.style.overflowY = '';
+                
+                // Ensure modal is properly hidden
+                if (photoModal) {
+                    photoModal.classList.remove('show');
+                    photoModal.style.display = 'none';
+                    photoModal.setAttribute('aria-hidden', 'true');
+                    photoModal.removeAttribute('aria-modal');
+                }
                 
                 // Force remove any remaining backdrop elements
                 const remainingBackdrops = document.querySelectorAll('.modal-backdrop');
                 remainingBackdrops.forEach(backdrop => {
                     backdrop.style.display = 'none';
+                    backdrop.style.pointerEvents = 'none';
                     backdrop.remove();
                 });
                 
                 // Ensure no backdrop classes remain
                 document.body.classList.remove('modal-open');
                 
+                // Force enable pointer events on body
+                document.body.style.pointerEvents = 'auto';
+                
                 // Add style to prevent backdrop from showing
                 if (!document.querySelector('style[data-modal-cleanup]')) {
                     const style = document.createElement('style');
                     style.setAttribute('data-modal-cleanup', 'true');
-                    style.textContent = 'body:not(.modal-open) .modal-backdrop { display: none !important; opacity: 0 !important; visibility: hidden !important; }';
+                    style.textContent = `
+                        body:not(.modal-open) .modal-backdrop { 
+                            display: none !important; 
+                            opacity: 0 !important; 
+                            visibility: hidden !important; 
+                            pointer-events: none !important; 
+                        }
+                        body:not(.modal-open) {
+                            pointer-events: auto !important;
+                            overflow: auto !important;
+                        }
+                    `;
                     document.head.appendChild(style);
                 }
             };
@@ -876,6 +1062,7 @@
             setTimeout(cleanup, 100);
             setTimeout(cleanup, 200);
             setTimeout(cleanup, 500);
+            setTimeout(cleanup, 1000);
         });
     }
 
@@ -1057,6 +1244,9 @@
         'other': 8
     };
     
+    // Store current sort type to re-apply after reload
+    let currentSortType = null;
+    
     function sortPantry(sortType) {
         const container = document.getElementById('pantryItemsContainer');
         if (!container) {
@@ -1070,6 +1260,10 @@
             console.warn('No items to sort');
             return;
         }
+        
+        // Store sort type for re-application after reload
+        currentSortType = sortType;
+        sessionStorage.setItem('pantrySortType', sortType);
         
         items.sort((a, b) => {
             if (sortType === 'category') {
@@ -1114,6 +1308,15 @@
             }
             container.appendChild(item);
         });
+        
+        // Ensure container is visible
+        container.style.display = '';
+        
+        // Hide empty state if it exists
+        const emptyState = container.closest('.card-body')?.querySelector('.empty-state');
+        if (emptyState) {
+            emptyState.style.display = 'none';
+        }
         
         // Update expiration badges after sorting
         setTimeout(updateExpirationBadges, 100);
@@ -1299,6 +1502,9 @@
     
     // Reload pantry items without refreshing the page
     async function reloadPantryItems() {
+        // Store scroll position before reload
+        const scrollPosition = window.pageYOffset || document.documentElement.scrollTop;
+        
         try {
             // Add cache busting to ensure we get fresh data
             const url = window.location.pathname + '?t=' + Date.now();
@@ -1389,6 +1595,17 @@
                 // Re-initialize animations
                 initializeItemAnimations();
                 
+                // Re-apply sort if one was active
+                const savedSortType = sessionStorage.getItem('pantrySortType');
+                if (savedSortType && currentSortType === null) {
+                    currentSortType = savedSortType;
+                }
+                if (currentSortType) {
+                    setTimeout(() => {
+                        sortPantry(currentSortType);
+                    }, 100);
+                }
+                
                 // Update expiration badges
                 setTimeout(updateExpirationBadges, 100);
             } else if (newEmptyState && currentCardBody) {
@@ -1416,21 +1633,40 @@
                         }
                     }
                 }
+                
+                // Clear sort type when empty
+                currentSortType = null;
+                sessionStorage.removeItem('pantrySortType');
             } else if (currentContainer && newContainer) {
                 // Fallback: just update the container
                 currentContainer.innerHTML = newContainer.innerHTML;
                 initializeDeleteButtons();
                 initializeItemAnimations();
+                
+                // Re-apply sort if one was active
+                const savedSortType = sessionStorage.getItem('pantrySortType');
+                if (savedSortType && currentSortType === null) {
+                    currentSortType = savedSortType;
+                }
+                if (currentSortType) {
+                    setTimeout(() => {
+                        sortPantry(currentSortType);
+                    }, 100);
+                }
+                
                 setTimeout(updateExpirationBadges, 100);
-            } else {
-                // Last resort: reload page if we can't find elements
-                console.warn('Could not find pantry container, reloading page');
-                window.location.reload();
             }
+            
+            // Restore scroll position
+            window.scrollTo(0, scrollPosition);
+            
         } catch (error) {
             console.error('Error reloading pantry items:', error);
-            // Fallback to page reload if AJAX fails
-            window.location.reload();
+            // Don't reload page - just show error message
+            const feedback = document.getElementById('addItemFeedback');
+            if (feedback) {
+                showFeedback('Failed to reload items. Please refresh the page.', 'warning');
+            }
         }
     }
     
@@ -1440,6 +1676,9 @@
             console.error('Item name is required for deletion');
             return;
         }
+        
+        // Store scroll position before deletion
+        const scrollPosition = window.pageYOffset || document.documentElement.scrollTop;
         
         // Decode and sanitize item name
         const decodedName = decodeURIComponent(itemName);
@@ -1460,9 +1699,15 @@
             
             if (response.ok) {
                 // Add small delay to ensure server has finished processing
-                setTimeout(async () => {
-                    await reloadPantryItems();
-                }, 200);
+                await new Promise(resolve => setTimeout(resolve, 300));
+                
+                // Reload items (this will restore scroll position internally)
+                await reloadPantryItems();
+                
+                // Restore scroll position after reload
+                setTimeout(() => {
+                    window.scrollTo(0, scrollPosition);
+                }, 100);
                 
                 // Show success feedback
                 const feedback = document.getElementById('addItemFeedback');
@@ -1517,6 +1762,16 @@
     document.addEventListener('DOMContentLoaded', function() {
         initializeDeleteButtons();
         initializeItemAnimations();
+        
+        // Restore sort type if one was saved
+        const savedSortType = sessionStorage.getItem('pantrySortType');
+        if (savedSortType) {
+            currentSortType = savedSortType;
+            // Apply sort after a short delay to ensure DOM is ready
+            setTimeout(() => {
+                sortPantry(savedSortType);
+            }, 300);
+        }
     });
 </script>
 {% endblock %}
