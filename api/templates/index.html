@@ -56,11 +56,11 @@
         animation: fadeIn 0.6s ease-out;
     }
     
-    /* Fix modal backdrop - reduce blur and ensure proper cleanup */
+    /* Fix modal backdrop - lighter, less intrusive */
     .modal-backdrop {
-        background-color: rgba(0, 0, 0, 0.25) !important;
-        backdrop-filter: blur(1px) !important;
-        -webkit-backdrop-filter: blur(1px) !important;
+        background-color: rgba(0, 0, 0, 0.1) !important; /* Much lighter - reduced from 0.25 to 0.1 */
+        backdrop-filter: blur(2px) !important;
+        -webkit-backdrop-filter: blur(2px) !important;
         z-index: 1040 !important;
         /* Backdrop should not block modal content clicks */
         pointer-events: none !important;
@@ -111,11 +111,13 @@
     /* Backdrop should allow clicks through - modal content handles its own clicks */
     .modal-backdrop {
         pointer-events: none !important;
+        background-color: rgba(0, 0, 0, 0.1) !important; /* Light backdrop */
     }
     
     /* When modal is shown, backdrop should be clickable to close, but not block modal content */
     .modal.show ~ .modal-backdrop {
         pointer-events: auto !important;
+        background-color: rgba(0, 0, 0, 0.1) !important; /* Keep light when shown */
     }
     
     /* Ensure modal content is always clickable and above backdrop */
@@ -129,6 +131,68 @@
     
     .modal.show .modal-content {
         pointer-events: auto !important;
+    }
+    
+    /* Enhanced UI Styles */
+    :root {
+        --primary-purple: #8B5CF6;
+        --primary-blue: #3B82F6;
+        --success-green: #10B981;
+        --danger-red: #EF4444;
+        --warning-orange: #F59E0B;
+        --gray-50: #F9FAFB;
+        --gray-100: #F3F4F6;
+        --gray-200: #E5E7EB;
+        --gray-300: #D1D5DB;
+        --gray-600: #4B5563;
+        --gray-800: #1F2937;
+        --gray-900: #111827;
+        --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+        --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+        --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+    }
+    
+    /* Improved card styling */
+    .card {
+        border: none;
+        box-shadow: var(--shadow-md);
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        overflow: hidden;
+    }
+    
+    .card:hover {
+        box-shadow: var(--shadow-lg);
+        transform: translateY(-2px);
+    }
+    
+    .card-header {
+        background: linear-gradient(135deg, var(--primary-purple) 0%, var(--primary-blue) 100%);
+        border-bottom: none;
+        padding: 1.25rem 1.5rem;
+        font-weight: 600;
+    }
+    
+    .card-header.bg-gradient-success {
+        background: linear-gradient(135deg, var(--success-green) 0%, #059669 100%);
+    }
+    
+    .card-header.bg-gradient-info {
+        background: linear-gradient(135deg, var(--primary-blue) 0%, #2563EB 100%);
+    }
+    
+    /* Enhanced pantry item cards */
+    .pantry-item-card {
+        overflow: hidden;
+        will-change: transform;
+        border: 1px solid var(--gray-200);
+        background: white;
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    
+    .pantry-item-card:hover {
+        border-color: var(--primary-purple);
+        box-shadow: 0 12px 28px rgba(139, 92, 246, 0.15);
     }
     
     /* Fix text overflow in pantry item names */
@@ -145,9 +209,437 @@
         overflow: visible;
     }
     
-    .pantry-item-card {
+    /* Enhanced badge styling */
+    .badge {
+        font-weight: 500;
+        padding: 0.5rem 0.75rem;
+        border-radius: 0.5rem;
+        transition: all 0.2s ease;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.25rem;
+    }
+    
+    .editable-quantity,
+    .editable-expiration {
+        cursor: pointer;
+        user-select: none;
+    }
+    
+    .editable-quantity:hover,
+    .editable-expiration:hover {
+        transform: scale(1.05);
+        box-shadow: 0 2px 8px rgba(139, 92, 246, 0.2);
+    }
+    
+    /* Enhanced button styling */
+    .btn {
+        font-weight: 600;
+        border-radius: 0.75rem;
+        padding: 0.625rem 1.25rem;
+        transition: all 0.2s ease;
+        border: none;
+    }
+    
+    .btn:hover {
+        transform: translateY(-1px);
+        box-shadow: var(--shadow-md);
+    }
+    
+    .btn-lg {
+        padding: 0.875rem 1.75rem;
+        font-size: 1.125rem;
+        border-radius: 1rem;
+    }
+    
+    .btn-primary {
+        background: linear-gradient(135deg, var(--primary-purple) 0%, var(--primary-blue) 100%);
+        color: white;
+        border: none;
+    }
+    
+    .btn-primary:hover {
+        background: linear-gradient(135deg, #7C3AED 0%, #2563EB 100%);
+        color: white;
+        transform: translateY(-1px);
+    }
+    
+    .btn-success {
+        background: linear-gradient(135deg, var(--success-green) 0%, #059669 100%);
+        color: white;
+        border: none;
+    }
+    
+    .btn-success:hover {
+        background: linear-gradient(135deg, #059669 0%, #047857 100%);
+        color: white;
+        transform: translateY(-1px);
+    }
+    
+    .btn-outline-success {
+        border: 2px solid var(--success-green);
+        color: var(--success-green);
+        background: transparent;
+    }
+    
+    .btn-outline-success:hover {
+        background: var(--success-green);
+        color: white;
+        border-color: var(--success-green);
+    }
+    
+    .btn-outline-secondary {
+        border: 2px solid var(--gray-300);
+        color: var(--gray-600);
+        background: transparent;
+    }
+    
+    .btn-outline-secondary:hover {
+        background: var(--gray-200);
+        color: var(--gray-800);
+        border-color: var(--gray-300);
+    }
+    
+    .btn-outline-danger {
+        border: 2px solid var(--danger-red);
+        color: var(--danger-red);
+        background: transparent;
+    }
+    
+    .btn-outline-danger:hover {
+        background: var(--danger-red);
+        color: white;
+        transform: scale(1.05);
+    }
+    
+    /* Enhanced form inputs */
+    .form-control,
+    .form-select {
+        border: 2px solid var(--gray-200);
+        border-radius: 0.75rem;
+        padding: 0.75rem 1rem;
+        transition: all 0.2s ease;
+    }
+    
+    .form-control:focus,
+    .form-select:focus {
+        border-color: var(--primary-purple);
+        box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.1);
+        outline: none;
+    }
+    
+    /* Enhanced expiration badges */
+    .expiration-badge {
+        font-weight: 500;
+        padding: 0.375rem 0.75rem;
+        border-radius: 0.5rem;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.375rem;
+    }
+    
+    .expiration-expired {
+        background: rgba(239, 68, 68, 0.15);
+        color: #DC2626;
+    }
+    
+    .expiration-soon {
+        background: rgba(245, 158, 11, 0.15);
+        color: #D97706;
+    }
+    
+    .expiration-fresh {
+        background: rgba(16, 185, 129, 0.15);
+        color: #059669;
+    }
+    
+    .expiration-none {
+        background: rgba(156, 163, 175, 0.15);
+        color: #6B7280;
+    }
+    
+    /* Enhanced delete button */
+    .delete-item-btn {
+        transition: all 0.2s ease;
+    }
+    
+    .delete-item-btn:hover {
+        transform: scale(1.15) rotate(90deg);
+    }
+    
+    /* Improved empty state */
+    .empty-state {
+        padding: 3rem 1rem;
+    }
+    
+    .empty-state i {
+        opacity: 0.5;
+    }
+    
+    /* Enhanced modal styling */
+    .modal-content {
+        border: none;
+        border-radius: 1.5rem;
+        box-shadow: var(--shadow-xl);
         overflow: hidden;
-        will-change: transform;
+        background: white;
+    }
+    
+    .modal-header {
+        background: linear-gradient(135deg, var(--primary-purple) 0%, var(--primary-blue) 100%);
+        color: white;
+        border-bottom: none;
+        padding: 1.5rem;
+    }
+    
+    .modal-header .modal-title {
+        color: white;
+        font-weight: 600;
+    }
+    
+    .modal-header .btn-close {
+        filter: invert(1);
+        opacity: 0.9;
+    }
+    
+    .modal-header .btn-close:hover {
+        opacity: 1;
+    }
+    
+    .modal-body {
+        padding: 2rem;
+        background: var(--gray-50);
+    }
+    
+    .modal-footer {
+        border-top: 1px solid var(--gray-200);
+        padding: 1.5rem;
+        background: white;
+    }
+    
+    /* Photo upload zone styling */
+    .photo-upload-zone {
+        border: 2px dashed var(--gray-300);
+        border-radius: 1rem;
+        padding: 3rem 2rem;
+        text-align: center;
+        background: white;
+        transition: all 0.3s ease;
+        cursor: pointer;
+    }
+    
+    .photo-upload-zone:hover {
+        border-color: var(--primary-purple);
+        background: rgba(139, 92, 246, 0.02);
+    }
+    
+    .photo-upload-zone.dragover {
+        border-color: var(--primary-purple);
+        background: rgba(139, 92, 246, 0.05);
+        transform: scale(1.02);
+    }
+    
+    .image-preview {
+        max-width: 100%;
+        max-height: 400px;
+        border-radius: 1rem;
+        box-shadow: var(--shadow-md);
+        margin: 1rem 0;
+    }
+    
+    /* Camera preview styling */
+    .camera-preview {
+        position: relative;
+        border-radius: 1rem;
+        overflow: hidden;
+        background: var(--gray-900);
+    }
+    
+    .camera-preview video {
+        width: 100%;
+        height: auto;
+        display: block;
+    }
+    
+    .camera-controls {
+        position: absolute;
+        bottom: 1rem;
+        left: 50%;
+        transform: translateX(-50%);
+        display: flex;
+        gap: 1rem;
+        align-items: center;
+    }
+    
+    .capture-btn {
+        width: 64px;
+        height: 64px;
+        border-radius: 50%;
+        border: 4px solid white;
+        background: white;
+        cursor: pointer;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        transition: all 0.2s ease;
+    }
+    
+    .capture-btn:hover {
+        transform: scale(1.1);
+    }
+    
+    .capture-btn:active {
+        transform: scale(0.95);
+    }
+    
+    /* Enhanced dropdown */
+    .dropdown-menu {
+        border: none;
+        box-shadow: var(--shadow-lg);
+        border-radius: 0.75rem;
+        padding: 0.5rem;
+        margin-top: 0.5rem;
+    }
+    
+    .dropdown-item {
+        border-radius: 0.5rem;
+        padding: 0.625rem 1rem;
+        transition: all 0.2s ease;
+    }
+    
+    .dropdown-item:hover {
+        background: rgba(139, 92, 246, 0.1);
+        color: var(--primary-purple);
+    }
+    
+    /* Improved stat cards */
+    .stat-card {
+        text-align: center;
+        padding: 1.5rem;
+        background: linear-gradient(135deg, rgba(139, 92, 246, 0.05) 0%, rgba(59, 130, 246, 0.05) 100%);
+        border-radius: 1rem;
+        transition: all 0.3s ease;
+    }
+    
+    .stat-card:hover {
+        transform: translateY(-2px);
+        box-shadow: var(--shadow-md);
+    }
+    
+    .stat-number {
+        font-size: 2.5rem;
+        font-weight: 700;
+        background: linear-gradient(135deg, var(--primary-purple) 0%, var(--primary-blue) 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+    }
+    
+    /* Enhanced hero section */
+    .hero-section {
+        background: linear-gradient(135deg, rgba(139, 92, 246, 0.1) 0%, rgba(59, 130, 246, 0.1) 100%);
+        border-radius: 2rem;
+        padding: 3rem 2rem;
+        margin-bottom: 2rem;
+        backdrop-filter: blur(10px);
+        border: 1px solid rgba(139, 92, 246, 0.2);
+    }
+    
+    /* Page background improvements */
+    body {
+        background: linear-gradient(135deg, #F9FAFB 0%, #F3F4F6 100%);
+        min-height: 100vh;
+    }
+    
+    /* Smooth transitions for all interactive elements */
+    * {
+        transition: color 0.2s ease, background-color 0.2s ease, border-color 0.2s ease;
+    }
+    
+    /* Improved container spacing */
+    .container {
+        padding-left: 1rem;
+        padding-right: 1rem;
+    }
+    
+    @media (min-width: 1200px) {
+        .container {
+            max-width: 1140px;
+        }
+    }
+    
+    /* Enhanced card header badges */
+    .card-header .badge {
+        background: rgba(255, 255, 255, 0.2) !important;
+        backdrop-filter: blur(10px);
+        border: 1px solid rgba(255, 255, 255, 0.3);
+    }
+    
+    /* Improved sort dropdown */
+    .dropdown-toggle {
+        border-radius: 0.5rem;
+        padding: 0.5rem 1rem;
+        font-weight: 500;
+        transition: all 0.2s ease;
+    }
+    
+    .dropdown-toggle:hover {
+        background: rgba(139, 92, 246, 0.1);
+        border-color: var(--primary-purple);
+    }
+    
+    /* Better feedback messages */
+    #addItemFeedback {
+        border-radius: 0.75rem;
+        padding: 1rem;
+        margin-top: 1rem;
+        font-weight: 500;
+    }
+    
+    #addItemFeedback.alert-success {
+        background: rgba(16, 185, 129, 0.1);
+        color: #059669;
+        border: 1px solid rgba(16, 185, 129, 0.2);
+    }
+    
+    #addItemFeedback.alert-danger {
+        background: rgba(239, 68, 68, 0.1);
+        color: #DC2626;
+        border: 1px solid rgba(239, 68, 68, 0.2);
+    }
+    
+    #addItemFeedback.alert-warning {
+        background: rgba(245, 158, 11, 0.1);
+        color: #D97706;
+        border: 1px solid rgba(245, 158, 11, 0.2);
+    }
+    
+    /* Improved input fields in add items card */
+    .form-control:not(.form-select) {
+        border: 2px solid var(--gray-200);
+    }
+    
+    .form-control:not(.form-select):focus {
+        border-color: var(--primary-purple);
+    }
+    
+    /* Better spacing */
+    .card-body {
+        padding: 1.5rem;
+    }
+    
+    /* Enhanced quantity and expiration input styling */
+    .quantity-input,
+    .expiration-input {
+        border: 2px solid var(--primary-purple) !important;
+        border-radius: 0.5rem !important;
+        padding: 0.5rem 0.75rem !important;
+        font-weight: 500 !important;
+        color: var(--primary-purple) !important;
+    }
+    
+    .quantity-input:focus,
+    .expiration-input:focus {
+        outline: none;
+        box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.2) !important;
     }
     
     /* Fix mobile responsiveness */
@@ -332,7 +824,7 @@
                                         </div>
                                     </div>
                                     <button type="submit" class="btn btn-primary btn-lg w-100" id="addItemBtn"
-                                            style="border-radius: 12px; padding: 14px; font-weight: 600; box-shadow: 0 4px 12px rgba(139, 92, 246, 0.3);">
+                                            style="background: linear-gradient(135deg, #8B5CF6 0%, #3B82F6 100%); border: none; border-radius: 12px; padding: 14px; font-weight: 600; box-shadow: 0 4px 12px rgba(139, 92, 246, 0.3); transition: all 0.3s ease;">
                                         <i class="bi bi-plus-circle-fill me-2"></i><span id="addItemBtnText">Add to Pantry</span>
                                     </button>
                                 </form>
@@ -351,7 +843,7 @@
                                 </div>
                                 <p class="text-muted small mb-3">Upload a photo and let AI detect food items automatically</p>
                                 <button type="button" class="btn btn-success btn-lg w-100" data-bs-toggle="modal" data-bs-target="#photoModal"
-                                        style="border-radius: 12px; padding: 14px; font-weight: 600; box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);">
+                                        style="background: linear-gradient(135deg, #10B981 0%, #059669 100%); border: none; border-radius: 12px; padding: 14px; font-weight: 600; box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3); transition: all 0.3s ease;">
                                     <i class="bi bi-camera-fill me-2"></i>Take/Upload Photo
                                 </button>
                             </div>
@@ -444,7 +936,46 @@
                                                     </span>
                                                 </div>
                                                 {% endif %}
-                                                {% if exp_date and exp_date != 'None' and exp_date != '' %}
+                                                {% if item_id and item_id.strip() %}
+                                                    <div>
+                                                        {% if exp_date and exp_date != 'None' and exp_date != '' %}
+                                                        <span class="badge editable-expiration expiration-badge expiration-fresh" 
+                                                              data-item-id="{{ item_id }}"
+                                                              data-item-name="{{ item_name }}"
+                                                              data-current-quantity="{{ quantity }}"
+                                                              data-current-expiration="{{ exp_date }}"
+                                                              data-added-date="{{ item.get('addedDate', '') if item.get('addedDate') else '' }}"
+                                                              data-exp-date="{{ exp_date }}" 
+                                                              style="font-size: 0.75rem; cursor: pointer; transition: all 0.2s ease;"
+                                                              title="Click to edit expiration date"
+                                                              onmouseover="this.style.opacity='0.8'; this.style.transform='scale(1.05)';"
+                                                              onmouseout="this.style.opacity='1'; this.style.transform='scale(1)';">
+                                                            <i class="bi bi-calendar3 me-1"></i>
+                                                            <span class="expiration-value">
+                                                                {% if exp_date|length >= 10 %}
+                                                                    {{ exp_date[:10] }}
+                                                                {% else %}
+                                                                    {{ exp_date }}
+                                                                {% endif %}
+                                                            </span>
+                                                        </span>
+                                                        {% else %}
+                                                        <span class="badge editable-expiration" 
+                                                              data-item-id="{{ item_id }}"
+                                                              data-item-name="{{ item_name }}"
+                                                              data-current-quantity="{{ quantity }}"
+                                                              data-current-expiration=""
+                                                              data-added-date="{{ item.get('addedDate', '') if item.get('addedDate') else '' }}"
+                                                              style="font-size: 0.75rem; cursor: pointer; background: rgba(139, 92, 246, 0.1); color: #8B5CF6; border-radius: 8px; transition: all 0.2s ease;"
+                                                              title="Click to add expiration date"
+                                                              onmouseover="this.style.background='rgba(139, 92, 246, 0.2)'; this.style.transform='scale(1.05)';"
+                                                              onmouseout="this.style.background='rgba(139, 92, 246, 0.1)'; this.style.transform='scale(1)';">
+                                                            <i class="bi bi-calendar-plus me-1"></i>
+                                                            <span class="expiration-value">Add Date</span>
+                                                        </span>
+                                                        {% endif %}
+                                                    </div>
+                                                {% elif exp_date and exp_date != 'None' and exp_date != '' %}
                                                     <div>
                                                         <span class="expiration-badge expiration-fresh" data-exp-date="{{ exp_date }}" style="font-size: 0.75rem;">
                                                             <i class="bi bi-calendar3 me-1"></i>
@@ -515,7 +1046,7 @@
                             <option value="30">30 days</option>
                         </select>
                     </div>
-                    <a href="{{ url_for('suggest_recipe') }}" class="btn btn-success btn-lg w-100 mb-3" id="recipeBtn" style="border-radius: 16px;">
+                    <a href="{{ url_for('suggest_recipe') }}" class="btn btn-success btn-lg w-100 mb-3" id="recipeBtn" style="background: linear-gradient(135deg, #10B981 0%, #059669 100%); border: none; border-radius: 16px; box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3); transition: all 0.3s ease;">
                         <i class="bi bi-stars me-2"></i>Get Recipe Ideas
                     </a>
                     <p class="text-muted small mb-0">
@@ -1758,14 +2289,17 @@
                         currentSortDropdown.style.display = newContainer.children.length > 1 ? '' : 'none';
                     }
                     
-                    // Re-initialize delete buttons
-                    initializeDeleteButtons();
-                    
-                    // Re-initialize quantity editing
-                    initializeQuantityEditing();
-                    
-                    // Re-initialize animations
-                    initializeItemAnimations();
+                // Re-initialize delete buttons
+                initializeDeleteButtons();
+                
+                // Re-initialize quantity editing
+                initializeQuantityEditing();
+                
+                // Re-initialize expiration date editing
+                initializeExpirationEditing();
+                
+                // Re-initialize animations
+                initializeItemAnimations();
                     
                     // Re-apply sort if one was active
                     const savedSortType = sessionStorage.getItem('pantrySortType');
@@ -1844,6 +2378,7 @@
                 currentContainer.innerHTML = newContainer.innerHTML;
                 initializeDeleteButtons();
                 initializeQuantityEditing();
+                initializeExpirationEditing();
                 initializeItemAnimations();
                 
                 // Re-apply sort if one was active
@@ -1948,8 +2483,8 @@
         });
     }
     
-    // Handle quantity update via API
-    async function handleUpdateQuantity(itemId, itemName, newQuantity, expirationDate, addedDate) {
+    // Handle item update via API (for both quantity and expiration date)
+    async function handleUpdateItem(itemId, itemName, quantity, expirationDate, addedDate, updateType = 'item') {
         if (!itemId) {
             console.error('Item ID is required for update');
             showFeedback('Error: Item ID missing', 'danger');
@@ -1960,7 +2495,7 @@
             // Prepare update data
             const updateData = {
                 name: itemName,
-                quantity: newQuantity || '1',
+                quantity: quantity || '1',
                 expirationDate: expirationDate || null,
                 addedDate: addedDate || new Date().toISOString()
             };
@@ -1987,27 +2522,39 @@
                     // Show success feedback
                     const feedback = document.getElementById('addItemFeedback');
                     if (feedback) {
-                        showFeedback('Quantity updated successfully!', 'success');
+                        const message = updateType === 'expiration' ? 'Expiration date updated successfully!' : 'Item updated successfully!';
+                        showFeedback(message, 'success');
                     }
                     
                     // Reload pantry items to reflect the change
                     await reloadPantryItems();
                 } else {
-                    throw new Error(data.error || 'Failed to update quantity');
+                    throw new Error(data.error || 'Failed to update item');
                 }
             } else {
                 const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
-                throw new Error(errorData.error || 'Failed to update quantity');
+                throw new Error(errorData.error || 'Failed to update item');
             }
         } catch (error) {
-            console.error('Error updating quantity:', error);
+            console.error('Error updating item:', error);
             const feedback = document.getElementById('addItemFeedback');
             if (feedback) {
-                showFeedback('Failed to update quantity: ' + error.message, 'danger');
+                const message = updateType === 'expiration' ? 'Failed to update expiration date: ' : 'Failed to update item: ';
+                showFeedback(message + error.message, 'danger');
             } else {
-                alert('Failed to update quantity: ' + error.message);
+                alert('Failed to update item: ' + error.message);
             }
         }
+    }
+    
+    // Handle quantity update via API (backward compatibility)
+    async function handleUpdateQuantity(itemId, itemName, newQuantity, expirationDate, addedDate) {
+        await handleUpdateItem(itemId, itemName, newQuantity, expirationDate, addedDate, 'quantity');
+    }
+    
+    // Handle expiration date update via API
+    async function handleUpdateExpiration(itemId, itemName, quantity, newExpirationDate, addedDate) {
+        await handleUpdateItem(itemId, itemName, quantity, newExpirationDate, addedDate, 'expiration');
     }
     
     // Initialize quantity editing
@@ -2083,6 +2630,99 @@
         });
     }
     
+    // Initialize expiration date editing
+    function initializeExpirationEditing() {
+        const expirationBadges = document.querySelectorAll('.editable-expiration');
+        expirationBadges.forEach(badge => {
+            // Remove existing listeners by cloning
+            const newBadge = badge.cloneNode(true);
+            badge.parentNode.replaceChild(newBadge, badge);
+            
+            // Add click listener
+            newBadge.addEventListener('click', function(e) {
+                e.stopPropagation(); // Prevent card click
+                
+                const itemId = this.getAttribute('data-item-id');
+                if (!itemId || itemId.trim() === '') {
+                    console.warn('Cannot edit expiration: Item ID is missing');
+                    showFeedback('Cannot edit: Item ID missing', 'warning');
+                    return;
+                }
+                
+                const itemName = this.getAttribute('data-item-name');
+                const currentQuantity = this.getAttribute('data-current-quantity') || '1';
+                const currentExpiration = this.getAttribute('data-current-expiration') || '';
+                const addedDate = this.getAttribute('data-added-date') || new Date().toISOString();
+                
+                // Create date input field
+                const expirationValue = this.querySelector('.expiration-value');
+                if (!expirationValue) return;
+                
+                const oldText = expirationValue.textContent;
+                const input = document.createElement('input');
+                input.type = 'date';
+                
+                // Set current date value (format: YYYY-MM-DD)
+                let currentDateValue = '';
+                if (currentExpiration && currentExpiration !== 'None' && currentExpiration !== '') {
+                    // Extract date part if it's a full datetime string
+                    if (currentExpiration.length >= 10) {
+                        currentDateValue = currentExpiration.substring(0, 10);
+                    } else {
+                        currentDateValue = currentExpiration;
+                    }
+                }
+                input.value = currentDateValue;
+                
+                // Set minimum date to today
+                const today = new Date().toISOString().split('T')[0];
+                input.min = today;
+                
+                input.style.cssText = 'background: white; border: 2px solid #8B5CF6; border-radius: 6px; padding: 4px 8px; font-size: 0.75rem; color: #8B5CF6; width: 140px;';
+                input.className = 'expiration-input';
+                
+                // Replace text with input
+                expirationValue.textContent = '';
+                expirationValue.appendChild(input);
+                input.focus();
+                input.showPicker?.(); // Show date picker if supported
+                
+                // Handle save on blur or change
+                const saveExpiration = async () => {
+                    const newExpiration = input.value.trim() || null;
+                    const oldExpirationFormatted = currentDateValue || null;
+                    
+                    if (newExpiration !== oldExpirationFormatted) {
+                        // Update the badge attributes
+                        newBadge.setAttribute('data-current-expiration', newExpiration || '');
+                        newBadge.setAttribute('data-exp-date', newExpiration || '');
+                        // Call API to update
+                        await handleUpdateExpiration(itemId, itemName, currentQuantity, newExpiration, addedDate);
+                    } else {
+                        // Restore original text if no change
+                        expirationValue.textContent = oldText;
+                    }
+                };
+                
+                const cancelEdit = () => {
+                    expirationValue.textContent = oldText;
+                };
+                
+                input.addEventListener('change', saveExpiration);
+                input.addEventListener('blur', saveExpiration);
+                input.addEventListener('keydown', function(e) {
+                    if (e.key === 'Enter') {
+                        e.preventDefault();
+                        input.blur();
+                    } else if (e.key === 'Escape') {
+                        e.preventDefault();
+                        cancelEdit();
+                    }
+                });
+            });
+        });
+    }
+    
     // Initialize item animations
     function initializeItemAnimations() {
         const items = document.querySelectorAll('.pantry-item-card');
@@ -2100,6 +2740,7 @@
     document.addEventListener('DOMContentLoaded', function() {
         initializeDeleteButtons();
         initializeQuantityEditing();
+        initializeExpirationEditing();
         initializeItemAnimations();
         
         // Restore sort type if one was saved
@@ -2114,4 +2755,5 @@
     });
 </script>
 {% endblock %}
+
 
