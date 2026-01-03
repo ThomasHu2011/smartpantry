@@ -4,14 +4,9 @@
 
 {% block extra_head %}
 <style>
-    @keyframes pulse {
-        0%, 100% { opacity: 1; transform: scale(1); }
-        50% { opacity: 0.7; transform: scale(1.1); }
-    }
-    
+    /* Removed vague animations - cards appear instantly for better performance */
     .pantry-item-card {
-        animation: fadeInUp 0.5s ease-out forwards;
-        opacity: 0;
+        opacity: 1;
         position: relative;
         z-index: 10;
     }
@@ -35,43 +30,6 @@
     .card-header {
         position: relative;
         z-index: 1;
-    }
-    
-    @keyframes fadeInUp {
-        from {
-            opacity: 0;
-            transform: translateY(20px);
-        }
-        to {
-            opacity: 1;
-            transform: translateY(0);
-        }
-    }
-    
-    .hero-section {
-        animation: fadeIn 0.8s ease-out;
-    }
-    
-    .card {
-        animation: fadeIn 0.6s ease-out;
-    }
-    
-    /* Disable animations when modal is open */
-    body:has(.modal.show) .pantry-item-card,
-    body:has(.modal.show) .hero-section,
-    body:has(.modal.show) .card {
-        animation: none !important;
-    }
-    
-    body:has(.modal.show) [style*="animation: pulse"] {
-        animation: none !important;
-    }
-    
-    /* Fallback for browsers that don't support :has() */
-    .modal.show ~ * .pantry-item-card,
-    .modal.show ~ * .hero-section,
-    .modal.show ~ * .card {
-        animation: none !important;
     }
     
     /* Fix modal backdrop - lighter, less intrusive */
@@ -947,9 +905,8 @@
                              data-item-id="{{ item_id }}"
                              data-expiration-date="{{ exp_date[:10] if exp_date and exp_date|length >= 10 else '9999-12-31' }}"
                              style="position: relative; z-index: 10;">
-                            <div class="pantry-item-card card border-0 bg-white h-100 animate-fade-in" 
-                                 style="border-radius: 20px; transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1); border: 1px solid #e2e8f0; cursor: pointer; overflow: hidden; position: relative;"
-                                 data-animation-delay="{{ loop.index0 * 0.05 }}"
+                            <div class="pantry-item-card card border-0 bg-white h-100" 
+                                 style="border-radius: 20px; transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); border: 1px solid #e2e8f0; cursor: pointer; overflow: hidden; position: relative;"
                                  onmouseover="this.style.transform='translateY(-8px) scale(1.02)'; this.style.boxShadow='0 16px 32px rgba(139, 92, 246, 0.2)'; this.style.borderColor='#8B5CF6';"
                                  onmouseout="this.style.transform='translateY(0) scale(1)'; this.style.boxShadow='0 4px 12px rgba(0,0,0,0.08)'; this.style.borderColor='#e2e8f0';">
                                 <!-- Accent bar at top -->
@@ -985,12 +942,12 @@
                                                           title="Click to edit quantity"
                                                           onmouseover="this.style.background='linear-gradient(135deg, rgba(139, 92, 246, 0.2) 0%, rgba(59, 130, 246, 0.2) 100%)'; this.style.transform='scale(1.05)'; this.style.borderColor='#8B5CF6';"
                                                           onmouseout="this.style.background='linear-gradient(135deg, rgba(139, 92, 246, 0.12) 0%, rgba(59, 130, 246, 0.12) 100%)'; this.style.transform='scale(1)'; this.style.borderColor='rgba(139, 92, 246, 0.2)';">
-                                                        <i class="bi bi-layers-fill me-1" style="font-size: 0.85rem;"></i><span class="quantity-value fw-bold">{{ quantity }}</span>
+                                                        <i class="bi bi-hash me-1" style="font-size: 0.85rem;"></i><span class="quantity-value fw-bold">{{ quantity }}</span>
                                                     </span>
                                                     {% elif quantity and quantity != '1' %}
                                                     <!-- Non-editable Quantity Badge -->
                                                     <span class="badge" style="background: linear-gradient(135deg, rgba(139, 92, 246, 0.12) 0%, rgba(59, 130, 246, 0.12) 100%); color: #8B5CF6; border-radius: 10px; font-size: 0.8rem; font-weight: 600; padding: 0.5rem 0.75rem; border: 1px solid rgba(139, 92, 246, 0.2);">
-                                                        <i class="bi bi-layers-fill me-1" style="font-size: 0.85rem;"></i>{{ quantity }}
+                                                        <i class="bi bi-hash me-1" style="font-size: 0.85rem;"></i>{{ quantity }}
                                                     </span>
                                                     {% endif %}
                                                     
@@ -1008,7 +965,7 @@
                                                               title="Click to edit expiration date"
                                                               onmouseover="this.style.opacity='0.9'; this.style.transform='scale(1.05)'; this.style.boxShadow='0 2px 8px rgba(16, 185, 129, 0.2)';"
                                                               onmouseout="this.style.opacity='1'; this.style.transform='scale(1)'; this.style.boxShadow='none';">
-                                                            <i class="bi bi-calendar3-fill me-1" style="font-size: 0.85rem;"></i>
+                                                            <i class="bi bi-clock-fill me-1" style="font-size: 0.85rem;"></i>
                                                             <span class="expiration-value">
                                                                 {% if exp_date|length >= 10 %}
                                                                     {{ exp_date[:10] }}
@@ -1028,14 +985,14 @@
                                                               title="Click to add expiration date"
                                                               onmouseover="this.style.background='linear-gradient(135deg, rgba(139, 92, 246, 0.2) 0%, rgba(59, 130, 246, 0.2) 100%)'; this.style.transform='scale(1.05)'; this.style.borderColor='#8B5CF6';"
                                                               onmouseout="this.style.background='linear-gradient(135deg, rgba(139, 92, 246, 0.12) 0%, rgba(59, 130, 246, 0.12) 100%)'; this.style.transform='scale(1)'; this.style.borderColor='rgba(139, 92, 246, 0.2)';">
-                                                            <i class="bi bi-calendar-plus-fill me-1" style="font-size: 0.85rem;"></i>
+                                                            <i class="bi bi-clock me-1" style="font-size: 0.85rem;"></i>
                                                             <span class="expiration-value">Add Date</span>
                                                         </span>
                                                         {% endif %}
                                                     {% elif exp_date and exp_date != 'None' and exp_date != '' %}
                                                         <!-- Non-editable Expiration Badge -->
                                                         <span class="expiration-badge expiration-fresh" data-exp-date="{{ exp_date }}" style="font-size: 0.8rem; font-weight: 600; padding: 0.5rem 0.75rem; border-radius: 10px; border: 1px solid rgba(16, 185, 129, 0.2);">
-                                                            <i class="bi bi-calendar3-fill me-1" style="font-size: 0.85rem;"></i>
+                                                            <i class="bi bi-clock-fill me-1" style="font-size: 0.85rem;"></i>
                                                             {% if exp_date|length >= 10 %}
                                                                 {{ exp_date[:10] }}
                                                             {% else %}
@@ -1592,27 +1549,8 @@
     if (photoModal) {
         // Handle modal shown
         photoModal.addEventListener('show.bs.modal', () => {
-            // Add class to body to disable all animations via CSS
+            // Animations are already removed, but keep this for any remaining transitions
             document.body.classList.add('modal-open-no-animations');
-            
-            // Disable all animations immediately
-            const style = document.createElement('style');
-            style.id = 'disable-animations-style';
-            style.textContent = `
-                .pantry-item-card,
-                .hero-section,
-                .card,
-                [style*="animation: pulse"],
-                [style*="animation: fadeIn"],
-                [style*="animation: fadeInUp"] {
-                    animation: none !important;
-                    transition: none !important;
-                }
-                .pantry-item-card {
-                    opacity: 1 !important;
-                }
-            `;
-            document.head.appendChild(style);
             
             // Ensure modal content and all children are clickable
             const modalContent = photoModal.querySelector('.modal-content');
@@ -1716,14 +1654,8 @@
             // Start cleanup early
             stopCamera();
             
-            // Remove animation-disabling class
+            // Remove animation-disabling class (if it exists)
             document.body.classList.remove('modal-open-no-animations');
-            
-            // Remove the style tag that disables animations
-            const disableStyle = document.getElementById('disable-animations-style');
-            if (disableStyle) {
-                disableStyle.remove();
-            }
         });
         
         // Handle modal fully closed (after animation)
@@ -2061,21 +1993,10 @@
         setTimeout(updateExpirationBadges, 100);
     }
     
-    // Set animation delays from data attributes
-    function setAnimationDelays() {
-        document.querySelectorAll('[data-animation-delay]').forEach(function(element) {
-            const delay = element.getAttribute('data-animation-delay');
-            if (delay !== null) {
-                element.style.animationDelay = delay + 's';
-            }
-        });
-    }
-    
     // Run expiration badge updates on page load
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', function() {
             setDefaultExpirationDate();
-            setAnimationDelays();
             updateExpirationBadges();
             // Also run after a short delay to ensure all elements are rendered
             setTimeout(updateExpirationBadges, 200);
@@ -2083,7 +2004,6 @@
     } else {
         // DOM already loaded
         setDefaultExpirationDate();
-        setAnimationDelays();
         updateExpirationBadges();
         setTimeout(updateExpirationBadges, 200);
     }
@@ -2379,17 +2299,14 @@
                         currentSortDropdown.style.display = newContainer.children.length > 1 ? '' : 'none';
                     }
                     
-                // Re-initialize delete buttons
-                initializeDeleteButtons();
-                
-                // Re-initialize quantity editing
-                initializeQuantityEditing();
-                
-                // Re-initialize expiration date editing
-                initializeExpirationEditing();
-                
-                // Re-initialize animations
-                initializeItemAnimations();
+                    // Re-initialize delete buttons
+                    initializeDeleteButtons();
+                    
+                    // Re-initialize quantity editing
+                    initializeQuantityEditing();
+                    
+                    // Re-initialize expiration date editing
+                    initializeExpirationEditing();
                     
                     // Re-apply sort if one was active
                     const savedSortType = sessionStorage.getItem('pantrySortType');
@@ -2469,7 +2386,6 @@
                 initializeDeleteButtons();
                 initializeQuantityEditing();
                 initializeExpirationEditing();
-                initializeItemAnimations();
                 
                 // Re-apply sort if one was active
                 const savedSortType = sessionStorage.getItem('pantrySortType');
@@ -2668,7 +2584,11 @@
                 
                 const itemName = this.getAttribute('data-item-name');
                 const currentQuantity = this.getAttribute('data-current-quantity') || '1';
-                const expirationDate = this.getAttribute('data-expiration-date') || null;
+                // Get expiration date from the expiration badge if it exists, or from data attribute
+                const expirationBadge = this.closest('.pantry-item-wrapper')?.querySelector('.editable-expiration');
+                const expirationDate = expirationBadge?.getAttribute('data-current-expiration') || 
+                                      this.getAttribute('data-expiration-date') || 
+                                      null;
                 const addedDate = this.getAttribute('data-added-date') || new Date().toISOString();
                 
                 // Create input field
@@ -2690,12 +2610,24 @@
                 
                 // Handle save on blur or Enter
                 const saveQuantity = async () => {
+                    // Remove event listeners to prevent double calls
+                    input.removeEventListener('blur', saveQuantity);
+                    
                     const newQuantity = input.value.trim() || '1';
                     if (newQuantity !== currentQuantity) {
-                        // Update the badge attribute
-                        newBadge.setAttribute('data-current-quantity', newQuantity);
-                        // Call API to update
-                        await handleUpdateQuantity(itemId, itemName, newQuantity, expirationDate, addedDate);
+                        // Show loading state
+                        quantityValue.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Saving...';
+                        
+                        try {
+                            // Update the badge attribute
+                            newBadge.setAttribute('data-current-quantity', newQuantity);
+                            // Call API to update
+                            await handleUpdateQuantity(itemId, itemName, newQuantity, expirationDate, addedDate);
+                            // The reloadPantryItems() in handleUpdateQuantity will refresh the display
+                        } catch (error) {
+                            // On error, restore original display
+                            quantityValue.textContent = oldText;
+                        }
                     } else {
                         // Restore original text if no change
                         quantityValue.textContent = oldText;
@@ -2768,34 +2700,81 @@
                 const today = new Date().toISOString().split('T')[0];
                 input.min = today;
                 
-                input.style.cssText = 'background: white; border: 2px solid #8B5CF6; border-radius: 6px; padding: 4px 8px; font-size: 0.75rem; color: #8B5CF6; width: 140px;';
+                input.style.cssText = 'background: white !important; border: 2px solid #8B5CF6 !important; border-radius: 8px !important; padding: 6px 10px !important; font-size: 0.8rem !important; font-weight: 600 !important; color: #8B5CF6 !important; width: 160px !important; min-width: 160px !important; display: inline-block !important; outline: none !important; box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.1) !important;';
                 input.className = 'expiration-input';
                 
-                // Replace text with input
-                expirationValue.textContent = '';
+                // Clear and replace content properly
+                expirationValue.innerHTML = '';
+                expirationValue.style.display = 'inline-block';
                 expirationValue.appendChild(input);
-                input.focus();
-                input.showPicker?.(); // Show date picker if supported
+                
+                // Focus and show picker after a small delay to ensure DOM is ready
+                setTimeout(() => {
+                    input.focus();
+                    input.select();
+                    // Try to show date picker if supported
+                    if (input.showPicker && typeof input.showPicker === 'function') {
+                        try {
+                            input.showPicker();
+                        } catch (e) {
+                            // showPicker not supported, just focus
+                            input.focus();
+                        }
+                    }
+                }, 10);
                 
                 // Handle save on blur or change
                 const saveExpiration = async () => {
                     const newExpiration = input.value.trim() || null;
                     const oldExpirationFormatted = currentDateValue || null;
                     
+                    // Remove input event listeners to prevent double calls
+                    input.removeEventListener('change', saveExpiration);
+                    input.removeEventListener('blur', saveExpiration);
+                    
                     if (newExpiration !== oldExpirationFormatted) {
-                        // Update the badge attributes
-                        newBadge.setAttribute('data-current-expiration', newExpiration || '');
-                        newBadge.setAttribute('data-exp-date', newExpiration || '');
-                        // Call API to update
-                        await handleUpdateExpiration(itemId, itemName, currentQuantity, newExpiration, addedDate);
+                        // Show loading state
+                        expirationValue.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Saving...';
+                        
+                        try {
+                            // Update the badge attributes
+                            newBadge.setAttribute('data-current-expiration', newExpiration || '');
+                            newBadge.setAttribute('data-exp-date', newExpiration || '');
+                            
+                            // Call API to update
+                            await handleUpdateExpiration(itemId, itemName, currentQuantity, newExpiration, addedDate);
+                            
+                            // The reloadPantryItems() in handleUpdateExpiration will refresh the display
+                            // So we don't need to manually update here
+                        } catch (error) {
+                            // On error, restore original display
+                            if (oldText && oldText.trim() !== '') {
+                                expirationValue.innerHTML = `<i class="bi bi-clock-fill me-1" style="font-size: 0.85rem;"></i><span>${oldText}</span>`;
+                            } else {
+                                expirationValue.innerHTML = '<i class="bi bi-clock me-1" style="font-size: 0.85rem;"></i><span>Add Date</span>';
+                            }
+                        }
                     } else {
-                        // Restore original text if no change
-                        expirationValue.textContent = oldText;
+                        // Restore original display if no change
+                        if (oldText && oldText.trim() !== '') {
+                            expirationValue.innerHTML = `<i class="bi bi-clock-fill me-1" style="font-size: 0.85rem;"></i><span>${oldText}</span>`;
+                        } else {
+                            expirationValue.innerHTML = '<i class="bi bi-clock me-1" style="font-size: 0.85rem;"></i><span>Add Date</span>';
+                        }
                     }
                 };
                 
                 const cancelEdit = () => {
-                    expirationValue.textContent = oldText;
+                    // Remove input event listeners
+                    input.removeEventListener('change', saveExpiration);
+                    input.removeEventListener('blur', saveExpiration);
+                    
+                    // Restore original display
+                    if (oldText && oldText.trim() !== '') {
+                        expirationValue.innerHTML = `<i class="bi bi-clock-fill me-1" style="font-size: 0.85rem;"></i><span>${oldText}</span>`;
+                    } else {
+                        expirationValue.innerHTML = '<i class="bi bi-clock me-1" style="font-size: 0.85rem;"></i><span>Add Date</span>';
+                    }
                 };
                 
                 input.addEventListener('change', saveExpiration);
@@ -2813,25 +2792,11 @@
         });
     }
     
-    // Initialize item animations
-    function initializeItemAnimations() {
-        const items = document.querySelectorAll('.pantry-item-card');
-        items.forEach((item, index) => {
-            const delay = item.getAttribute('data-animation-delay') || (index * 0.05);
-            item.style.animationDelay = `${delay}s`;
-            item.style.opacity = '0';
-            setTimeout(() => {
-                item.style.opacity = '1';
-            }, delay * 1000);
-        });
-    }
-    
     // Initialize on page load
     document.addEventListener('DOMContentLoaded', function() {
         initializeDeleteButtons();
         initializeQuantityEditing();
         initializeExpirationEditing();
-        initializeItemAnimations();
         
         // Restore sort type if one was saved
         const savedSortType = sessionStorage.getItem('pantrySortType');
