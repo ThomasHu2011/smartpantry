@@ -62,6 +62,8 @@
         backdrop-filter: blur(1px) !important;
         -webkit-backdrop-filter: blur(1px) !important;
         z-index: 1040 !important;
+        /* Backdrop should not block modal content clicks */
+        pointer-events: none !important;
     }
     
     .modal-backdrop.show {
@@ -70,6 +72,11 @@
     
     .modal {
         z-index: 1055 !important;
+        pointer-events: none !important; /* Modal container doesn't capture clicks */
+    }
+    
+    .modal.show {
+        pointer-events: auto !important; /* When shown, allow clicks */
     }
     
     /* Ensure modal content is clickable */
@@ -89,6 +96,7 @@
     .modal-dialog {
         z-index: 1055 !important;
         position: relative;
+        pointer-events: auto !important; /* Dialog captures clicks */
     }
     
     /* Prevent backdrop from staying after modal closes */
@@ -100,11 +108,26 @@
     }
     
     /* Ensure backdrop doesn't block modal content clicks */
+    /* Backdrop should allow clicks through - modal content handles its own clicks */
     .modal-backdrop {
+        pointer-events: none !important;
+    }
+    
+    /* When modal is shown, backdrop should be clickable to close, but not block modal content */
+    .modal.show ~ .modal-backdrop {
         pointer-events: auto !important;
     }
     
-    .modal.show ~ .modal-backdrop {
+    /* Ensure modal content is always clickable and above backdrop */
+    .modal.show {
+        pointer-events: auto !important;
+    }
+    
+    .modal.show .modal-dialog {
+        pointer-events: auto !important;
+    }
+    
+    .modal.show .modal-content {
         pointer-events: auto !important;
     }
     
@@ -732,28 +755,49 @@
     // Camera Functions
     if (openCameraBtn) {
         openCameraBtn.addEventListener('click', async () => {
-        // Check if getUserMedia is supported
-        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-            alert('Camera access requires HTTPS or localhost.\n\nTo use camera:\n1. Access via https:// (requires SSL certificate)\n2. Access via http://localhost:5050 or http://127.0.0.1:5050\n\nFor now, please use "Browse Files" to upload a photo instead.');
-            return;
-        }
-
-        try {
-            cameraStream = await navigator.mediaDevices.getUserMedia({ 
-                video: { facingMode: 'environment' } 
-            });
-            if (cameraStreamVideo) cameraStreamVideo.srcObject = cameraStream;
-            if (uploadZone) uploadZone.style.display = 'none';
-            if (cameraView) cameraView.style.display = 'block';
-        } catch (err) {
-            if (err.name === 'NotAllowedError') {
-                alert('Camera permission denied. Please allow camera access and try again.');
-            } else if (err.name === 'NotFoundError') {
-                alert('No camera found on this device.');
-            } else {
-                alert('Could not access camera: ' + err.message + '\n\nPlease use "Browse Files" to upload a photo instead.');
+            // Prevent multiple clicks
+            if (openCameraBtn.disabled) {
+                return;
             }
-        }
+            
+            // Check if getUserMedia is supported
+            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                alert('Camera access requires HTTPS or localhost.\n\nTo use camera:\n1. Access via https:// (requires SSL certificate)\n2. Access via http://localhost:5050 or http://127.0.0.1:5050\n\nFor now, please use "Browse Files" to upload a photo instead.');
+                return;
+            }
+
+            // Disable button while requesting camera
+            openCameraBtn.disabled = true;
+            const originalText = openCameraBtn.textContent;
+            openCameraBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Opening Camera...';
+
+            try {
+                cameraStream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { facingMode: 'environment' } 
+                });
+                if (cameraStreamVideo) cameraStreamVideo.srcObject = cameraStream;
+                if (uploadZone) uploadZone.style.display = 'none';
+                if (cameraView) cameraView.style.display = 'block';
+            } catch (err) {
+                // Stop any partial stream
+                if (cameraStream) {
+                    stopCamera();
+                }
+                
+                let errorMessage = 'Could not access camera.';
+                if (err.name === 'NotAllowedError') {
+                    errorMessage = 'Camera permission denied. Please allow camera access and try again.';
+                } else if (err.name === 'NotFoundError') {
+                    errorMessage = 'No camera found on this device.';
+                } else {
+                    errorMessage = 'Could not access camera: ' + err.message + '\n\nPlease use "Browse Files" to upload a photo instead.';
+                }
+                alert(errorMessage);
+            } finally {
+                // Always re-enable button
+                openCameraBtn.disabled = false;
+                openCameraBtn.textContent = originalText;
+            }
         });
     }
 
@@ -878,9 +922,6 @@
                     } else {
                         alert(errorMessage);
                     }
-                    
-                    // Reset button state
-                    resetPhotoUploadButton();
                 }
             } catch (err) {
                 console.error('Photo upload error:', err);
@@ -892,8 +933,8 @@
                 } else {
                     alert('Upload error: ' + errorMessage);
                 }
-                
-                // Reset button state
+            } finally {
+                // Always reset button state, even on error
                 resetPhotoUploadButton();
             }
         });
@@ -998,17 +1039,40 @@
             if (modalContent) {
                 modalContent.style.pointerEvents = 'auto';
                 modalContent.style.zIndex = '1056';
-                const allButtons = modalContent.querySelectorAll('button, input, a, [role="button"], .btn, .btn-close');
+                modalContent.style.position = 'relative';
+                const allButtons = modalContent.querySelectorAll('button, input, a, [role="button"], .btn, .btn-close, select');
                 allButtons.forEach(btn => {
                     btn.style.pointerEvents = 'auto';
-                    btn.style.cursor = 'pointer';
+                    btn.style.cursor = btn.tagName === 'INPUT' || btn.tagName === 'SELECT' ? 'default' : 'pointer';
                     btn.style.zIndex = '10';
+                    btn.style.position = 'relative';
                 });
             }
             if (modalDialog) {
                 modalDialog.style.pointerEvents = 'auto';
                 modalDialog.style.zIndex = '1055';
+                modalDialog.style.position = 'relative';
             }
+            
+            // Ensure backdrop is properly configured
+            setTimeout(() => {
+                const backdrop = document.querySelector('.modal-backdrop');
+                if (backdrop) {
+                    // Backdrop should be clickable to close modal, but not block modal content
+                    backdrop.style.pointerEvents = 'auto';
+                    backdrop.style.zIndex = '1040';
+                    // Ensure backdrop clicks close the modal
+                    backdrop.addEventListener('click', function(e) {
+                        // Only close if clicking directly on backdrop, not if event bubbled from modal
+                        if (e.target === backdrop) {
+                            const bootstrapModal = bootstrap.Modal.getInstance(photoModal);
+                            if (bootstrapModal) {
+                                bootstrapModal.hide();
+                            }
+                        }
+                    }, { once: true });
+                }
+            }, 50);
             
             // Ensure close button works
             const closeBtn = photoModal.querySelector('[data-bs-dismiss="modal"]');
@@ -1016,22 +1080,7 @@
                 closeBtn.style.pointerEvents = 'auto';
                 closeBtn.style.cursor = 'pointer';
                 closeBtn.style.zIndex = '10';
-                // Add click handler as backup
-                closeBtn.addEventListener('click', function(e) {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    const bootstrapModal = bootstrap.Modal.getInstance(photoModal);
-                    if (bootstrapModal) {
-                        bootstrapModal.hide();
-                    } else {
-                        photoModal.classList.remove('show');
-                        photoModal.style.display = 'none';
-                        const backdrops = document.querySelectorAll('.modal-backdrop');
-                        backdrops.forEach(b => b.remove());
-                        document.body.classList.remove('modal-open');
-                        document.body.style.overflow = '';
-                    }
-                });
+                closeBtn.style.position = 'relative';
             }
         });
         
