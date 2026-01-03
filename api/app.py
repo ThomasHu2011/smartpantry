@@ -181,9 +181,30 @@ else:
     print(f"📁 Local development: Using USERS_FILE = {USERS_FILE}")
     print(f"   App directory: {_app_file_dir}")
 
-def load_users():
-    """Load users from JSON file or in-memory storage"""
-    global _in_memory_users  # Declare global at the start of the function
+# Performance optimization: Add caching for users and pantry data
+_users_cache = {}
+_users_cache_timestamp = {}
+_users_cache_ttl = 5  # Cache for 5 seconds (balance between performance and freshness)
+_pantry_cache = {}  # Cache normalized pantry items per user
+_pantry_cache_timestamp = {}
+
+# Enable/disable verbose logging (set to False for production)
+VERBOSE_LOGGING = os.getenv('VERBOSE_LOGGING', 'false').lower() == 'true'
+
+def load_users(use_cache=True):
+    """Load users from JSON file or in-memory storage with caching"""
+    global _in_memory_users, _users_cache, _users_cache_timestamp  # Declare global at the start of the function
+    
+    # Check cache first
+    if use_cache:
+        import time
+        current_time = time.time()
+        if '_all_users' in _users_cache:
+            cache_age = current_time - _users_cache_timestamp.get('_all_users', 0)
+            if cache_age < _users_cache_ttl:
+                if VERBOSE_LOGGING:
+                    print(f"Using cached users data (age: {cache_age:.2f}s)")
+                return _users_cache['_all_users'].copy()
     
     if IS_VERCEL or IS_RENDER:
         # Try to load from /tmp, fallback to in-memory
@@ -194,7 +215,8 @@ def load_users():
             if os.path.exists(USERS_FILE):
                 with open(USERS_FILE, 'r') as f:
                     users = json.load(f)
-                    print(f"Loaded {len(users)} users from {USERS_FILE}")
+                    if VERBOSE_LOGGING:
+                        print(f"Loaded {len(users)} users from {USERS_FILE}")
         except (IOError, OSError, json.JSONDecodeError) as e:
             print(f"Warning: Could not load users file from {USERS_FILE}: {e}")
         
@@ -227,8 +249,14 @@ def load_users():
         _in_memory_users = users.copy()
         
         if not users:
-            print(f"No users found, using in-memory storage")
-            return _in_memory_users.copy() if _in_memory_users else {}
+            if VERBOSE_LOGGING:
+                print(f"No users found, using in-memory storage")
+            users = _in_memory_users.copy() if _in_memory_users else {}
+        
+        # Update cache
+        import time
+        _users_cache['_all_users'] = users.copy()
+        _users_cache_timestamp['_all_users'] = time.time()
         
         return users
     else:
@@ -240,7 +268,8 @@ def load_users():
             if os.path.exists(USERS_FILE):
                 with open(USERS_FILE, 'r') as f:
                     users = json.load(f)
-                    print(f"✅ Loaded {len(users)} users from {USERS_FILE}")
+                    if VERBOSE_LOGGING:
+                        print(f"✅ Loaded {len(users)} users from {USERS_FILE}")
                     return users
         except (IOError, json.JSONDecodeError) as e:
             print(f"⚠️ Warning: Could not load users file from {USERS_FILE}: {e}")
@@ -281,13 +310,28 @@ def load_users():
                 pass
         
         if not users:
-            print(f"📁 Users file does not exist at {USERS_FILE}, starting with empty users")
-            print(f"   Checked locations: {[USERS_FILE] + old_locations}")
+            if VERBOSE_LOGGING:
+                print(f"📁 Users file does not exist at {USERS_FILE}, starting with empty users")
+                print(f"   Checked locations: {[USERS_FILE] + old_locations}")
+        
+        # Update cache
+        import time
+        _users_cache['_all_users'] = users.copy()
+        _users_cache_timestamp['_all_users'] = time.time()
         
         return users
 
 def save_users(users):
-    """Save users to JSON file or in-memory storage"""
+    """Save users to JSON file or in-memory storage and update cache"""
+    global _users_cache, _users_cache_timestamp
+    
+    # Invalidate cache on save
+    if '_all_users' in _users_cache:
+        del _users_cache['_all_users']
+    # Also invalidate all pantry caches since users data changed
+    _pantry_cache.clear()
+    _pantry_cache_timestamp.clear()
+    
     if IS_VERCEL or IS_RENDER:
         # Try to save to /tmp, always update in-memory cache
         global _in_memory_users
@@ -305,7 +349,8 @@ def save_users(users):
             
             # Atomic rename (works on Unix-like systems)
             os.replace(temp_file, USERS_FILE)
-            print(f"Saved {len(users)} users to {USERS_FILE}")
+            if VERBOSE_LOGGING:
+                print(f"Saved {len(users)} users to {USERS_FILE}")
         except (IOError, OSError) as e:
             # Fallback to in-memory storage if file write fails
             print(f"Warning: Could not save users file: {e}. Using in-memory storage.")
@@ -316,33 +361,39 @@ def save_users(users):
             file_dir = os.path.dirname(USERS_FILE)
             if file_dir and file_dir != '.':
                 os.makedirs(file_dir, exist_ok=True)
-                print(f"📁 Ensured directory exists: {file_dir}")
+                if VERBOSE_LOGGING:
+                    print(f"📁 Ensured directory exists: {file_dir}")
             elif not file_dir or file_dir == '':
                 # If no directory, file is in current directory
-                print(f"📁 Saving to current directory: {os.getcwd()}")
+                if VERBOSE_LOGGING:
+                    print(f"📁 Saving to current directory: {os.getcwd()}")
             
-            print(f"💾 Attempting to save {len(users)} users to {USERS_FILE}")
-            print(f"   Absolute path: {os.path.abspath(USERS_FILE)}")
-            print(f"   Current working directory: {os.getcwd()}")
-            print(f"   File directory exists: {os.path.exists(file_dir) if file_dir else 'N/A'}")
+            if VERBOSE_LOGGING:
+                print(f"💾 Attempting to save {len(users)} users to {USERS_FILE}")
+                print(f"   Absolute path: {os.path.abspath(USERS_FILE)}")
+                print(f"   Current working directory: {os.getcwd()}")
+                print(f"   File directory exists: {os.path.exists(file_dir) if file_dir else 'N/A'}")
             
             # Use atomic write: write to temp file first, then rename
             temp_file = USERS_FILE + '.tmp'
-            print(f"   Writing to temp file: {temp_file}")
+            if VERBOSE_LOGGING:
+                print(f"   Writing to temp file: {temp_file}")
             
             with open(temp_file, 'w') as f:
                 json.dump(users, f, indent=2)
                 f.flush()  # Force write to disk
                 os.fsync(f.fileno())  # Ensure data is written to disk
             
-            print(f"   Temp file written, size: {os.path.getsize(temp_file)} bytes")
+            if VERBOSE_LOGGING:
+                print(f"   Temp file written, size: {os.path.getsize(temp_file)} bytes")
             
             # Atomic rename
             os.replace(temp_file, USERS_FILE)
-            print(f"✅ Saved {len(users)} users to {USERS_FILE}")
+            if VERBOSE_LOGGING:
+                print(f"✅ Saved {len(users)} users to {USERS_FILE}")
             
-            # Verify the save immediately
-            if os.path.exists(USERS_FILE):
+            # Verify the save immediately (only in verbose mode for performance)
+            if VERBOSE_LOGGING and os.path.exists(USERS_FILE):
                 file_size = os.path.getsize(USERS_FILE)
                 print(f"   File exists, size: {file_size} bytes")
                 with open(USERS_FILE, 'r') as f:
@@ -660,9 +711,22 @@ def normalize_pantry_item(item):
             'addedDate': datetime.now().isoformat()
         }
 
-def get_user_pantry(user_id):
-    """Get user's pantry items"""
-    users = load_users()
+def get_user_pantry(user_id, use_cache=True):
+    """Get user's pantry items with caching"""
+    global _pantry_cache, _pantry_cache_timestamp
+    
+    # Check pantry cache first
+    if use_cache:
+        import time
+        current_time = time.time()
+        if user_id in _pantry_cache:
+            cache_age = current_time - _pantry_cache_timestamp.get(user_id, 0)
+            if cache_age < _users_cache_ttl:
+                if VERBOSE_LOGGING:
+                    print(f"Using cached pantry for user {user_id} (age: {cache_age:.2f}s)")
+                return _pantry_cache[user_id].copy()
+    
+    users = load_users(use_cache=use_cache)
     if user_id in users:
         pantry = users[user_id].get('pantry', [])
         # Ensure pantry is a list
@@ -689,27 +753,38 @@ def get_user_pantry(user_id):
                 import traceback
                 traceback.print_exc()
                 continue
-        print(f"Retrieved pantry for user {user_id}: {len(normalized_pantry)} items")
+        
+        # Cache the normalized pantry
+        import time
+        _pantry_cache[user_id] = normalized_pantry.copy()
+        _pantry_cache_timestamp[user_id] = time.time()
+        
+        if VERBOSE_LOGGING:
+            print(f"Retrieved pantry for user {user_id}: {len(normalized_pantry)} items")
         return normalized_pantry
-    print(f"Warning: User {user_id} not found in users database")
+    if VERBOSE_LOGGING:
+        print(f"Warning: User {user_id} not found in users database")
     return []
 
 def update_user_pantry(user_id, pantry_items):
     """Update user's pantry items"""
-    print(f"\n{'='*60}")
-    print(f"🔄 UPDATE USER PANTRY")
-    print(f"{'='*60}")
-    print(f"User ID: {user_id}")
-    print(f"Items to save: {len(pantry_items)}")
+    if VERBOSE_LOGGING:
+        print(f"\n{'='*60}")
+        print(f"🔄 UPDATE USER PANTRY")
+        print(f"{'='*60}")
+        print(f"User ID: {user_id}")
+        print(f"Items to save: {len(pantry_items)}")
     
-    users = load_users()
-    print(f"Total users in database: {len(users)}")
+    users = load_users(use_cache=False)  # Don't use cache when updating
+    if VERBOSE_LOGGING:
+        print(f"Total users in database: {len(users)}")
     
     if user_id not in users:
         users[user_id] = {'pantry': []}
     
-    print(f"✅ User {user_id} found in database")
-    print(f"   Username: {users[user_id].get('username', 'unknown')}")
+    if VERBOSE_LOGGING:
+        print(f"✅ User {user_id} found in database")
+        print(f"   Username: {users[user_id].get('username', 'unknown')}")
     
     # Ensure pantry_items is a list
     if not isinstance(pantry_items, list):
@@ -729,24 +804,32 @@ def update_user_pantry(user_id, pantry_items):
             continue
     
     users[user_id]['pantry'] = normalized_items
-    print(f"💾 Saving {len(users)} users to {USERS_FILE}...")
+    if VERBOSE_LOGGING:
+        print(f"💾 Saving {len(users)} users to {USERS_FILE}...")
     save_users(users)
-    print(f"✅ Updated pantry for user {user_id}: {len(normalized_items)} items saved to {USERS_FILE}")
+    if VERBOSE_LOGGING:
+        print(f"✅ Updated pantry for user {user_id}: {len(normalized_items)} items saved to {USERS_FILE}")
     
-    # Verify the update
-    print(f"🔍 Verifying save...")
-    verify_users = load_users()
-    if user_id in verify_users:
-        verify_pantry = verify_users[user_id].get('pantry', [])
-        if len(verify_pantry) == len(normalized_items):
-            print(f"✅ Verified: Pantry update saved correctly ({len(verify_pantry)} items)")
+    # Update pantry cache directly (no need to verify by loading again)
+    import time
+    _pantry_cache[user_id] = normalized_items.copy()
+    _pantry_cache_timestamp[user_id] = time.time()
+    
+    # Skip verification in production for performance (only verify in verbose mode)
+    if VERBOSE_LOGGING:
+        print(f"🔍 Verifying save...")
+        verify_users = load_users(use_cache=False)
+        if user_id in verify_users:
+            verify_pantry = verify_users[user_id].get('pantry', [])
+            if len(verify_pantry) == len(normalized_items):
+                print(f"✅ Verified: Pantry update saved correctly ({len(verify_pantry)} items)")
+            else:
+                print(f"⚠️ Warning: Saved {len(normalized_items)} items but file contains {len(verify_pantry)} items")
+                print(f"   Expected items: {[item.get('name', 'unknown') if isinstance(item, dict) else str(item) for item in normalized_items[:5]]}")
+                print(f"   Saved items: {[item.get('name', 'unknown') if isinstance(item, dict) else str(item) for item in verify_pantry[:5]]}")
         else:
-            print(f"⚠️ Warning: Saved {len(normalized_items)} items but file contains {len(verify_pantry)} items")
-            print(f"   Expected items: {[item.get('name', 'unknown') if isinstance(item, dict) else str(item) for item in normalized_items[:5]]}")
-            print(f"   Saved items: {[item.get('name', 'unknown') if isinstance(item, dict) else str(item) for item in verify_pantry[:5]]}")
-    else:
-        print(f"❌ Error: User {user_id} not found after save!")
-    print(f"{'='*60}\n")
+            print(f"❌ Error: User {user_id} not found after save!")
+        print(f"{'='*60}\n")
 
  
 
@@ -867,35 +950,18 @@ def profile():
 def index():
     # Check if user is logged in
     if 'user_id' in session:
+        # get_user_pantry already normalizes items, so no need to normalize again
         user_pantry = get_user_pantry(session['user_id'])
         # Ensure user_pantry is a list
         if not isinstance(user_pantry, list):
             user_pantry = []
-        # Normalize all items to ensure consistent format
-        normalized_pantry = []
-        for item in user_pantry:
-            try:
-                normalized_item = None
-                if isinstance(item, dict):
-                    normalized_item = normalize_pantry_item(item.copy())
-                elif item is not None:
-                    normalized_item = normalize_pantry_item(item)
-                
-                # Only add items with valid names (after normalization, name should never be empty)
-                if normalized_item and normalized_item.get('name') and normalized_item.get('name').strip():
-                    name_str = str(normalized_item.get('name', '')).strip()
-                    if name_str and name_str != 'Unnamed Item':  # Skip placeholder names
-                        normalized_item['name'] = name_str
-                        normalized_pantry.append(normalized_item)
-            except Exception as e:
-                print(f"Warning: Failed to normalize item {item}: {e}")
-                import traceback
-                traceback.print_exc()
-                continue
-        print(f"DEBUG: Rendering index with {len(normalized_pantry)} items for user {session.get('username')}")
-        print(f"DEBUG: Items: {[item.get('name', 'NO_NAME') for item in normalized_pantry[:3]]}")
+        
+        if VERBOSE_LOGGING:
+            print(f"DEBUG: Rendering index with {len(user_pantry)} items for user {session.get('username')}")
+            print(f"DEBUG: Items: {[item.get('name', 'NO_NAME') for item in user_pantry[:3]]}")
+        
         # Ensure items is always a list, never None
-        items_to_render = normalized_pantry if normalized_pantry else []
+        items_to_render = user_pantry if user_pantry else []
         return render_template("index.html", items=items_to_render, username=session.get('username'))
     else:
         # Use session-based pantry for anonymous users (consistent with add_items and delete_item)
@@ -905,7 +971,8 @@ def index():
         web_pantry = session.get('web_pantry', [])
         if not isinstance(web_pantry, list):
             web_pantry = []
-        # Normalize anonymous pantry items
+        
+        # Normalize anonymous pantry items (only once)
         normalized_web_pantry = []
         for item in web_pantry:
             try:
@@ -922,12 +989,16 @@ def index():
                         normalized_item['name'] = name_str
                         normalized_web_pantry.append(normalized_item)
             except Exception as e:
-                print(f"Warning: Failed to normalize item {item}: {e}")
-                import traceback
-                traceback.print_exc()
+                if VERBOSE_LOGGING:
+                    print(f"Warning: Failed to normalize item {item}: {e}")
+                    import traceback
+                    traceback.print_exc()
                 continue
-        print(f"DEBUG: Rendering index with {len(normalized_web_pantry)} items for anonymous user")
-        print(f"DEBUG: Items: {[item.get('name', 'NO_NAME') for item in normalized_web_pantry[:3]]}")
+        
+        if VERBOSE_LOGGING:
+            print(f"DEBUG: Rendering index with {len(normalized_web_pantry)} items for anonymous user")
+            print(f"DEBUG: Items: {[item.get('name', 'NO_NAME') for item in normalized_web_pantry[:3]]}")
+        
         # Ensure items is always a list, never None
         items_to_render = normalized_web_pantry if normalized_web_pantry else []
         return render_template("index.html", items=items_to_render, username=None)
@@ -1077,12 +1148,14 @@ def delete_item(item_name):
     # Decode URL-encoded item name and strip whitespace
     item_name = unquote(item_name).strip()
     
-    print(f"DEBUG: Attempting to delete item: '{item_name}'")
+    if VERBOSE_LOGGING:
+        print(f"DEBUG: Attempting to delete item: '{item_name}'")
     
     if 'user_id' in session:
         # Remove from user's pantry
         user_pantry = get_user_pantry(session['user_id'])
-        print(f"DEBUG: User pantry has {len(user_pantry) if isinstance(user_pantry, list) else 0} items")
+        if VERBOSE_LOGGING:
+            print(f"DEBUG: User pantry has {len(user_pantry) if isinstance(user_pantry, list) else 0} items")
         
         # Ensure pantry is a list
         if not isinstance(user_pantry, list):
@@ -1123,17 +1196,18 @@ def delete_item(item_name):
             flash(f"{item_name} removed from pantry.", "info")
         else:
             # Debug: print available item names
-            available_names = []
-            for item in user_pantry:
-                if isinstance(item, dict):
-                    name = item.get('name', '').strip()
-                    if name:
-                        available_names.append(name)
-                else:
-                    name = str(item).strip()
-                    if name:
-                        available_names.append(name)
-            print(f"DEBUG: Item '{item_name}' not found. Available items: {available_names}")
+            if VERBOSE_LOGGING:
+                available_names = []
+                for item in user_pantry:
+                    if isinstance(item, dict):
+                        name = item.get('name', '').strip()
+                        if name:
+                            available_names.append(name)
+                    else:
+                        name = str(item).strip()
+                        if name:
+                            available_names.append(name)
+                print(f"DEBUG: Item '{item_name}' not found. Available items: {available_names}")
             # Check if AJAX request
             if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
                 return jsonify({'success': False, 'error': f"Item '{item_name}' not found in pantry."}), 404
@@ -1146,7 +1220,8 @@ def delete_item(item_name):
         if 'web_pantry' not in session:
             session['web_pantry'] = []
         
-        print(f"DEBUG: Anonymous pantry has {len(session['web_pantry'])} items")
+        if VERBOSE_LOGGING:
+            print(f"DEBUG: Anonymous pantry has {len(session['web_pantry'])} items")
         
         # Convert to list of dicts if needed
         pantry_list = []
@@ -1186,17 +1261,18 @@ def delete_item(item_name):
             flash(f"{item_name} removed from pantry.", "info")
         else:
             # Debug: print available item names
-            available_names = []
-            for item in session['web_pantry']:
-                if isinstance(item, dict):
-                    name = item.get('name', '').strip()
-                    if name:
-                        available_names.append(name)
-                else:
-                    name = str(item).strip()
-                    if name:
-                        available_names.append(name)
-            print(f"DEBUG: Item '{item_name}' not found. Available items: {available_names}")
+            if VERBOSE_LOGGING:
+                available_names = []
+                for item in session['web_pantry']:
+                    if isinstance(item, dict):
+                        name = item.get('name', '').strip()
+                        if name:
+                            available_names.append(name)
+                    else:
+                        name = str(item).strip()
+                        if name:
+                            available_names.append(name)
+                print(f"DEBUG: Item '{item_name}' not found. Available items: {available_names}")
             # Check if AJAX request
             if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
                 return jsonify({'success': False, 'error': f"Item '{item_name}' not found in pantry."}), 404
@@ -1245,7 +1321,8 @@ def suggest_recipe():
     existing_recipes = session.get('current_recipes', [])
     if existing_recipes and isinstance(existing_recipes, list) and len(existing_recipes) > 0:
         # Use existing recipes - get pantry items for display only
-        print(f"DEBUG: Using existing {len(existing_recipes)} recipes from session")
+        if VERBOSE_LOGGING:
+            print(f"DEBUG: Using existing {len(existing_recipes)} recipes from session")
         
         # Refresh session to prevent expiration
         session['current_recipes'] = existing_recipes
