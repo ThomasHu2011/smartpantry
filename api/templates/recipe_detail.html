@@ -93,16 +93,50 @@
                 <div class="card-body">
                     <div class="row">
                         {% for ingredient in recipe.ingredients %}
+                        {% set ing_lower = ingredient|lower %}
+                        {% set is_in_pantry = False %}
+                        {% set is_expiring_soon = False %}
+                        
+                        {% if pantry_items_full %}
+                            {% for item in pantry_items_full %}
+                                {% if item.get('name', '')|lower == ing_lower %}
+                                    {% set is_in_pantry = True %}
+                                    {% set exp_date = item.get('expirationDate', '') %}
+                                    {% if exp_date and exp_date != 'None' and exp_date != '' and exp_date != 'null' %}
+                                        {% if exp_date|is_expiring_soon %}
+                                            {% set is_expiring_soon = True %}
+                                        {% endif %}
+                                    {% endif %}
+                                    {% break %}
+                                {% endif %}
+                            {% endfor %}
+                        {% endif %}
+                        
                         <div class="col-md-6 mb-2">
                             <div class="form-check">
                                 <input class="form-check-input" type="checkbox" id="ingredient{{ loop.index }}">
-                                <label class="form-check-label" for="ingredient{{ loop.index }}">
+                                <label class="form-check-label" for="ingredient{{ loop.index }}" 
+                                       style="{% if is_expiring_soon %}background: linear-gradient(135deg, rgba(245, 158, 11, 0.15) 0%, rgba(217, 119, 6, 0.1) 100%); padding: 8px 12px; border-radius: 8px; border-left: 4px solid #F59E0B; font-weight: 600; color: #D97706;{% elif is_in_pantry %}background: linear-gradient(135deg, rgba(16, 185, 129, 0.15) 0%, rgba(5, 150, 105, 0.1) 100%); padding: 8px 12px; border-radius: 8px; border-left: 4px solid #10B981; font-weight: 600; color: #059669;{% endif %}">
+                                    {% if is_expiring_soon %}
+                                        <i class="bi bi-exclamation-triangle-fill me-1" style="color: #F59E0B;"></i>
+                                    {% elif is_in_pantry %}
+                                        <i class="bi bi-check-circle-fill me-1" style="color: #10B981;"></i>
+                                    {% endif %}
                                     {{ ingredient }}
                                 </label>
                             </div>
                         </div>
                         {% endfor %}
                     </div>
+                    {% if pantry_items_full %}
+                    <div class="mt-3">
+                        <small class="text-muted">
+                            <i class="bi bi-info-circle me-1"></i>
+                            <span style="background: linear-gradient(135deg, rgba(16, 185, 129, 0.15) 0%, rgba(5, 150, 105, 0.1) 100%); padding: 4px 8px; border-radius: 6px; border-left: 3px solid #10B981; color: #059669; font-weight: 600; margin-right: 8px;">Green</span> = In pantry
+                            <span style="background: linear-gradient(135deg, rgba(245, 158, 11, 0.15) 0%, rgba(217, 119, 6, 0.1) 100%); padding: 4px 8px; border-radius: 6px; border-left: 3px solid #F59E0B; color: #D97706; font-weight: 600;">Orange</span> = Expires soon (≤7 days)
+                        </small>
+                    </div>
+                    {% endif %}
                 </div>
             </div>
         </div>

@@ -626,6 +626,36 @@ def authenticate_user(username, password, client_type='web'):
         print(f"   Available emails: {[u.get('email', 'N/A') for u in user_list]}")
         return None, f"Username or email '{username}' not found. Please check your username/email or sign up for a new account."
 
+def is_expiring_soon(exp_date_str, days_threshold=7):
+    """Check if expiration date is within threshold days"""
+    if not exp_date_str or exp_date_str == 'None' or exp_date_str == '' or exp_date_str == 'null':
+        return False
+    try:
+        exp_date_str = str(exp_date_str).strip()
+        if len(exp_date_str) >= 10:
+            exp_date_only = exp_date_str[:10]
+        else:
+            exp_date_only = exp_date_str
+        
+        # Parse date
+        if 'T' in exp_date_only:
+            exp_date = datetime.fromisoformat(exp_date_only.replace('Z', '+00:00')).date()
+        else:
+            exp_date = datetime.strptime(exp_date_only, "%Y-%m-%d").date()
+        
+        today = datetime.now().date()
+        days_diff = (exp_date - today).days
+        
+        return 0 <= days_diff <= days_threshold
+    except:
+        return False
+
+# Register template filter AFTER function is defined
+@app.template_filter('is_expiring_soon')
+def template_is_expiring_soon(exp_date_str):
+    """Template filter to check if expiration date is soon"""
+    return is_expiring_soon(exp_date_str, 7)
+
 def normalize_expiration_date(date_str):
     """Normalize expiration date to YYYY-MM-DD format"""
     if not date_str or not isinstance(date_str, str):
@@ -1337,17 +1367,21 @@ def suggest_recipe():
         
         # Convert pantry to string list for template compatibility
         pantry_items_list = []
+        # Also keep full pantry data for expiration checking
+        pantry_items_full = []
         for pantry_item in current_pantry:
             if isinstance(pantry_item, dict):
                 name = pantry_item.get('name', '')
                 if name:
                     pantry_items_list.append(name)
+                    pantry_items_full.append(pantry_item)  # Keep full item data
             else:
                 if pantry_item:
                     pantry_items_list.append(str(pantry_item))
+                    pantry_items_full.append({'name': str(pantry_item), 'expirationDate': None})
         
         flash("Showing your current recipes. Click 'Generate New Recipes' for fresh ideas!", "info")
-        return render_template("suggest_recipe.html", recipes=existing_recipes, pantry_items=pantry_items_list)
+        return render_template("suggest_recipe.html", recipes=existing_recipes, pantry_items=pantry_items_list, pantry_items_full=pantry_items_full)
     
     # Get expiring_days parameter from query string (only if generating new recipes)
     expiring_days = request.args.get('expiring_days', type=int)
@@ -1374,14 +1408,18 @@ def suggest_recipe():
     
     # Convert pantry to string list for template compatibility
     pantry_items_list = []
+    # Also keep full pantry data for expiration checking
+    pantry_items_full = []
     for pantry_item in current_pantry:
         if isinstance(pantry_item, dict):
             name = pantry_item.get('name', '')
             if name:
                 pantry_items_list.append(name)
+                pantry_items_full.append(pantry_item)  # Keep full item data
         else:
             if pantry_item:
                 pantry_items_list.append(str(pantry_item))
+                pantry_items_full.append({'name': str(pantry_item), 'expirationDate': None})
     
     # Check if pantry is empty (handle both None and empty list)
     if not pantry_items_list or len(pantry_items_list) == 0:
@@ -1970,17 +2008,21 @@ Format as JSON:
     
     # Convert pantry to string list for template
     pantry_items_list = []
+    # Also keep full pantry data for expiration checking
+    pantry_items_full = []
     for pantry_item in current_pantry:
         if isinstance(pantry_item, dict):
             name = pantry_item.get('name', '')
             if name:  # Only add non-empty names
                 pantry_items_list.append(name)
+                pantry_items_full.append(pantry_item)  # Keep full item data
         else:
             pantry_str = str(pantry_item) if pantry_item else ''
             if pantry_str:  # Only add non-empty strings
                 pantry_items_list.append(pantry_str)
+                pantry_items_full.append({'name': pantry_str, 'expirationDate': None})
 
-    return render_template("suggest_recipe.html", recipes=recipes_with_nutrition, pantry_items=pantry_items_list)
+    return render_template("suggest_recipe.html", recipes=recipes_with_nutrition, pantry_items=pantry_items_list, pantry_items_full=pantry_items_full)
 
 # Detailed recipe page with timers and full instructions
 @app.route("/recipe/<recipe_name>")
@@ -2199,7 +2241,23 @@ Provide nutrition facts per serving in JSON format:
         # Ensure recipes are still in session (refresh to prevent expiration)
         session['current_recipes'] = session.get('current_recipes', recipes)
     
-    return render_template("recipe_detail.html", recipe=recipe, detailed_recipe=detailed_recipe, nutrition=nutrition_info)
+    # Get pantry items for highlighting ingredients
+    if 'user_id' in session:
+        current_pantry = get_user_pantry(session['user_id'])
+    else:
+        if 'web_pantry' not in session:
+            session['web_pantry'] = []
+        current_pantry = session['web_pantry']
+    
+    # Convert to full pantry data for expiration checking
+    pantry_items_full = []
+    for pantry_item in current_pantry:
+        if isinstance(pantry_item, dict):
+            pantry_items_full.append(pantry_item)
+        else:
+            pantry_items_full.append({'name': str(pantry_item), 'expirationDate': None})
+    
+    return render_template("recipe_detail.html", recipe=recipe, detailed_recipe=detailed_recipe, nutrition=nutrition_info, pantry_items_full=pantry_items_full)
 
 # =============================================================================
 # API ENDPOINTS FOR MOBILE/FRONTEND APP
@@ -2785,15 +2843,29 @@ def api_update_item(item_id):
                 })
         
         # Find and update item by ID (exact match, case-sensitive for IDs)
+        # If ID match fails, fallback to name match (case-insensitive) for backward compatibility
         item_id_clean = item_id.strip()
+        item_name_lower = item_name.lower().strip()
+        
         for i, pantry_item in enumerate(pantry_list):
             if isinstance(pantry_item, dict):
                 item_id_from_dict = pantry_item.get('id', '').strip() if pantry_item.get('id') else ''
-                # Compare IDs exactly (case-sensitive) - IDs should be UUIDs and match exactly
-                if item_id_from_dict == item_id_clean:
+                item_name_from_dict = pantry_item.get('name', '').strip().lower() if pantry_item.get('name') else ''
+                
+                # Try exact ID match first (case-sensitive)
+                if item_id_from_dict and item_id_from_dict == item_id_clean:
                     pantry_list[i] = updated_item
                     item_found = True
                     break
+                # Fallback to name match if ID is empty or doesn't match (for backward compatibility)
+                elif not item_id_from_dict or item_id_clean == '':
+                    if item_name_from_dict == item_name_lower:
+                        # Generate ID for items without one
+                        if not item_id_from_dict:
+                            updated_item['id'] = str(uuid.uuid4())
+                        pantry_list[i] = updated_item
+                        item_found = True
+                        break
         
         if item_found:
             print(f"💾 Updating pantry for user {user_id} with {len(pantry_list)} items")
@@ -2832,15 +2904,29 @@ def api_update_item(item_id):
                 })
         
         # Find and update item by ID (exact match, case-sensitive for IDs)
+        # If ID match fails, fallback to name match (case-insensitive) for backward compatibility
         item_id_clean = item_id.strip()
+        item_name_lower = item_name.lower().strip()
+        
         for i, pantry_item in enumerate(pantry_list):
             if isinstance(pantry_item, dict):
                 item_id_from_dict = pantry_item.get('id', '').strip() if pantry_item.get('id') else ''
-                # Compare IDs exactly (case-sensitive) - IDs should be UUIDs and match exactly
-                if item_id_from_dict == item_id_clean:
+                item_name_from_dict = pantry_item.get('name', '').strip().lower() if pantry_item.get('name') else ''
+                
+                # Try exact ID match first (case-sensitive)
+                if item_id_from_dict and item_id_from_dict == item_id_clean:
                     pantry_list[i] = updated_item
                     item_found = True
                     break
+                # Fallback to name match if ID is empty or doesn't match (for backward compatibility)
+                elif not item_id_from_dict or item_id_clean == '':
+                    if item_name_from_dict == item_name_lower:
+                        # Generate ID for items without one
+                        if not item_id_from_dict:
+                            updated_item['id'] = str(uuid.uuid4())
+                        pantry_list[i] = updated_item
+                        item_found = True
+                        break
         
         if item_found:
             if client_type == 'mobile':

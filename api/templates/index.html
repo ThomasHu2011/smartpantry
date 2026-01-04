@@ -359,6 +359,22 @@
         color: #059669;
     }
     
+    /* Pantry item card background highlighting based on expiration */
+    .pantry-item-card.expiration-expired-card {
+        background: linear-gradient(135deg, rgba(239, 68, 68, 0.08) 0%, rgba(220, 38, 38, 0.05) 100%) !important;
+        border-color: rgba(239, 68, 68, 0.3) !important;
+    }
+    
+    .pantry-item-card.expiration-soon-card {
+        background: linear-gradient(135deg, rgba(245, 158, 11, 0.12) 0%, rgba(217, 119, 6, 0.08) 100%) !important;
+        border-color: rgba(245, 158, 11, 0.4) !important;
+    }
+    
+    .pantry-item-card.expiration-fresh-card {
+        background: linear-gradient(135deg, rgba(16, 185, 129, 0.08) 0%, rgba(5, 150, 105, 0.05) 100%) !important;
+        border-color: rgba(16, 185, 129, 0.3) !important;
+    }
+    
     .expiration-none {
         background: rgba(156, 163, 175, 0.15);
         color: #6B7280;
@@ -1790,8 +1806,9 @@
         }
     });
     
-    // Function to update expiration badge colors - can be called multiple times
+    // Function to update expiration badge colors and card backgrounds - can be called multiple times
     function updateExpirationBadges() {
+        // Update badges
         const badges = document.querySelectorAll('[data-exp-date]');
         if (!badges || badges.length === 0) {
             return;  // No badges to update
@@ -1849,18 +1866,30 @@
                 badge.classList.remove('expiration-expired', 'expiration-soon', 'expiration-fresh', 'expiration-none');
                 
                 // Apply appropriate class based on days until expiration
+                let expirationClass = '';
                 if (daysDiff < 0) {
                     // Expired (past date)
+                    expirationClass = 'expiration-expired';
                     badge.classList.add('expiration-expired');
                 } else if (daysDiff < 3) {
                     // Expiring very soon (0-2 days) - red/orange
+                    expirationClass = 'expiration-soon';
                     badge.classList.add('expiration-soon');
                 } else if (daysDiff < 7) {
                     // Expiring soon (3-6 days) - orange/yellow
+                    expirationClass = 'expiration-soon';
                     badge.classList.add('expiration-soon');
                 } else {
                     // Fresh (7+ days) - green
+                    expirationClass = 'expiration-fresh';
                     badge.classList.add('expiration-fresh');
+                }
+                
+                // Also update the parent card background
+                const card = badge.closest('.pantry-item-card');
+                if (card) {
+                    card.classList.remove('expiration-expired-card', 'expiration-soon-card', 'expiration-fresh-card');
+                    card.classList.add(expirationClass + '-card');
                 }
             } catch (e) {
                 // If there's any error parsing the date, use default styling
@@ -1885,6 +1914,61 @@
             const day = String(oneWeekLater.getDate()).padStart(2, '0');
             expirationInput.value = `${year}-${month}-${day}`;
         }
+    }
+    
+    // Update pantry item card backgrounds based on expiration dates
+    function updatePantryCardBackgrounds() {
+        const wrappers = document.querySelectorAll('.pantry-item-wrapper[data-expiration-date]');
+        wrappers.forEach(function(wrapper) {
+            try {
+                const expDateStr = wrapper.getAttribute('data-expiration-date');
+                if (!expDateStr || expDateStr.trim() === '' || expDateStr === '9999-12-31' || expDateStr === 'None' || expDateStr === 'null') {
+                    return;
+                }
+                
+                // Parse date string
+                let expiration;
+                const dateStr = expDateStr.trim();
+                
+                if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+                    const parts = dateStr.split('-').map(Number);
+                    if (parts.length === 3 && parts[0] > 1900 && parts[0] < 2100 && parts[1] >= 1 && parts[1] <= 12 && parts[2] >= 1 && parts[2] <= 31) {
+                        expiration = new Date(parts[0], parts[1] - 1, parts[2]);
+                    } else {
+                        return;
+                    }
+                } else if (dateStr.includes('T')) {
+                    expiration = new Date(dateStr);
+                } else {
+                    expiration = new Date(dateStr);
+                }
+                
+                if (!expiration || isNaN(expiration.getTime())) {
+                    return;
+                }
+                
+                // Calculate days difference
+                const today = new Date();
+                today.setHours(0, 0, 0, 0);
+                expiration.setHours(0, 0, 0, 0);
+                const daysDiff = Math.floor((expiration - today) / (1000 * 60 * 60 * 24));
+                
+                // Update card background
+                const card = wrapper.querySelector('.pantry-item-card');
+                if (card) {
+                    card.classList.remove('expiration-expired-card', 'expiration-soon-card', 'expiration-fresh-card');
+                    if (daysDiff < 0) {
+                        card.classList.add('expiration-expired-card');
+                    } else if (daysDiff < 7) {
+                        card.classList.add('expiration-soon-card');
+                    } else {
+                        card.classList.add('expiration-fresh-card');
+                    }
+                }
+            } catch (e) {
+                // Silently ignore errors
+            }
+        });
     }
     
     // Sort pantry items
@@ -2061,7 +2145,7 @@
                     categoryHeader.className = 'col-12';
                     // First category header shouldn't have top margin
                     const marginTop = categoryIndex === 0 ? '0' : '24px';
-                    categoryHeader.style.cssText = `margin-top: ${marginTop}; margin-bottom: 12px; padding: 12px 16px; background: linear-gradient(135deg, rgba(139, 92, 246, 0.08) 0%, rgba(59, 130, 246, 0.05) 100%); border-radius: 12px; border-left: 4px solid ${categoryInfo.color};`;
+                    categoryHeader.style.cssText = `margin-top: ${marginTop}; margin-bottom: 12px; padding: 12px 16px; background: linear-gradient(135deg, rgba(139, 92, 246, 0.08) 0%, rgba(59, 130, 246, 0.05) 100%); border-radius: 12px; border-left: 4px solid ${categoryInfo.color}; width: 100%;`;
                     categoryHeader.innerHTML = `
                         <div class="d-flex align-items-center gap-2">
                             <i class="bi ${categoryInfo.icon}" style="color: ${categoryInfo.color}; font-size: 1.1rem;"></i>
@@ -2077,6 +2161,10 @@
                     const card = item.querySelector('.pantry-item-card');
                     if (card) {
                         card.style.animationDelay = (index * 0.05) + 's';
+                    }
+                    // Ensure item maintains proper column class structure
+                    if (!item.classList.contains('col-md-6') && !item.classList.contains('col-lg-4')) {
+                        item.classList.add('col-md-6', 'col-lg-4');
                     }
                     container.appendChild(item);
                 });
@@ -2118,8 +2206,11 @@
         initializeQuantityEditing();
         initializeExpirationEditing();
         
-        // Update expiration badges after sorting
-        setTimeout(updateExpirationBadges, 100);
+        // Update expiration badges and card backgrounds after sorting
+        setTimeout(() => {
+            updateExpirationBadges();
+            updatePantryCardBackgrounds();
+        }, 100);
         
         // Show feedback for category sort
         if (sortType === 'category') {
@@ -2155,14 +2246,22 @@
         document.addEventListener('DOMContentLoaded', function() {
             setDefaultExpirationDate();
             updateExpirationBadges();
+            updatePantryCardBackgrounds();
             // Also run after a short delay to ensure all elements are rendered
-            setTimeout(updateExpirationBadges, 200);
+            setTimeout(() => {
+                updateExpirationBadges();
+                updatePantryCardBackgrounds();
+            }, 200);
         });
     } else {
         // DOM already loaded
         setDefaultExpirationDate();
         updateExpirationBadges();
-        setTimeout(updateExpirationBadges, 200);
+        updatePantryCardBackgrounds();
+        setTimeout(() => {
+            updateExpirationBadges();
+            updatePantryCardBackgrounds();
+        }, 200);
     }
     
     // Handle add item form submission
@@ -2487,7 +2586,10 @@
                 }
                 
                 // Update expiration badges
-                setTimeout(updateExpirationBadges, 100);
+                setTimeout(() => {
+                    updateExpirationBadges();
+                    updatePantryCardBackgrounds();
+                }, 100);
                 } else {
                     // No items - ensure empty state is visible
                     // The empty state should already be in the container.innerHTML we just set
@@ -2577,7 +2679,10 @@
                     }, 100);
                 }
                 
-                setTimeout(updateExpirationBadges, 100);
+                setTimeout(() => {
+                    updateExpirationBadges();
+                    updatePantryCardBackgrounds();
+                }, 100);
             }
             
             // Restore scroll position
@@ -2670,9 +2775,10 @@
     
     // Handle item update via API (for both quantity and expiration date)
     async function handleUpdateItem(itemId, itemName, quantity, expirationDate, addedDate, updateType = 'item') {
-        if (!itemId) {
-            console.error('Item ID is required for update');
-            showFeedback('Error: Item ID missing', 'danger');
+        // Allow empty itemId - backend will fallback to name matching
+        if (!itemName || !itemName.trim()) {
+            console.error('Item name is required for update');
+            showFeedback('Error: Item name missing', 'danger');
             return;
         }
         
@@ -2754,12 +2860,8 @@
             newBadge.addEventListener('click', function(e) {
                 e.stopPropagation(); // Prevent card click
                 
-                const itemId = this.getAttribute('data-item-id');
-                if (!itemId || itemId.trim() === '') {
-                    console.warn('Cannot edit quantity: Item ID is missing');
-                    showFeedback('Cannot edit: Item ID missing', 'warning');
-                    return;
-                }
+                const itemId = this.getAttribute('data-item-id') || '';
+                // Item ID can be empty - backend will use name matching as fallback
                 
                 const itemName = this.getAttribute('data-item-name');
                 const currentQuantity = this.getAttribute('data-current-quantity') || '1';
@@ -2843,12 +2945,8 @@
             newBadge.addEventListener('click', function(e) {
                 e.stopPropagation(); // Prevent card click
                 
-                const itemId = this.getAttribute('data-item-id');
-                if (!itemId || itemId.trim() === '') {
-                    console.warn('Cannot edit expiration: Item ID is missing');
-                    showFeedback('Cannot edit: Item ID missing', 'warning');
-                    return;
-                }
+                const itemId = this.getAttribute('data-item-id') || '';
+                // Item ID can be empty - backend will use name matching as fallback
                 
                 const itemName = this.getAttribute('data-item-name');
                 const currentQuantity = this.getAttribute('data-current-quantity') || '1';
@@ -3004,6 +3102,10 @@
         initializeQuantityEditing();
         initializeExpirationEditing();
         
+        // Update expiration badges and card backgrounds on initial load
+        updateExpirationBadges();
+        updatePantryCardBackgrounds();
+        
         // Restore sort type if one was saved
         const savedSortType = sessionStorage.getItem('pantrySortType');
         if (savedSortType) {
@@ -3014,6 +3116,12 @@
             setTimeout(() => {
                 sortPantry(savedSortType);
             }, 300);
+        } else {
+            // Even without sort, update backgrounds after a delay to ensure DOM is ready
+            setTimeout(() => {
+                updateExpirationBadges();
+                updatePantryCardBackgrounds();
+            }, 200);
         }
     });
 </script>

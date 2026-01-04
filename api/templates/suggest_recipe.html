@@ -174,10 +174,39 @@
                             </h6>
                             <div class="mb-4">
                                 {% for ing in recipe.ingredients %}
-                                    {% if pantry_items and ing in pantry_items %}
-                                    <span class="badge bg-success text-white me-2 mb-2">
-                                        <i class="bi bi-check-circle me-1"></i>{{ ing }}
-                                    </span>
+                                    {% set ing_lower = ing|lower %}
+                                    {% set pantry_item = None %}
+                                    {% set is_expiring_soon = False %}
+                                    {% set is_in_pantry = False %}
+                                    
+                                    {% if pantry_items_full %}
+                                        {% for item in pantry_items_full %}
+                                            {% if item.get('name', '')|lower == ing_lower %}
+                                                {% set pantry_item = item %}
+                                                {% set is_in_pantry = True %}
+                                                {% set exp_date = item.get('expirationDate', '') %}
+                                                {% if exp_date and exp_date != 'None' and exp_date != '' and exp_date != 'null' %}
+                                                    {% if exp_date|is_expiring_soon %}
+                                                        {% set is_expiring_soon = True %}
+                                                    {% endif %}
+                                                {% endif %}
+                                                {% break %}
+                                            {% endif %}
+                                        {% endfor %}
+                                    {% elif pantry_items and ing in pantry_items %}
+                                        {% set is_in_pantry = True %}
+                                    {% endif %}
+                                    
+                                    {% if is_in_pantry %}
+                                        {% if is_expiring_soon %}
+                                        <span class="badge bg-warning text-dark me-2 mb-2 ingredient-expiring-soon" style="background: linear-gradient(135deg, #F59E0B 0%, #D97706 100%) !important; color: white !important; font-weight: 600;">
+                                            <i class="bi bi-exclamation-triangle-fill me-1"></i>{{ ing }}
+                                        </span>
+                                        {% else %}
+                                        <span class="badge bg-success text-white me-2 mb-2 ingredient-in-pantry" style="background: linear-gradient(135deg, #10B981 0%, #059669 100%) !important; font-weight: 600;">
+                                            <i class="bi bi-check-circle me-1"></i>{{ ing }}
+                                        </span>
+                                        {% endif %}
                                     {% else %}
                                     <span class="badge bg-light text-dark me-2 mb-2">{{ ing }}</span>
                                     {% endif %}
@@ -185,7 +214,8 @@
                                 <div class="mt-2">
                                     <small class="text-muted">
                                         <i class="bi bi-info-circle me-1"></i>
-                                        Green badges are from your pantry
+                                        <span class="badge bg-success text-white me-1" style="font-size: 0.7rem; padding: 2px 6px;">Green</span> = In pantry
+                                        <span class="badge bg-warning text-dark me-1" style="font-size: 0.7rem; padding: 2px 6px; background: #F59E0B !important; color: white !important;">Orange</span> = Expires soon (≤7 days)
                                     </small>
                                 </div>
                             </div>
