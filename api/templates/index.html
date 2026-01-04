@@ -867,30 +867,41 @@
                         </h5>
                         <div class="d-flex align-items-center gap-2">
                             {% if items %}
-                            <span class="badge px-3 py-2" style="background: linear-gradient(135deg, #8B5CF6 0%, #3B82F6 100%); color: white; border-radius: 10px; font-size: 0.875rem; font-weight: 600;">
+                            <span class="badge px-3 py-2" style="background: linear-gradient(135deg, #8B5CF6 0%, #3B82F6 100%); color: #ffffff; border-radius: 10px; font-size: 0.875rem; font-weight: 700; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);">
                                 <i class="bi bi-basket-fill me-1"></i>{{ items|length }} {{ 'item' if items|length == 1 else 'items' }}
                             </span>
-                            {% endif %}
-                            {% if items is defined and items is not none and items|length > 1 %}
-                            <div class="dropdown">
-                                <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" id="sortDropdown" data-bs-toggle="dropdown" aria-expanded="false" style="border-radius: 8px;">
-                                    <i class="bi bi-sort-down me-1"></i>Sort
-                                </button>
-                                <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="sortDropdown">
-                                    <li><a class="dropdown-item" href="#" onclick="sortPantry('category'); return false;"><i class="bi bi-grid-3x3-gap me-2"></i>Category</a></li>
-                                    <li><hr class="dropdown-divider"></li>
-                                    <li><a class="dropdown-item" href="#" onclick="sortPantry('name'); return false;"><i class="bi bi-sort-alpha-down me-2"></i>Name (A-Z)</a></li>
-                                    <li><a class="dropdown-item" href="#" onclick="sortPantry('name-desc'); return false;"><i class="bi bi-sort-alpha-up me-2"></i>Name (Z-A)</a></li>
-                                    <li><hr class="dropdown-divider"></li>
-                                    <li><a class="dropdown-item" href="#" onclick="sortPantry('expiration'); return false;"><i class="bi bi-calendar-check me-2"></i>Expiration (Soonest)</a></li>
-                                    <li><a class="dropdown-item" href="#" onclick="sortPantry('expiration-desc'); return false;"><i class="bi bi-calendar-x me-2"></i>Expiration (Latest)</a></li>
-                                </ul>
-                            </div>
                             {% endif %}
                         </div>
                     </div>
                 </div>
                 <div class="card-body p-4" style="position: relative; z-index: 5; overflow: visible;">
+                    <!-- Sort Controls - Positioned above items -->
+                            {% if items is defined and items is not none and items|length > 1 %}
+                    <div class="d-flex justify-content-between align-items-center mb-3 pb-3" style="border-bottom: 2px solid rgba(139, 92, 246, 0.1);">
+                        <div class="d-flex align-items-center gap-2">
+                            <span class="text-muted small fw-semibold" style="color: #64748b; font-size: 0.875rem;">
+                                <i class="bi bi-sort-down me-1"></i>Sort by:
+                            </span>
+                            <div class="dropdown">
+                                <button class="btn btn-sm btn-outline-primary dropdown-toggle" type="button" id="sortDropdown" data-bs-toggle="dropdown" aria-expanded="false" style="border-radius: 8px; border-color: #8B5CF6; color: #8B5CF6; font-weight: 600;">
+                                    <i class="bi bi-grid-3x3-gap me-1"></i><span id="currentSortLabel">Category</span>
+                                </button>
+                                <ul class="dropdown-menu dropdown-menu-start" aria-labelledby="sortDropdown" style="border-radius: 12px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12); border: 1px solid rgba(139, 92, 246, 0.1);">
+                                    <li><a class="dropdown-item" href="#" onclick="sortPantry('category'); updateSortLabel('Category'); return false;" style="padding: 10px 16px; font-weight: 600;"><i class="bi bi-grid-3x3-gap me-2" style="color: #8B5CF6;"></i>Category</a></li>
+                                    <li><hr class="dropdown-divider" style="margin: 8px 0;"></li>
+                                    <li><a class="dropdown-item" href="#" onclick="sortPantry('name'); updateSortLabel('Name (A-Z)'); return false;" style="padding: 10px 16px;"><i class="bi bi-sort-alpha-down me-2"></i>Name (A-Z)</a></li>
+                                    <li><a class="dropdown-item" href="#" onclick="sortPantry('name-desc'); updateSortLabel('Name (Z-A)'); return false;" style="padding: 10px 16px;"><i class="bi bi-sort-alpha-up me-2"></i>Name (Z-A)</a></li>
+                                    <li><hr class="dropdown-divider" style="margin: 8px 0;"></li>
+                                    <li><a class="dropdown-item" href="#" onclick="sortPantry('expiration'); updateSortLabel('Expiration (Soonest)'); return false;" style="padding: 10px 16px;"><i class="bi bi-calendar-check me-2"></i>Expiration (Soonest)</a></li>
+                                    <li><a class="dropdown-item" href="#" onclick="sortPantry('expiration-desc'); updateSortLabel('Expiration (Latest)'); return false;" style="padding: 10px 16px;"><i class="bi bi-calendar-x me-2"></i>Expiration (Latest)</a></li>
+                                </ul>
+                            </div>
+                        </div>
+                        <div id="categoryGroupInfo" class="text-muted small" style="display: none; color: #64748b; font-size: 0.8rem;">
+                            <i class="bi bi-info-circle me-1"></i>Grouped by category
+                    </div>
+                </div>
+                    {% endif %}
                     {% if items is defined and items is not none and items|length > 0 %}
                     <div class="row g-3" id="pantryItemsContainer" style="position: relative; z-index: 10;">
                         {% for item in items %}
@@ -961,23 +972,23 @@
                                                               data-current-expiration="{{ exp_date }}"
                                                               data-added-date="{{ item.get('addedDate', '') if item.get('addedDate') else '' }}"
                                                               data-exp-date="{{ exp_date }}" 
-                                                              style="font-size: 0.8rem; font-weight: 600; padding: 0.5rem 0.75rem; border-radius: 10px; cursor: pointer; transition: all 0.2s ease; border: 1px solid rgba(16, 185, 129, 0.2);"
+                                                              style="font-size: 0.8rem; font-weight: 600; padding: 0.5rem 0.75rem; border-radius: 10px; cursor: pointer; transition: all 0.2s ease; border: 1px solid rgba(16, 185, 129, 0.2); min-width: 140px; display: inline-flex; align-items: center; justify-content: center;"
                                                               title="Click to edit expiration date"
                                                               onmouseover="this.style.opacity='0.9'; this.style.transform='scale(1.05)'; this.style.boxShadow='0 2px 8px rgba(16, 185, 129, 0.2)';"
                                                               onmouseout="this.style.opacity='1'; this.style.transform='scale(1)'; this.style.boxShadow='none';">
                                                             <i class="bi bi-clock-fill me-1" style="font-size: 0.85rem;"></i>
-                                                            <span class="expiration-value">
+                                                            <span class="expiration-value" style="white-space: nowrap;">
                                                                 {% if exp_date and exp_date != 'None' and exp_date != '' and exp_date != 'null' %}
                                                                     {% set date_str = exp_date|trim %}
                                                                     {% if date_str|length >= 10 %}
                                                                         {{ date_str[:10] }}
-                                                                    {% else %}
+                                                            {% else %}
                                                                         {{ date_str }}
                                                                     {% endif %}
                                                                 {% else %}
                                                                     Add Date
-                                                                {% endif %}
-                                                            </span>
+                                                            {% endif %}
+                                                        </span>
                                                         </span>
                                                         {% else %}
                                                         <span class="badge editable-expiration" 
@@ -996,16 +1007,18 @@
                                                 {% endif %}
                                                     {% elif exp_date and exp_date != 'None' and exp_date != '' %}
                                                         <!-- Non-editable Expiration Badge -->
-                                                        <span class="expiration-badge expiration-fresh" data-exp-date="{{ exp_date }}" style="font-size: 0.8rem; font-weight: 600; padding: 0.5rem 0.75rem; border-radius: 10px; border: 1px solid rgba(16, 185, 129, 0.2);">
+                                                        <span class="expiration-badge expiration-fresh" data-exp-date="{{ exp_date }}" style="font-size: 0.8rem; font-weight: 600; padding: 0.5rem 0.75rem; border-radius: 10px; border: 1px solid rgba(16, 185, 129, 0.2); min-width: 140px; display: inline-flex; align-items: center; justify-content: center;">
                                                             <i class="bi bi-clock-fill me-1" style="font-size: 0.85rem;"></i>
-                                                            {% if exp_date and exp_date != 'None' and exp_date != '' and exp_date != 'null' %}
-                                                                {% set date_str = exp_date|trim %}
-                                                                {% if date_str|length >= 10 %}
-                                                                    {{ date_str[:10] }}
-                                                                {% else %}
-                                                                    {{ date_str }}
+                                                            <span style="white-space: nowrap;">
+                                                                {% if exp_date and exp_date != 'None' and exp_date != '' and exp_date != 'null' %}
+                                                                    {% set date_str = exp_date|trim %}
+                                                                    {% if date_str|length >= 10 %}
+                                                                        {{ date_str[:10] }}
+                                                                    {% else %}
+                                                                        {{ date_str }}
+                                                                    {% endif %}
                                                                 {% endif %}
-                                                            {% endif %}
+                                                            </span>
                                                         </span>
                                             {% endif %}
                                         </div>
@@ -1875,40 +1888,77 @@
     }
     
     // Sort pantry items
-    // Category detection function
+    // Enhanced category detection function with better accuracy
     function getItemCategory(itemName) {
-        const name = itemName.toLowerCase();
+        const name = itemName.toLowerCase().trim();
         
-        // Proteins
-        const proteins = ['chicken', 'beef', 'pork', 'fish', 'salmon', 'tuna', 'turkey', 'egg', 'eggs', 'tofu', 'meat', 'protein', 'steak', 'bacon', 'sausage', 'ham', 'shrimp', 'prawn', 'crab', 'lobster', 'lamb', 'duck'];
-        if (proteins.some(p => name.includes(p))) return 'proteins';
+        // More specific matching - check exact matches first, then partial
+        // Proteins (meat, poultry, seafood, eggs)
+        const proteins = {
+            exact: ['chicken', 'beef', 'pork', 'fish', 'salmon', 'tuna', 'turkey', 'egg', 'eggs', 'tofu', 'meat', 'steak', 'bacon', 'sausage', 'ham', 'shrimp', 'prawn', 'crab', 'lobster', 'lamb', 'duck', 'pork', 'veal', 'venison', 'bison', 'chicken breast', 'chicken thigh', 'ground beef', 'ground turkey', 'ribeye', 'sirloin', 'tilapia', 'cod', 'halibut', 'mackerel', 'sardine', 'anchovy'],
+            partial: ['chicken', 'beef', 'pork', 'fish', 'salmon', 'tuna', 'turkey', 'egg', 'eggs', 'tofu', 'meat', 'protein', 'steak', 'bacon', 'sausage', 'ham', 'shrimp', 'prawn', 'crab', 'lobster', 'lamb', 'duck', 'seafood', 'poultry']
+        };
+        if (proteins.exact.includes(name) || proteins.partial.some(p => name.includes(p))) return 'proteins';
         
-        // Vegetables
-        const vegetables = ['broccoli', 'carrot', 'tomato', 'onion', 'garlic', 'lettuce', 'spinach', 'cucumber', 'pepper', 'potato', 'celery', 'corn', 'peas', 'bean', 'vegetable', 'cabbage', 'cauliflower', 'zucchini', 'eggplant', 'asparagus', 'mushroom', 'kale'];
-        if (vegetables.some(v => name.includes(v))) return 'vegetables';
+        // Vegetables (more comprehensive list)
+        const vegetables = {
+            exact: ['broccoli', 'carrot', 'tomato', 'onion', 'garlic', 'lettuce', 'spinach', 'cucumber', 'pepper', 'potato', 'celery', 'corn', 'peas', 'bean', 'cabbage', 'cauliflower', 'zucchini', 'eggplant', 'asparagus', 'mushroom', 'kale', 'arugula', 'beet', 'bell pepper', 'brussels sprout', 'cabbage', 'carrot', 'celery', 'corn', 'cucumber', 'eggplant', 'green bean', 'leek', 'lettuce', 'onion', 'pepper', 'potato', 'radish', 'spinach', 'squash', 'tomato', 'zucchini'],
+            partial: ['broccoli', 'carrot', 'tomato', 'onion', 'garlic', 'lettuce', 'spinach', 'cucumber', 'pepper', 'potato', 'celery', 'corn', 'peas', 'bean', 'vegetable', 'cabbage', 'cauliflower', 'zucchini', 'eggplant', 'asparagus', 'mushroom', 'kale', 'lettuce', 'greens', 'sprout']
+        };
+        if (vegetables.exact.includes(name) || vegetables.partial.some(v => name.includes(v))) return 'vegetables';
         
-        // Dairy
-        const dairy = ['milk', 'cheese', 'yogurt', 'butter', 'cream', 'dairy', 'sour cream', 'cottage cheese', 'mozzarella', 'cheddar', 'parmesan', 'feta'];
-        if (dairy.some(d => name.includes(d))) return 'dairy';
+        // Dairy (milk products, cheese, yogurt)
+        const dairy = {
+            exact: ['milk', 'cheese', 'yogurt', 'butter', 'cream', 'sour cream', 'cottage cheese', 'mozzarella', 'cheddar', 'parmesan', 'feta', 'swiss', 'gouda', 'brie', 'ricotta', 'cream cheese', 'heavy cream', 'half and half', 'buttermilk', 'greek yogurt', 'yogurt'],
+            partial: ['milk', 'cheese', 'yogurt', 'butter', 'cream', 'dairy', 'sour cream', 'cottage cheese', 'mozzarella', 'cheddar', 'parmesan', 'feta', 'dairy']
+        };
+        if (dairy.exact.includes(name) || dairy.partial.some(d => name.includes(d))) return 'dairy';
         
-        // Fruits
-        const fruits = ['apple', 'banana', 'orange', 'berry', 'strawberry', 'blueberry', 'grape', 'mango', 'pineapple', 'peach', 'pear', 'cherry', 'kiwi', 'lemon', 'lime', 'fruit', 'avocado'];
-        if (fruits.some(f => name.includes(f))) return 'fruits';
+        // Fruits (fresh and dried)
+        const fruits = {
+            exact: ['apple', 'banana', 'orange', 'berry', 'strawberry', 'blueberry', 'grape', 'mango', 'pineapple', 'peach', 'pear', 'cherry', 'kiwi', 'lemon', 'lime', 'avocado', 'watermelon', 'cantaloupe', 'honeydew', 'plum', 'apricot', 'nectarine', 'grapefruit', 'tangerine', 'coconut', 'papaya', 'dragon fruit', 'passion fruit'],
+            partial: ['apple', 'banana', 'orange', 'berry', 'strawberry', 'blueberry', 'grape', 'mango', 'pineapple', 'peach', 'pear', 'cherry', 'kiwi', 'lemon', 'lime', 'fruit', 'avocado']
+        };
+        if (fruits.exact.includes(name) || fruits.partial.some(f => name.includes(f))) return 'fruits';
         
-        // Snacks
-        const snacks = ['chip', 'cracker', 'cookie', 'biscuit', 'pretzel', 'popcorn', 'nuts', 'almond', 'peanut', 'cashew', 'trail mix', 'granola', 'bar', 'candy', 'chocolate'];
-        if (snacks.some(s => name.includes(s))) return 'snacks';
+        // Snacks (chips, crackers, sweets)
+        const snacks = {
+            exact: ['chip', 'cracker', 'cookie', 'biscuit', 'pretzel', 'popcorn', 'nuts', 'almond', 'peanut', 'cashew', 'trail mix', 'granola', 'bar', 'candy', 'chocolate', 'chips', 'crackers', 'cookies', 'pretzels', 'popcorn', 'almonds', 'peanuts', 'cashews', 'walnuts', 'pecans', 'pistachios'],
+            partial: ['chip', 'cracker', 'cookie', 'biscuit', 'pretzel', 'popcorn', 'nuts', 'almond', 'peanut', 'cashew', 'trail mix', 'granola', 'bar', 'candy', 'chocolate', 'snack']
+        };
+        if (snacks.exact.includes(name) || snacks.partial.some(s => name.includes(s))) return 'snacks';
         
-        // Grains
-        const grains = ['bread', 'rice', 'pasta', 'noodle', 'flour', 'wheat', 'oats', 'quinoa', 'barley', 'cereal'];
-        if (grains.some(g => name.includes(g))) return 'grains';
+        // Grains (bread, rice, pasta, cereals)
+        const grains = {
+            exact: ['bread', 'rice', 'pasta', 'noodle', 'flour', 'wheat', 'oats', 'quinoa', 'barley', 'cereal', 'bagel', 'muffin', 'roll', 'bun', 'tortilla', 'wrap', 'pita', 'naan', 'white rice', 'brown rice', 'wild rice', 'spaghetti', 'penne', 'macaroni', 'fettuccine', 'linguine'],
+            partial: ['bread', 'rice', 'pasta', 'noodle', 'flour', 'wheat', 'oats', 'quinoa', 'barley', 'cereal', 'grain']
+        };
+        if (grains.exact.includes(name) || grains.partial.some(g => name.includes(g))) return 'grains';
         
-        // Beverages
-        const beverages = ['juice', 'soda', 'water', 'coffee', 'tea', 'beer', 'wine', 'drink', 'beverage'];
-        if (beverages.some(b => name.includes(b))) return 'beverages';
+        // Beverages (drinks, juices, coffee, tea)
+        const beverages = {
+            exact: ['juice', 'soda', 'water', 'coffee', 'tea', 'beer', 'wine', 'drink', 'beverage', 'orange juice', 'apple juice', 'cranberry juice', 'lemonade', 'iced tea', 'green tea', 'black tea', 'herbal tea', 'espresso', 'latte', 'cappuccino', 'smoothie', 'shake'],
+            partial: ['juice', 'soda', 'water', 'coffee', 'tea', 'beer', 'wine', 'drink', 'beverage']
+        };
+        if (beverages.exact.includes(name) || beverages.partial.some(b => name.includes(b))) return 'beverages';
         
         // Default
         return 'other';
+    }
+    
+    // Get category display name and icon
+    function getCategoryDisplay(category) {
+        const categoryInfo = {
+            'proteins': { name: 'Proteins', icon: 'bi-droplet-fill', color: '#EF4444' },
+            'vegetables': { name: 'Vegetables', icon: 'bi-flower1', color: '#10B981' },
+            'fruits': { name: 'Fruits', icon: 'bi-apple', color: '#F59E0B' },
+            'dairy': { name: 'Dairy', icon: 'bi-cup-straw', color: '#3B82F6' },
+            'grains': { name: 'Grains', icon: 'bi-wheat', color: '#8B5CF6' },
+            'snacks': { name: 'Snacks', icon: 'bi-bag', color: '#EC4899' },
+            'beverages': { name: 'Beverages', icon: 'bi-cup', color: '#06B6D4' },
+            'other': { name: 'Other', icon: 'bi-box', color: '#64748B' }
+        };
+        return categoryInfo[category] || categoryInfo['other'];
     }
     
     // Category order for sorting
@@ -1977,16 +2027,82 @@
             return 0;
         });
         
-        // Clear container and re-append sorted items
+        // Clear container and re-append sorted items with category grouping
         container.innerHTML = '';
+        
+        if (sortType === 'category') {
+            // Group items by category for better visual organization
+            const categoryGroups = {};
+            items.forEach(item => {
+                const name = item.getAttribute('data-item-name') || '';
+                const category = getItemCategory(name);
+                if (!categoryGroups[category]) {
+                    categoryGroups[category] = [];
+                }
+                categoryGroups[category].push(item);
+            });
+            
+            // Add category headers and items
+            const categoryKeys = Object.keys(categoryGroups).sort((a, b) => {
+                return (categoryOrder[a] || 99) - (categoryOrder[b] || 99);
+            });
+            
+            // Only show category headers if we have multiple categories or multiple items
+            const totalItems = items.length;
+            const showCategoryHeaders = categoryKeys.length > 1 || totalItems > 3;
+            
+            categoryKeys.forEach((category, categoryIndex) => {
+                const categoryInfo = getCategoryDisplay(category);
+                const groupItems = categoryGroups[category];
+                
+                // Add category header only if we should show them
+                if (showCategoryHeaders) {
+                    const categoryHeader = document.createElement('div');
+                    categoryHeader.className = 'col-12';
+                    // First category header shouldn't have top margin
+                    const marginTop = categoryIndex === 0 ? '0' : '24px';
+                    categoryHeader.style.cssText = `margin-top: ${marginTop}; margin-bottom: 12px; padding: 12px 16px; background: linear-gradient(135deg, rgba(139, 92, 246, 0.08) 0%, rgba(59, 130, 246, 0.05) 100%); border-radius: 12px; border-left: 4px solid ${categoryInfo.color};`;
+                    categoryHeader.innerHTML = `
+                        <div class="d-flex align-items-center gap-2">
+                            <i class="bi ${categoryInfo.icon}" style="color: ${categoryInfo.color}; font-size: 1.1rem;"></i>
+                            <h6 class="mb-0 fw-bold" style="color: #1e293b; font-size: 0.95rem;">${categoryInfo.name}</h6>
+                            <span class="badge" style="background: ${categoryInfo.color}; color: white; font-size: 0.75rem; padding: 4px 8px; border-radius: 6px;">${groupItems.length} ${groupItems.length === 1 ? 'item' : 'items'}</span>
+                        </div>
+                    `;
+                    container.appendChild(categoryHeader);
+                }
+                
+                // Add items in this category
+                groupItems.forEach((item, index) => {
+                    const card = item.querySelector('.pantry-item-card');
+                    if (card) {
+                        card.style.animationDelay = (index * 0.05) + 's';
+                    }
+                    container.appendChild(item);
+                });
+            });
+            
+            // Show category info only if headers are shown
+            const categoryInfo = document.getElementById('categoryGroupInfo');
+            if (categoryInfo) {
+                categoryInfo.style.display = showCategoryHeaders ? 'block' : 'none';
+            }
+        } else {
+            // Regular sorting without category grouping
         items.forEach((item, index) => {
-            // Update animation delay
             const card = item.querySelector('.pantry-item-card');
             if (card) {
                 card.style.animationDelay = (index * 0.05) + 's';
             }
             container.appendChild(item);
         });
+            
+            // Hide category info
+            const categoryInfo = document.getElementById('categoryGroupInfo');
+            if (categoryInfo) {
+                categoryInfo.style.display = 'none';
+            }
+        }
         
         // Ensure container is visible
         container.style.display = '';
@@ -1997,8 +2113,41 @@
             emptyState.style.display = 'none';
         }
         
+        // Re-initialize interactive elements after sorting
+        initializeDeleteButtons();
+        initializeQuantityEditing();
+        initializeExpirationEditing();
+        
         // Update expiration badges after sorting
         setTimeout(updateExpirationBadges, 100);
+        
+        // Show feedback for category sort
+        if (sortType === 'category') {
+            const feedback = document.getElementById('addItemFeedback');
+            if (feedback) {
+                showFeedback('Items grouped by category', 'success');
+            }
+        }
+    }
+    
+    // Update sort label
+    function updateSortLabel(label) {
+        const labelElement = document.getElementById('currentSortLabel');
+        if (labelElement) {
+            labelElement.textContent = label;
+        }
+    }
+    
+    // Get label for sort type
+    function getSortLabel(sortType) {
+        const labels = {
+            'category': 'Category',
+            'name': 'Name (A-Z)',
+            'name-desc': 'Name (Z-A)',
+            'expiration': 'Expiration (Soonest)',
+            'expiration-desc': 'Expiration (Latest)'
+        };
+        return labels[sortType] || 'Category';
     }
     
     // Run expiration badge updates on page load
@@ -2301,8 +2450,16 @@
                     }
                 }
                 
-                // Show sort dropdown if we have more than 1 item
-                const currentSortDropdown = currentCardHeader ? currentCardHeader.querySelector('.dropdown') : document.querySelector('.dropdown');
+                // Show/hide sort controls section based on item count
+                const sortControlsSection = currentCardBody ? currentCardBody.querySelector('.d-flex.justify-content-between.align-items-center.mb-3.pb-3') : null;
+                if (sortControlsSection) {
+                    // Check if sort controls section exists (it's the one with border-bottom)
+                    const hasMultipleItems = newContainer.children.length > 1;
+                    sortControlsSection.style.display = hasMultipleItems ? 'flex' : 'none';
+                }
+                
+                // Also update sort dropdown visibility (now in card body, not header)
+                const currentSortDropdown = currentCardBody ? currentCardBody.querySelector('#sortDropdown') : document.querySelector('#sortDropdown');
                 if (currentSortDropdown) {
                     currentSortDropdown.style.display = newContainer.children.length > 1 ? '' : 'none';
                 }
@@ -2322,6 +2479,8 @@
                     currentSortType = savedSortType;
                 }
                 if (currentSortType) {
+                    // Update sort label
+                    updateSortLabel(getSortLabel(currentSortType));
                     setTimeout(() => {
                         sortPantry(currentSortType);
                     }, 100);
@@ -2338,8 +2497,14 @@
                         emptyState.style.display = '';
                     }
                     
+                    // Hide sort controls section
+                    const sortControlsSection = currentCardBody ? currentCardBody.querySelector('.d-flex.justify-content-between.align-items-center.mb-3.pb-3') : null;
+                    if (sortControlsSection) {
+                        sortControlsSection.style.display = 'none';
+                    }
+                    
                     // Hide sort dropdown
-                    const sortDropdown = currentCardHeader ? currentCardHeader.querySelector('.dropdown') : document.querySelector('.dropdown');
+                    const sortDropdown = currentCardBody ? currentCardBody.querySelector('#sortDropdown') : document.querySelector('#sortDropdown');
                     if (sortDropdown) {
                         sortDropdown.style.display = 'none';
                     }
@@ -2368,8 +2533,14 @@
                     currentContainer.style.display = 'none';
                 }
                 
+                // Hide sort controls section if it exists
+                const sortControlsSection = currentCardBody ? currentCardBody.querySelector('.d-flex.justify-content-between.align-items-center.mb-3.pb-3') : null;
+                if (sortControlsSection) {
+                    sortControlsSection.style.display = 'none';
+                }
+                
                 // Hide sort dropdown if it exists
-                const sortDropdown = currentCardHeader ? currentCardHeader.querySelector('.dropdown') : document.querySelector('.dropdown');
+                const sortDropdown = currentCardBody ? currentCardBody.querySelector('#sortDropdown') : document.querySelector('#sortDropdown');
                 if (sortDropdown) {
                     sortDropdown.style.display = 'none';
                 }
@@ -2782,19 +2953,19 @@
                             // The reloadPantryItems() in handleUpdateExpiration will refresh the display
                             // So we don't need to manually update here
                         } catch (error) {
-                            // On error, restore original display
+                            // On error, restore original display (just text, icon is already outside)
                             if (oldText && oldText.trim() !== '') {
-                                expirationValue.innerHTML = `<i class="bi bi-clock-fill me-1" style="font-size: 0.85rem;"></i><span>${oldText}</span>`;
+                                expirationValue.textContent = oldText;
                             } else {
-                                expirationValue.innerHTML = '<i class="bi bi-clock me-1" style="font-size: 0.85rem;"></i><span>Add Date</span>';
+                                expirationValue.textContent = 'Add Date';
                             }
                         }
                     } else {
-                        // Restore original display if no change
+                        // Restore original display if no change (just text, icon is already outside)
                         if (oldText && oldText.trim() !== '') {
-                            expirationValue.innerHTML = `<i class="bi bi-clock-fill me-1" style="font-size: 0.85rem;"></i><span>${oldText}</span>`;
+                            expirationValue.textContent = oldText;
                         } else {
-                            expirationValue.innerHTML = '<i class="bi bi-clock me-1" style="font-size: 0.85rem;"></i><span>Add Date</span>';
+                            expirationValue.textContent = 'Add Date';
                         }
                     }
                 };
@@ -2804,11 +2975,11 @@
                     input.removeEventListener('change', saveExpiration);
                     input.removeEventListener('blur', saveExpiration);
                     
-                    // Restore original display
+                    // Restore original display (just text, icon is already outside)
                     if (oldText && oldText.trim() !== '') {
-                        expirationValue.innerHTML = `<i class="bi bi-clock-fill me-1" style="font-size: 0.85rem;"></i><span>${oldText}</span>`;
+                        expirationValue.textContent = oldText;
                     } else {
-                        expirationValue.innerHTML = '<i class="bi bi-clock me-1" style="font-size: 0.85rem;"></i><span>Add Date</span>';
+                        expirationValue.textContent = 'Add Date';
                     }
                 };
                 
@@ -2837,6 +3008,8 @@
         const savedSortType = sessionStorage.getItem('pantrySortType');
         if (savedSortType) {
             currentSortType = savedSortType;
+            // Update sort label
+            updateSortLabel(getSortLabel(savedSortType));
             // Apply sort after a short delay to ensure DOM is ready
             setTimeout(() => {
                 sortPantry(savedSortType);

@@ -2735,7 +2735,10 @@ def api_update_item(item_id):
         return jsonify({'success': False, 'error': 'No data provided'}), 400
     
     client_type = request.headers.get('X-Client-Type', 'web')
+    # Try to get user_id from headers first (for mobile), then from session (for web)
     user_id = request.headers.get('X-User-ID')
+    if not user_id and 'user_id' in session:
+        user_id = session['user_id']
     
     # Validate required fields
     item_name = data.get('name', '').strip() if data.get('name') else ''
