@@ -903,7 +903,7 @@
                         <div class="col-md-6 col-lg-4 pantry-item-wrapper" 
                              data-item-name="{{ item_name|lower|default('unnamed') }}"
                              data-item-id="{{ item_id }}"
-                             data-expiration-date="{{ exp_date[:10] if exp_date and exp_date|length >= 10 else '9999-12-31' }}"
+                             data-expiration-date="{% if exp_date and exp_date|length >= 10 %}{{ exp_date[:10] }}{% elif exp_date %}{{ exp_date|trim }}{% else %}9999-12-31{% endif %}"
                              style="position: relative; z-index: 10;">
                             <div class="pantry-item-card card border-0 bg-white h-100" 
                                  style="border-radius: 20px; transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); border: 1px solid #e2e8f0; cursor: pointer; overflow: hidden; position: relative;"
@@ -922,9 +922,9 @@
                                                 </div>
                                                 <div class="flex-grow-1" style="min-width: 0;">
                                                     <h6 class="mb-0 fw-bold text-dark" style="font-size: 1.1rem; line-height: 1.3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="{{ item_name }}">
-                                                        {{ item_name }}
+                                                    {{ item_name }}
                                                     </h6>
-                                                </div>
+                                            </div>
                                             </div>
                                             
                                             <!-- Quantity and Expiration badges in a row -->
@@ -943,17 +943,17 @@
                                                           onmouseover="this.style.background='linear-gradient(135deg, rgba(139, 92, 246, 0.2) 0%, rgba(59, 130, 246, 0.2) 100%)'; this.style.transform='scale(1.05)'; this.style.borderColor='#8B5CF6';"
                                                           onmouseout="this.style.background='linear-gradient(135deg, rgba(139, 92, 246, 0.12) 0%, rgba(59, 130, 246, 0.12) 100%)'; this.style.transform='scale(1)'; this.style.borderColor='rgba(139, 92, 246, 0.2)';">
                                                         <i class="bi bi-hash me-1" style="font-size: 0.85rem;"></i><span class="quantity-value fw-bold">{{ quantity }}</span>
-                                                    </span>
+                                                        </span>
                                                     {% elif quantity and quantity != '1' %}
                                                     <!-- Non-editable Quantity Badge -->
                                                     <span class="badge" style="background: linear-gradient(135deg, rgba(139, 92, 246, 0.12) 0%, rgba(59, 130, 246, 0.12) 100%); color: #8B5CF6; border-radius: 10px; font-size: 0.8rem; font-weight: 600; padding: 0.5rem 0.75rem; border: 1px solid rgba(139, 92, 246, 0.2);">
                                                         <i class="bi bi-hash me-1" style="font-size: 0.85rem;"></i>{{ quantity }}
                                                     </span>
-                                                    {% endif %}
+                                                {% endif %}
                                                     
                                                     {% if item_id and item_id.strip() %}
                                                         <!-- Editable Expiration Badge -->
-                                                        {% if exp_date and exp_date != 'None' and exp_date != '' %}
+                                                {% if exp_date and exp_date != 'None' and exp_date != '' %}
                                                         <span class="badge editable-expiration expiration-badge expiration-fresh" 
                                                               data-item-id="{{ item_id }}"
                                                               data-item-name="{{ item_name }}"
@@ -967,10 +967,15 @@
                                                               onmouseout="this.style.opacity='1'; this.style.transform='scale(1)'; this.style.boxShadow='none';">
                                                             <i class="bi bi-clock-fill me-1" style="font-size: 0.85rem;"></i>
                                                             <span class="expiration-value">
-                                                                {% if exp_date|length >= 10 %}
-                                                                    {{ exp_date[:10] }}
+                                                                {% if exp_date and exp_date != 'None' and exp_date != '' and exp_date != 'null' %}
+                                                                    {% set date_str = exp_date|trim %}
+                                                                    {% if date_str|length >= 10 %}
+                                                                        {{ date_str[:10] }}
+                                                                    {% else %}
+                                                                        {{ date_str }}
+                                                                    {% endif %}
                                                                 {% else %}
-                                                                    {{ exp_date }}
+                                                                    Add Date
                                                                 {% endif %}
                                                             </span>
                                                         </span>
@@ -988,19 +993,22 @@
                                                             <i class="bi bi-clock me-1" style="font-size: 0.85rem;"></i>
                                                             <span class="expiration-value">Add Date</span>
                                                         </span>
-                                                        {% endif %}
+                                                {% endif %}
                                                     {% elif exp_date and exp_date != 'None' and exp_date != '' %}
                                                         <!-- Non-editable Expiration Badge -->
                                                         <span class="expiration-badge expiration-fresh" data-exp-date="{{ exp_date }}" style="font-size: 0.8rem; font-weight: 600; padding: 0.5rem 0.75rem; border-radius: 10px; border: 1px solid rgba(16, 185, 129, 0.2);">
                                                             <i class="bi bi-clock-fill me-1" style="font-size: 0.85rem;"></i>
-                                                            {% if exp_date|length >= 10 %}
-                                                                {{ exp_date[:10] }}
-                                                            {% else %}
-                                                                {{ exp_date }}
+                                                            {% if exp_date and exp_date != 'None' and exp_date != '' and exp_date != 'null' %}
+                                                                {% set date_str = exp_date|trim %}
+                                                                {% if date_str|length >= 10 %}
+                                                                    {{ date_str[:10] }}
+                                                                {% else %}
+                                                                    {{ date_str }}
+                                                                {% endif %}
                                                             {% endif %}
                                                         </span>
-                                                    {% endif %}
-                                                </div>
+                                            {% endif %}
+                                        </div>
                                             {% endif %}
                                         </div>
                                         
@@ -1307,44 +1315,44 @@
                 return;
             }
             
-            // Check if getUserMedia is supported
-            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-                alert('Camera access requires HTTPS or localhost.\n\nTo use camera:\n1. Access via https:// (requires SSL certificate)\n2. Access via http://localhost:5050 or http://127.0.0.1:5050\n\nFor now, please use "Browse Files" to upload a photo instead.');
-                return;
-            }
+        // Check if getUserMedia is supported
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            alert('Camera access requires HTTPS or localhost.\n\nTo use camera:\n1. Access via https:// (requires SSL certificate)\n2. Access via http://localhost:5050 or http://127.0.0.1:5050\n\nFor now, please use "Browse Files" to upload a photo instead.');
+            return;
+        }
 
             // Disable button while requesting camera
             openCameraBtn.disabled = true;
             const originalText = openCameraBtn.textContent;
             openCameraBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Opening Camera...';
 
-            try {
-                cameraStream = await navigator.mediaDevices.getUserMedia({ 
-                    video: { facingMode: 'environment' } 
-                });
-                if (cameraStreamVideo) cameraStreamVideo.srcObject = cameraStream;
-                if (uploadZone) uploadZone.style.display = 'none';
-                if (cameraView) cameraView.style.display = 'block';
-            } catch (err) {
+        try {
+            cameraStream = await navigator.mediaDevices.getUserMedia({ 
+                video: { facingMode: 'environment' } 
+            });
+            if (cameraStreamVideo) cameraStreamVideo.srcObject = cameraStream;
+            if (uploadZone) uploadZone.style.display = 'none';
+            if (cameraView) cameraView.style.display = 'block';
+        } catch (err) {
                 // Stop any partial stream
                 if (cameraStream) {
                     stopCamera();
                 }
                 
                 let errorMessage = 'Could not access camera.';
-                if (err.name === 'NotAllowedError') {
+            if (err.name === 'NotAllowedError') {
                     errorMessage = 'Camera permission denied. Please allow camera access and try again.';
-                } else if (err.name === 'NotFoundError') {
+            } else if (err.name === 'NotFoundError') {
                     errorMessage = 'No camera found on this device.';
-                } else {
+            } else {
                     errorMessage = 'Could not access camera: ' + err.message + '\n\nPlease use "Browse Files" to upload a photo instead.';
-                }
+            }
                 alert(errorMessage);
             } finally {
                 // Always re-enable button
                 openCameraBtn.disabled = false;
                 openCameraBtn.textContent = originalText;
-            }
+        }
         });
     }
 
@@ -2268,59 +2276,59 @@
                 // Check if we have items or empty state
                 if (newContainer.children.length > 0) {
                     // Items exist - hide empty state if it exists
-                    const emptyState = currentCardBody?.querySelector('.empty-state');
-                    if (emptyState) {
-                        emptyState.style.display = 'none';
-                    }
-                    
-                    // Update item count badge - select specifically from pantry card header
-                    if (newBadge && currentCardHeader) {
-                        const headerDiv = currentCardHeader.querySelector('.d-flex');
-                        if (headerDiv) {
-                            // Find existing badge in header
-                            const currentBadge = headerDiv.querySelector('.badge');
-                            if (currentBadge) {
-                                currentBadge.outerHTML = newBadge.outerHTML;
+                const emptyState = currentCardBody?.querySelector('.empty-state');
+                if (emptyState) {
+                    emptyState.style.display = 'none';
+                }
+                
+                // Update item count badge - select specifically from pantry card header
+                if (newBadge && currentCardHeader) {
+                    const headerDiv = currentCardHeader.querySelector('.d-flex');
+                    if (headerDiv) {
+                        // Find existing badge in header
+                        const currentBadge = headerDiv.querySelector('.badge');
+                        if (currentBadge) {
+                            currentBadge.outerHTML = newBadge.outerHTML;
+                        } else {
+                            // Insert badge if it doesn't exist
+                            const dropdown = headerDiv.querySelector('.dropdown');
+                            if (dropdown) {
+                                headerDiv.insertBefore(newBadge.cloneNode(true), dropdown);
                             } else {
-                                // Insert badge if it doesn't exist
-                                const dropdown = headerDiv.querySelector('.dropdown');
-                                if (dropdown) {
-                                    headerDiv.insertBefore(newBadge.cloneNode(true), dropdown);
-                                } else {
-                                    headerDiv.appendChild(newBadge.cloneNode(true));
-                                }
+                                headerDiv.appendChild(newBadge.cloneNode(true));
                             }
                         }
                     }
-                    
-                    // Show sort dropdown if we have more than 1 item
-                    const currentSortDropdown = currentCardHeader ? currentCardHeader.querySelector('.dropdown') : document.querySelector('.dropdown');
-                    if (currentSortDropdown) {
-                        currentSortDropdown.style.display = newContainer.children.length > 1 ? '' : 'none';
-                    }
-                    
-                    // Re-initialize delete buttons
-                    initializeDeleteButtons();
-                    
+                }
+                
+                // Show sort dropdown if we have more than 1 item
+                const currentSortDropdown = currentCardHeader ? currentCardHeader.querySelector('.dropdown') : document.querySelector('.dropdown');
+                if (currentSortDropdown) {
+                    currentSortDropdown.style.display = newContainer.children.length > 1 ? '' : 'none';
+                }
+                
+                // Re-initialize delete buttons
+                initializeDeleteButtons();
+                
                     // Re-initialize quantity editing
                     initializeQuantityEditing();
                     
                     // Re-initialize expiration date editing
                     initializeExpirationEditing();
-                    
-                    // Re-apply sort if one was active
-                    const savedSortType = sessionStorage.getItem('pantrySortType');
-                    if (savedSortType && currentSortType === null) {
-                        currentSortType = savedSortType;
-                    }
-                    if (currentSortType) {
-                        setTimeout(() => {
-                            sortPantry(currentSortType);
-                        }, 100);
-                    }
-                    
-                    // Update expiration badges
-                    setTimeout(updateExpirationBadges, 100);
+                
+                // Re-apply sort if one was active
+                const savedSortType = sessionStorage.getItem('pantrySortType');
+                if (savedSortType && currentSortType === null) {
+                    currentSortType = savedSortType;
+                }
+                if (currentSortType) {
+                    setTimeout(() => {
+                        sortPantry(currentSortType);
+                    }, 100);
+                }
+                
+                // Update expiration badges
+                setTimeout(updateExpirationBadges, 100);
                 } else {
                     // No items - ensure empty state is visible
                     // The empty state should already be in the container.innerHTML we just set
@@ -2686,12 +2694,39 @@
                 
                 // Set current date value (format: YYYY-MM-DD)
                 let currentDateValue = '';
-                if (currentExpiration && currentExpiration !== 'None' && currentExpiration !== '') {
+                if (currentExpiration && currentExpiration !== 'None' && currentExpiration !== '' && currentExpiration !== 'null') {
                     // Extract date part if it's a full datetime string
-                    if (currentExpiration.length >= 10) {
-                        currentDateValue = currentExpiration.substring(0, 10);
-                    } else {
-                        currentDateValue = currentExpiration;
+                    const trimmedDate = currentExpiration.trim();
+                    // Check if it's a valid date format (YYYY-MM-DD or longer)
+                    if (trimmedDate.length >= 10) {
+                        // Extract first 10 characters (YYYY-MM-DD)
+                        const datePart = trimmedDate.substring(0, 10);
+                        // Validate it's in YYYY-MM-DD format
+                        if (/^\d{4}-\d{2}-\d{2}$/.test(datePart)) {
+                            currentDateValue = datePart;
+                        } else {
+                            // Try to parse and reformat
+                            try {
+                                const dateObj = new Date(trimmedDate);
+                                if (!isNaN(dateObj.getTime())) {
+                                    currentDateValue = dateObj.toISOString().split('T')[0];
+                                }
+                            } catch (e) {
+                                console.warn('Failed to parse expiration date:', trimmedDate);
+                            }
+                        }
+                    } else if (trimmedDate.length > 0) {
+                        // Try to parse shorter date strings
+                        try {
+                            const dateObj = new Date(trimmedDate);
+                            if (!isNaN(dateObj.getTime())) {
+                                currentDateValue = dateObj.toISOString().split('T')[0];
+                            } else {
+                                currentDateValue = trimmedDate;
+                            }
+                        } catch (e) {
+                            currentDateValue = trimmedDate;
+                        }
                     }
                 }
                 input.value = currentDateValue;
@@ -2709,7 +2744,7 @@
                 expirationValue.appendChild(input);
                 
                 // Focus and show picker after a small delay to ensure DOM is ready
-                setTimeout(() => {
+            setTimeout(() => {
                     input.focus();
                     input.select();
                     // Try to show date picker if supported
