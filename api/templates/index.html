@@ -96,6 +96,91 @@
         align-items: center !important;
     }
     
+    /* Photo upload modal - smaller width with responsive breakpoints */
+    #photoModal .modal-dialog {
+        max-width: 600px !important;
+        width: 90% !important;
+    }
+    
+    /* Tablet breakpoint (768x1024) */
+    @media (max-width: 768px) {
+        #photoModal .modal-dialog {
+            max-width: 95% !important;
+            width: 95% !important;
+            margin: 0.5rem auto !important;
+        }
+        
+        #photoModal .modal-body {
+            padding: 1.5rem !important;
+        }
+        
+        #photoModal .btn {
+            padding: 0.5rem 1rem !important;
+            font-size: 0.9rem !important;
+        }
+        
+        #photoModal .row.g-2 {
+            gap: 0.5rem !important;
+        }
+    }
+    
+    /* Mobile breakpoint (360x640) */
+    @media (max-width: 576px) {
+        #photoModal .modal-dialog {
+            max-width: 98% !important;
+            width: 98% !important;
+            margin: 0.25rem auto !important;
+        }
+        
+        #photoModal .modal-header {
+            padding: 1rem !important;
+        }
+        
+        #photoModal .modal-title {
+            font-size: 1rem !important;
+        }
+        
+        #photoModal .modal-body {
+            padding: 1rem !important;
+        }
+        
+        #photoModal .btn {
+            padding: 0.5rem 0.75rem !important;
+            font-size: 0.875rem !important;
+        }
+        
+        #photoModal .photo-upload-zone {
+            padding: 1.5rem 1rem !important;
+            min-height: 200px !important;
+        }
+        
+        #photoModal .photo-upload-zone h5 {
+            font-size: 1rem !important;
+        }
+        
+        #photoModal .photo-upload-zone .display-1 {
+            font-size: 3rem !important;
+        }
+        
+        #photoModal .row.g-2 > div {
+            padding: 0.25rem !important;
+        }
+    }
+    
+    /* Extra small mobile (360px and below) */
+    @media (max-width: 360px) {
+        #photoModal .modal-dialog {
+            max-width: 100% !important;
+            width: 100% !important;
+            margin: 0 !important;
+            border-radius: 0 !important;
+        }
+        
+        #photoModal .modal-content {
+            border-radius: 0 !important;
+        }
+    }
+    
     /* Responsive modal content */
     .modal-content {
         max-height: 90vh !important;
@@ -133,11 +218,20 @@
         z-index: 1000 !important;
     }
     
-    /* Prevent any page content from being blurred */
+    /* Prevent any page content from being blurred when modal is open */
     body.modal-open > *:not(.modal):not(.modal-backdrop) {
         filter: none !important;
         backdrop-filter: none !important;
         -webkit-backdrop-filter: none !important;
+    }
+    
+    /* Ensure hero section and cards don't blur when modal opens */
+    body.modal-open .hero-section,
+    body.modal-open .card,
+    body.modal-open .card-header .badge {
+        backdrop-filter: none !important;
+        -webkit-backdrop-filter: none !important;
+        filter: none !important;
     }
     
     /* Enhanced UI Styles */
@@ -281,18 +375,45 @@
         box-shadow: 0 2px 8px rgba(139, 92, 246, 0.2);
     }
     
-    /* Enhanced button styling */
+    /* Enhanced button styling with reliable hover states */
     .btn {
         font-weight: 600;
         border-radius: 0.75rem;
         padding: 0.625rem 1.25rem;
         transition: all 0.2s ease;
         border: none;
+        cursor: pointer;
+        position: relative;
+        overflow: hidden;
+        -webkit-tap-highlight-color: transparent;
     }
     
-    .btn:hover {
+    .btn:hover:not(:disabled) {
         transform: translateY(-1px);
         box-shadow: var(--shadow-md);
+    }
+    
+    .btn:active:not(:disabled) {
+        transform: translateY(0);
+        box-shadow: var(--shadow-sm);
+    }
+    
+    .btn:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+        transform: none !important;
+    }
+    
+    /* Loading state for buttons */
+    .btn.loading {
+        pointer-events: none;
+        opacity: 0.7;
+    }
+    
+    .btn .spinner-border-sm {
+        width: 1rem;
+        height: 1rem;
+        border-width: 0.15em;
     }
     
     .btn-lg {
@@ -459,7 +580,19 @@
     
     .modal-header .modal-title {
         color: white;
-        font-weight: 600;
+        font-weight: 700;
+        font-size: 1.5rem;
+        letter-spacing: -0.02em;
+        text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+    }
+    
+    /* Visual hierarchy: Make modal title more prominent */
+    #photoModal .modal-header .modal-title {
+        font-size: 1.75rem;
+        font-weight: 700;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
     }
     
     .modal-header .btn-close {
@@ -474,6 +607,21 @@
     .modal-body {
         padding: 2rem;
         background: var(--gray-50);
+        overflow-y: auto;
+        overflow-x: hidden;
+        max-height: calc(90vh - 120px);
+    }
+    
+    /* Consistent spacing for modal buttons */
+    #photoModal .modal-body .d-flex.gap-2 {
+        gap: 0.75rem !important;
+    }
+    
+    /* Better alignment for button groups */
+    #photoModal .modal-body .btn-group,
+    #photoModal .modal-body .d-flex {
+        align-items: center;
+        justify-content: center;
     }
     
     .modal-footer {
@@ -1128,23 +1276,28 @@
                                                               data-current-expiration="{{ exp_date }}"
                                                               data-added-date="{{ item.get('addedDate', '') if item.get('addedDate') else '' }}"
                                                               data-exp-date="{{ exp_date }}" 
-                                                              style="font-size: 0.8rem; font-weight: 600; padding: 0.5rem 0.75rem; border-radius: 10px; cursor: pointer; transition: all 0.2s ease; border: 1px solid rgba(16, 185, 129, 0.2); min-width: 180px; display: inline-flex; align-items: center; justify-content: center;"
+                                                              style="font-size: 0.8rem; font-weight: 600; padding: 0.5rem 0.75rem; border-radius: 10px; cursor: pointer; transition: all 0.2s ease; border: 1px solid rgba(16, 185, 129, 0.2); min-width: 180px; max-width: 100%; display: inline-flex; align-items: center; justify-content: center; overflow: visible;"
                                                               title="Click to edit expiration date"
                                                               onmouseover="this.style.opacity='0.9'; this.style.transform='scale(1.05)'; this.style.boxShadow='0 2px 8px rgba(16, 185, 129, 0.2)';"
                                                               onmouseout="this.style.opacity='1'; this.style.transform='scale(1)'; this.style.boxShadow='none';">
                                                             <i class="bi bi-clock-fill me-1" style="font-size: 0.85rem;"></i>
-                                                            <span class="expiration-value" style="white-space: nowrap;">
+                                                            <span class="expiration-value" style="white-space: nowrap; overflow: visible; text-overflow: clip;">
                                                                 {% if exp_date and exp_date != 'None' and exp_date != '' and exp_date != 'null' %}
                                                                     {% set date_str = exp_date|trim %}
-                                                                    {% if date_str|length >= 10 %}
-                                                                        {{ date_str[:10] }}
-                                                            {% else %}
-                                                                        {{ date_str }}
+                                                                    {% if date_str|length >= 10 and date_str.count('-') >= 2 %}
+                                                                        {% set date_part = date_str[:10] %}
+                                                                        {% if date_part|length == 10 and date_part[4] == '-' and date_part[7] == '-' %}
+                                                                            {{ date_part }}
+                                                                        {% else %}
+                                                                            Add Date
+                                                                        {% endif %}
+                                                                    {% else %}
+                                                                        Add Date
                                                                     {% endif %}
                                                                 {% else %}
                                                                     Add Date
-                                                            {% endif %}
-                                                        </span>
+                                                                {% endif %}
+                                                            </span>
                                                         </span>
                                                         {% else %}
                                                         <span class="badge editable-expiration" 
@@ -1163,16 +1316,23 @@
                                                 {% endif %}
                                                     {% elif exp_date and exp_date != 'None' and exp_date != '' %}
                                                         <!-- Non-editable Expiration Badge -->
-                                                        <span class="expiration-badge expiration-fresh" data-exp-date="{{ exp_date }}" style="font-size: 0.8rem; font-weight: 600; padding: 0.5rem 0.75rem; border-radius: 10px; border: 1px solid rgba(16, 185, 129, 0.2); min-width: 180px; display: inline-flex; align-items: center; justify-content: center;">
+                                                        <span class="expiration-badge expiration-fresh" data-exp-date="{{ exp_date }}" style="font-size: 0.8rem; font-weight: 600; padding: 0.5rem 0.75rem; border-radius: 10px; border: 1px solid rgba(16, 185, 129, 0.2); min-width: 180px; max-width: 100%; display: inline-flex; align-items: center; justify-content: center; overflow: visible;">
                                                             <i class="bi bi-clock-fill me-1" style="font-size: 0.85rem;"></i>
-                                                            <span style="white-space: nowrap;">
+                                                            <span style="white-space: nowrap; overflow: visible; text-overflow: clip;">
                                                                 {% if exp_date and exp_date != 'None' and exp_date != '' and exp_date != 'null' %}
                                                                     {% set date_str = exp_date|trim %}
-                                                                    {% if date_str|length >= 10 %}
-                                                                        {{ date_str[:10] }}
+                                                                    {% if date_str|length >= 10 and date_str.count('-') >= 2 %}
+                                                                        {% set date_part = date_str[:10] %}
+                                                                        {% if date_part|length == 10 and date_part[4] == '-' and date_part[7] == '-' %}
+                                                                            {{ date_part }}
+                                                                        {% else %}
+                                                                            No Date
+                                                                        {% endif %}
                                                                     {% else %}
-                                                                        {{ date_str }}
+                                                                        No Date
                                                                     {% endif %}
+                                                                {% else %}
+                                                                    No Date
                                                                 {% endif %}
                                                             </span>
                                                         </span>
@@ -1306,7 +1466,7 @@
 
 <!-- Photo Upload Modal -->
 <div class="modal fade" id="photoModal" tabindex="-1" aria-labelledby="photoModalLabel" aria-hidden="true" data-bs-backdrop="true" data-bs-keyboard="true" role="dialog" aria-modal="true" style="pointer-events: auto;">
-    <div class="modal-dialog modal-lg modal-dialog-centered" style="pointer-events: auto; z-index: 9999; max-height: 90vh; margin: 1rem auto;">
+    <div class="modal-dialog modal-dialog-centered" style="pointer-events: auto; z-index: 9999; max-height: 90vh; margin: 1rem auto; max-width: 600px; width: 90%;">
         <div class="modal-content" style="border-radius: 24px; border: none; pointer-events: auto; z-index: 10000; position: relative; max-height: 90vh; overflow-y: auto;">
             <div class="modal-header border-0 pb-0" style="pointer-events: auto;">
                 <h5 class="modal-title fw-bold" id="photoModalLabel">
@@ -1362,9 +1522,12 @@
                 <!-- Preview & Upload Section (Hidden by default) -->
                 <div id="previewSection" style="display: none;">
                     <div class="text-center">
+                        <!-- Loading/Feedback Message -->
+                        <div id="uploadFeedback" class="feedback-message" style="display: none;"></div>
+                        
                         <img id="imagePreview" class="image-preview" alt="Preview">
-                        <div class="mt-3">
-                            <button type="button" class="btn btn-outline-secondary me-2" id="cancelUploadBtn">
+                        <div class="mt-3 d-flex flex-wrap justify-content-center gap-2">
+                            <button type="button" class="btn btn-outline-secondary" id="cancelUploadBtn">
                                 <i class="bi bi-x-circle me-2"></i>Cancel
                             </button>
                             <button type="button" class="btn btn-success btn-lg" id="uploadBtn">
@@ -1661,8 +1824,17 @@
 
             // Set loading state
             uploadBtn.disabled = true;
+            uploadBtn.classList.add('loading');
             const originalText = uploadBtnText.textContent;
             uploadBtnText.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Analyzing...';
+            
+            // Show loading feedback
+            const uploadFeedback = document.getElementById('uploadFeedback');
+            if (uploadFeedback) {
+                uploadFeedback.className = 'feedback-message loading-feedback';
+                uploadFeedback.innerHTML = '<span class="spinner-border spinner-border-sm"></span>Analyzing photo with AI...';
+                uploadFeedback.style.display = 'flex';
+            }
 
             try {
                 const response = await fetch('{{ url_for("upload_photo") }}', {
@@ -1672,22 +1844,32 @@
                 });
 
                 if (response.ok) {
-                    // Show success message first
+                    // Show success message in modal
+                    const uploadFeedback = document.getElementById('uploadFeedback');
+                    if (uploadFeedback) {
+                        uploadFeedback.className = 'feedback-message success';
+                        uploadFeedback.innerHTML = '<i class="bi bi-check-circle-fill me-2"></i>Photo analyzed! Items added to pantry.';
+                        uploadFeedback.style.display = 'flex';
+                    }
+                    
+                    // Show success message on main page
                     const feedback = document.getElementById('addItemFeedback');
                     if (feedback) {
                         showFeedback('Photo analyzed! Items added to pantry.', 'success');
                     }
                     
-                    // Close modal
-                    closePhotoModal();
-                    
-                    // Reset upload state
-                    resetPhotoUploadState();
-                    
-                    // Update pantry items after a short delay
-                    setTimeout(async () => {
-                        await reloadPantryItems();
-                    }, 300);
+                    // Close modal after short delay to show success message
+                    setTimeout(() => {
+                        closePhotoModal();
+                        
+                        // Reset upload state
+                        resetPhotoUploadState();
+                        
+                        // Update pantry items after a short delay
+                        setTimeout(async () => {
+                            await reloadPantryItems();
+                        }, 300);
+                    }, 1500);
                 } else {
                     // Handle error response
                     let errorMessage = 'Upload failed. Please try again.';
@@ -1701,6 +1883,15 @@
                         }
                     }
                     
+                    // Show error in modal
+                    const uploadFeedback = document.getElementById('uploadFeedback');
+                    if (uploadFeedback) {
+                        uploadFeedback.className = 'feedback-message error';
+                        uploadFeedback.innerHTML = '<i class="bi bi-exclamation-triangle-fill me-2"></i>' + errorMessage;
+                        uploadFeedback.style.display = 'flex';
+                    }
+                    
+                    // Show error on main page
                     const feedback = document.getElementById('addItemFeedback');
                     if (feedback) {
                         showFeedback(errorMessage, 'danger');
@@ -1712,6 +1903,15 @@
                 console.error('Photo upload error:', err);
                 const errorMessage = err.message || 'Network error. Please check your connection and try again.';
                 
+                // Show error in modal
+                const uploadFeedback = document.getElementById('uploadFeedback');
+                if (uploadFeedback) {
+                    uploadFeedback.className = 'feedback-message error';
+                    uploadFeedback.innerHTML = '<i class="bi bi-exclamation-triangle-fill me-2"></i>' + errorMessage;
+                    uploadFeedback.style.display = 'flex';
+                }
+                
+                // Show error on main page
                 const feedback = document.getElementById('addItemFeedback');
                 if (feedback) {
                     showFeedback(errorMessage, 'danger');
@@ -1720,6 +1920,7 @@
                 }
             } finally {
                 // Always reset button state, even on error
+                uploadBtn.classList.remove('loading');
                 resetPhotoUploadButton();
             }
         });
@@ -1767,6 +1968,14 @@
         if (photoInput) photoInput.value = '';
         if (mobileCameraInput) mobileCameraInput.value = '';
         
+        // Clear feedback message
+        const uploadFeedback = document.getElementById('uploadFeedback');
+        if (uploadFeedback) {
+            uploadFeedback.style.display = 'none';
+            uploadFeedback.className = 'feedback-message';
+            uploadFeedback.innerHTML = '';
+        }
+        
         // Reset display states with smooth transitions
         if (cameraView) {
             cameraView.style.opacity = '0';
@@ -1808,6 +2017,7 @@
     function resetPhotoUploadButton() {
         if (uploadBtn) {
             uploadBtn.disabled = false;
+            uploadBtn.classList.remove('loading');
         }
         if (uploadBtnText) {
             uploadBtnText.textContent = 'Analyze & Add Items';
