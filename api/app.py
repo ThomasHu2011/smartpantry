@@ -2779,6 +2779,8 @@ def api_delete_item(item_id):
 def api_update_item(item_id):
     """Update an item in pantry via API"""
     from urllib.parse import unquote
+    global mobile_pantry, web_pantry  # Declare global at function start
+    
     item_id = unquote(item_id)
     
     print(f"\n{'='*60}")
@@ -2860,7 +2862,6 @@ def api_update_item(item_id):
                 return jsonify({'success': False, 'error': 'Item not found in pantry'}), 404
         else:
             # Anonymous user - delete from session pantry
-            global mobile_pantry, web_pantry
             client_type = request.headers.get('X-Client-Type', 'web')
             pantry_to_use = mobile_pantry if client_type == 'mobile' else web_pantry
             if not isinstance(pantry_to_use, list):
@@ -2981,7 +2982,6 @@ def api_update_item(item_id):
             return jsonify({'success': False, 'error': f'Item not found in pantry'}), 404
     else:
         # Use anonymous pantry
-        global mobile_pantry, web_pantry
         pantry_to_use = mobile_pantry if client_type == 'mobile' else web_pantry
         # Ensure pantry_to_use is a list
         if not isinstance(pantry_to_use, list):
