@@ -1179,6 +1179,21 @@
                     </div>
                 </div>
                 <div class="card-body p-4" style="position: relative; z-index: 5; overflow: visible;">
+                    <!-- Search Bar -->
+                    <div class="mb-3">
+                        <div class="input-group" style="max-width: 100%;">
+                            <span class="input-group-text bg-white border-end-0" style="border: 2px solid #e2e8f0; border-radius: 10px 0 0 10px; padding: 0.75rem 1rem;">
+                                <i class="bi bi-search text-muted"></i>
+                            </span>
+                            <input type="text" 
+                                   class="form-control border-start-0" 
+                                   id="searchItemsInput" 
+                                   placeholder="Search items..." 
+                                   style="border: 2px solid #e2e8f0; border-left: none; border-radius: 0 10px 10px 0; padding: 0.75rem 1rem; font-size: 0.95rem;"
+                                   autocomplete="off">
+                        </div>
+                    </div>
+                    
                     <!-- Sort Controls - Positioned above items -->
                             {% if items is defined and items is not none and items|length > 1 %}
                     <div class="d-flex justify-content-between align-items-center mb-3 pb-3" style="border-bottom: 2px solid rgba(139, 92, 246, 0.1);">
@@ -1276,11 +1291,11 @@
                                                               data-current-expiration="{{ exp_date }}"
                                                               data-added-date="{{ item.get('addedDate', '') if item.get('addedDate') else '' }}"
                                                               data-exp-date="{{ exp_date }}" 
-                                                              style="font-size: 0.8rem; font-weight: 600; padding: 0.5rem 0.75rem; border-radius: 10px; cursor: pointer; transition: all 0.2s ease; border: 1px solid rgba(16, 185, 129, 0.2); min-width: 180px; max-width: 100%; display: inline-flex; align-items: center; justify-content: center; overflow: visible;"
+                                                              style="font-size: 0.75rem; font-weight: 600; padding: 0.4rem 0.6rem; border-radius: 10px; cursor: pointer; transition: all 0.2s ease; border: 1px solid rgba(16, 185, 129, 0.2); min-width: 150px; max-width: 100%; display: inline-flex; align-items: center; justify-content: flex-start; overflow: visible;"
                                                               title="Click to edit expiration date"
                                                               onmouseover="this.style.opacity='0.9'; this.style.transform='scale(1.05)'; this.style.boxShadow='0 2px 8px rgba(16, 185, 129, 0.2)';"
                                                               onmouseout="this.style.opacity='1'; this.style.transform='scale(1)'; this.style.boxShadow='none';">
-                                                            <i class="bi bi-clock-fill me-1" style="font-size: 0.85rem;"></i>
+                                                            <i class="bi bi-clock-fill me-1" style="font-size: 0.75rem;"></i>
                                                             <span class="expiration-value" style="white-space: nowrap; overflow: visible; text-overflow: clip;">
                                                                 {% if exp_date and exp_date != 'None' and exp_date != '' and exp_date != 'null' %}
                                                                     {% set date_str = exp_date|trim %}
@@ -1306,18 +1321,18 @@
                                                               data-current-quantity="{{ quantity }}"
                                                               data-current-expiration=""
                                                               data-added-date="{{ item.get('addedDate', '') if item.get('addedDate') else '' }}"
-                                                              style="font-size: 0.8rem; font-weight: 600; padding: 0.5rem 0.75rem; cursor: pointer; background: linear-gradient(135deg, rgba(139, 92, 246, 0.12) 0%, rgba(59, 130, 246, 0.12) 100%); color: #8B5CF6; border-radius: 10px; transition: all 0.2s ease; border: 1px solid rgba(139, 92, 246, 0.2); min-width: 180px; display: inline-flex; align-items: center; justify-content: center;"
+                                                              style="font-size: 0.75rem; font-weight: 600; padding: 0.4rem 0.6rem; cursor: pointer; background: linear-gradient(135deg, rgba(139, 92, 246, 0.12) 0%, rgba(59, 130, 246, 0.12) 100%); color: #8B5CF6; border-radius: 10px; transition: all 0.2s ease; border: 1px solid rgba(139, 92, 246, 0.2); min-width: 150px; display: inline-flex; align-items: center; justify-content: flex-start;"
                                                               title="Click to add expiration date"
                                                               onmouseover="this.style.background='linear-gradient(135deg, rgba(139, 92, 246, 0.2) 0%, rgba(59, 130, 246, 0.2) 100%)'; this.style.transform='scale(1.05)'; this.style.borderColor='#8B5CF6';"
                                                               onmouseout="this.style.background='linear-gradient(135deg, rgba(139, 92, 246, 0.12) 0%, rgba(59, 130, 246, 0.12) 100%)'; this.style.transform='scale(1)'; this.style.borderColor='rgba(139, 92, 246, 0.2)';">
-                                                            <i class="bi bi-clock me-1" style="font-size: 0.85rem;"></i>
+                                                            <i class="bi bi-clock me-1" style="font-size: 0.75rem;"></i>
                                                             <span class="expiration-value">Add Date</span>
                                                         </span>
                                                 {% endif %}
                                                     {% elif exp_date and exp_date != 'None' and exp_date != '' %}
                                                         <!-- Non-editable Expiration Badge -->
-                                                        <span class="expiration-badge expiration-fresh" data-exp-date="{{ exp_date }}" style="font-size: 0.8rem; font-weight: 600; padding: 0.5rem 0.75rem; border-radius: 10px; border: 1px solid rgba(16, 185, 129, 0.2); min-width: 180px; max-width: 100%; display: inline-flex; align-items: center; justify-content: center; overflow: visible;">
-                                                            <i class="bi bi-clock-fill me-1" style="font-size: 0.85rem;"></i>
+                                                        <span class="expiration-badge expiration-fresh" data-exp-date="{{ exp_date }}" style="font-size: 0.75rem; font-weight: 600; padding: 0.4rem 0.6rem; border-radius: 10px; border: 1px solid rgba(16, 185, 129, 0.2); min-width: 150px; max-width: 100%; display: inline-flex; align-items: center; justify-content: flex-start; overflow: visible;">
+                                                            <i class="bi bi-clock-fill me-1" style="font-size: 0.75rem;"></i>
                                                             <span style="white-space: nowrap; overflow: visible; text-overflow: clip;">
                                                                 {% if exp_date and exp_date != 'None' and exp_date != '' and exp_date != 'null' %}
                                                                     {% set date_str = exp_date|trim %}
@@ -2526,6 +2541,70 @@
     
     // Store current sort type to re-apply after reload
     let currentSortType = null;
+    let currentSearchTerm = '';
+    
+    // Search functionality with case-insensitive filtering and debouncing
+    let searchTimeout = null;
+    const searchInput = document.getElementById('searchItemsInput');
+    if (searchInput) {
+        searchInput.addEventListener('input', function(e) {
+            const searchTerm = e.target.value.trim().toLowerCase();
+            currentSearchTerm = searchTerm;
+            
+            // Debounce search to avoid excessive filtering
+            clearTimeout(searchTimeout);
+            searchTimeout = setTimeout(() => {
+                filterPantryItems(searchTerm);
+            }, 300); // 300ms delay
+        });
+        
+        // Clear search on Escape key
+        searchInput.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') {
+                e.target.value = '';
+                currentSearchTerm = '';
+                filterPantryItems('');
+            }
+        });
+    }
+    
+    // Filter pantry items by search term (case-insensitive)
+    function filterPantryItems(searchTerm) {
+        const container = document.getElementById('pantryItemsContainer');
+        if (!container) return;
+        
+        const items = container.querySelectorAll('.pantry-item-wrapper');
+        let visibleCount = 0;
+        
+        items.forEach(item => {
+            const itemName = item.getAttribute('data-item-name') || '';
+            const itemNameLower = itemName.toLowerCase();
+            
+            // Case-insensitive search
+            if (!searchTerm || itemNameLower.includes(searchTerm.toLowerCase())) {
+                item.style.display = '';
+                visibleCount++;
+            } else {
+                item.style.display = 'none';
+            }
+        });
+        
+        // Show/hide "no results" message
+        let noResultsMsg = document.getElementById('noSearchResults');
+        if (!noResultsMsg && searchTerm && visibleCount === 0) {
+            noResultsMsg = document.createElement('div');
+            noResultsMsg.id = 'noSearchResults';
+            noResultsMsg.className = 'col-12 text-center py-5';
+            noResultsMsg.innerHTML = `
+                <i class="bi bi-search display-4 text-muted mb-3"></i>
+                <h5 class="text-muted">No matching items</h5>
+                <p class="text-muted small">Try a different search term</p>
+            `;
+            container.appendChild(noResultsMsg);
+        } else if (noResultsMsg && (!searchTerm || visibleCount > 0)) {
+            noResultsMsg.remove();
+        }
+    }
     
     function sortPantry(sortType) {
         const container = document.getElementById('pantryItemsContainer');
@@ -2534,7 +2613,8 @@
             return;
         }
         
-        const items = Array.from(container.querySelectorAll('.pantry-item-wrapper'));
+        // Get only visible items (respecting search filter)
+        const items = Array.from(container.querySelectorAll('.pantry-item-wrapper:not([style*="display: none"])'));
         
         if (items.length === 0) {
             console.warn('No items to sort');
@@ -3052,6 +3132,15 @@
                     }, 100);
                 }
                 
+                // Re-apply search filter if one was active
+                const searchInput = document.getElementById('searchItemsInput');
+                if (currentSearchTerm && searchInput) {
+                    searchInput.value = currentSearchTerm;
+                    setTimeout(() => {
+                        filterPantryItems(currentSearchTerm);
+                    }, 150);
+                }
+                
                 // Update expiration badges
                 setTimeout(() => {
                     updateExpirationBadges();
@@ -3283,11 +3372,19 @@
             if (response.ok) {
                 const data = await response.json();
                 if (data.success) {
-                    // Show success feedback
-                    const feedback = document.getElementById('addItemFeedback');
-                    if (feedback) {
-                        const message = updateType === 'expiration' ? 'Expiration date updated successfully!' : 'Item updated successfully!';
-                        showFeedback(message, 'success');
+                    // Check if item was deleted (quantity reached 0)
+                    if (data.deleted) {
+                        const feedback = document.getElementById('addItemFeedback');
+                        if (feedback) {
+                            showFeedback(data.message || 'Item removed (quantity reached 0)', 'info');
+                        }
+                    } else {
+                        // Show success feedback
+                        const feedback = document.getElementById('addItemFeedback');
+                        if (feedback) {
+                            const message = updateType === 'expiration' ? 'Expiration date updated successfully!' : 'Item updated successfully!';
+                            showFeedback(message, 'success');
+                        }
                     }
                     
                     // Reload pantry items to reflect the change
@@ -3518,7 +3615,7 @@
                 const today = new Date().toISOString().split('T')[0];
                 input.min = today;
                 
-                input.style.cssText = 'background: white !important; border: 2px solid #8B5CF6 !important; border-radius: 8px !important; padding: 6px 10px !important; font-size: 0.8rem !important; font-weight: 600 !important; color: #8B5CF6 !important; width: 200px !important; min-width: 200px !important; display: inline-block !important; outline: none !important; box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.1) !important;';
+                input.style.cssText = 'background: white !important; border: 2px solid #8B5CF6 !important; border-radius: 8px !important; padding: 5px 8px !important; font-size: 0.75rem !important; font-weight: 600 !important; color: #8B5CF6 !important; width: 150px !important; min-width: 150px !important; display: inline-block !important; outline: none !important; box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.1) !important;';
                 input.className = 'expiration-input';
                 
                 // Clear and replace content properly

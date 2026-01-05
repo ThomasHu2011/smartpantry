@@ -2808,11 +2808,106 @@ def api_update_item(item_id):
     if expiration_date == '' or expiration_date is None:
         expiration_date = None
     
-    # Handle quantity
+    # Handle quantity - check if it's 0 or less (should delete item)
     quantity = data.get('quantity', '1')
-    if not quantity or (isinstance(quantity, str) and quantity.strip() == ''):
-        quantity = '1'
-    elif not isinstance(quantity, str):
+    quantity_num = 0
+    try:
+        if isinstance(quantity, str):
+            quantity_num = int(quantity.strip()) if quantity.strip() else 0
+        else:
+            quantity_num = int(quantity) if quantity else 0
+    except (ValueError, TypeError):
+        quantity_num = 0
+    
+    # If quantity is 0 or less, delete the item instead of updating
+    if quantity_num <= 0:
+        # Delete the item
+        if user_id:
+            pantry_to_use = get_user_pantry(user_id)
+            pantry_list = []
+            item_found = False
+            item_id_clean = item_id.strip() if item_id else ''
+            item_name_lower = item_name.lower().strip()
+            
+            for item in pantry_to_use:
+                if isinstance(item, dict):
+                    item_id_from_dict = item.get('id', '').strip() if item.get('id') else ''
+                    item_name_from_dict = item.get('name', '').strip().lower() if item.get('name') else ''
+                    
+                    # Skip the item to delete (match by ID or name)
+                    if (item_id_clean and item_id_from_dict == item_id_clean) or item_name_from_dict == item_name_lower:
+                        item_found = True
+                        continue  # Don't add to pantry_list (effectively deletes it)
+                    pantry_list.append(item)
+                else:
+                    pantry_list.append({
+                        'id': str(uuid.uuid4()),
+                        'name': item,
+                        'quantity': '1',
+                        'expirationDate': None,
+                        'addedDate': datetime.now().isoformat()
+                    })
+            
+            if item_found:
+                update_user_pantry(user_id, pantry_list)
+                return jsonify({
+                    'success': True,
+                    'message': f'Item "{item_name}" removed (quantity reached 0)',
+                    'deleted': True,
+                    'total_items': len(pantry_list)
+                }), 200
+            else:
+                return jsonify({'success': False, 'error': 'Item not found in pantry'}), 404
+        else:
+            # Anonymous user - delete from session pantry
+            global mobile_pantry, web_pantry
+            client_type = request.headers.get('X-Client-Type', 'web')
+            pantry_to_use = mobile_pantry if client_type == 'mobile' else web_pantry
+            if not isinstance(pantry_to_use, list):
+                pantry_to_use = []
+            
+            pantry_list = []
+            item_found = False
+            item_id_clean = item_id.strip() if item_id else ''
+            item_name_lower = item_name.lower().strip()
+            
+            for item in pantry_to_use:
+                if isinstance(item, dict):
+                    item_id_from_dict = item.get('id', '').strip() if item.get('id') else ''
+                    item_name_from_dict = item.get('name', '').strip().lower() if item.get('name') else ''
+                    
+                    if (item_id_clean and item_id_from_dict == item_id_clean) or item_name_from_dict == item_name_lower:
+                        item_found = True
+                        continue
+                    pantry_list.append(item)
+                else:
+                    pantry_list.append({
+                        'id': str(uuid.uuid4()),
+                        'name': item,
+                        'quantity': '1',
+                        'expirationDate': None,
+                        'addedDate': datetime.now().isoformat()
+                    })
+            
+            if item_found:
+                if client_type == 'mobile':
+                    mobile_pantry = pantry_list
+                else:
+                    web_pantry = pantry_list
+                    session['web_pantry'] = pantry_list
+                    session.modified = True
+                
+                return jsonify({
+                    'success': True,
+                    'message': f'Item "{item_name}" removed (quantity reached 0)',
+                    'deleted': True,
+                    'total_items': len(pantry_list)
+                }), 200
+            else:
+                return jsonify({'success': False, 'error': 'Item not found in pantry'}), 404
+    
+    # Normal quantity update (quantity > 0)
+    if not isinstance(quantity, str):
         quantity = str(quantity)
     
     updated_item = {
