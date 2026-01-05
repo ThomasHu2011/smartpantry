@@ -32,18 +32,28 @@
         z-index: 1;
     }
     
-    /* Fix modal backdrop - lighter, less intrusive */
+    /* Fix modal backdrop - proper isolation to prevent page blur */
     .modal-backdrop {
-        background-color: rgba(0, 0, 0, 0.1) !important; /* Much lighter - reduced from 0.25 to 0.1 */
-        backdrop-filter: blur(2px) !important;
-        -webkit-backdrop-filter: blur(2px) !important;
+        background-color: rgba(0, 0, 0, 0.4) !important; /* Darker for better contrast, no blur */
+        /* REMOVED backdrop-filter blur to prevent page blur bug */
         z-index: 1040 !important;
-        /* Backdrop should not block modal content clicks */
-        pointer-events: none !important;
+        position: fixed !important;
+        top: 0 !important;
+        left: 0 !important;
+        width: 100% !important;
+        height: 100% !important;
+        pointer-events: auto !important; /* Allow backdrop clicks to close modal */
     }
     
     .modal-backdrop.show {
         opacity: 1 !important;
+        display: block !important;
+    }
+    
+    /* Prevent body scroll when modal is open */
+    body.modal-open {
+        overflow: hidden !important;
+        padding-right: 0 !important;
     }
     
     .modal {
@@ -53,13 +63,16 @@
     
     .modal.show {
         pointer-events: auto !important; /* When shown, allow clicks */
+        display: block !important;
     }
     
-    /* Ensure modal content is clickable */
+    /* Ensure modal content is clickable and properly layered */
     .modal-content {
         pointer-events: auto !important;
         z-index: 1056 !important;
         position: relative;
+        background: white !important; /* Ensure modal content has solid background */
+        border-radius: 24px !important;
     }
     
     /* Ensure all modal elements are clickable */
@@ -68,11 +81,26 @@
         pointer-events: auto !important;
     }
     
-    /* Ensure modal dialog is above backdrop */
+    /* Ensure modal dialog is above backdrop and responsive */
     .modal-dialog {
         z-index: 1055 !important;
         position: relative;
-        pointer-events: auto !important; /* Dialog captures clicks */
+        pointer-events: auto !important;
+        margin: 1rem auto !important;
+        max-width: 90% !important;
+    }
+    
+    .modal-dialog-centered {
+        min-height: calc(100% - 2rem) !important;
+        display: flex !important;
+        align-items: center !important;
+    }
+    
+    /* Responsive modal content */
+    .modal-content {
+        max-height: 90vh !important;
+        overflow-y: auto !important;
+        overflow-x: hidden !important;
     }
     
     /* Prevent backdrop from staying after modal closes */
@@ -83,30 +111,33 @@
         pointer-events: none !important;
     }
     
-    /* Ensure backdrop doesn't block modal content clicks */
-    /* Backdrop should allow clicks through - modal content handles its own clicks */
+    /* Ensure modal is always above header/navbar */
+    .modal {
+        z-index: 9999 !important;
+    }
+    
     .modal-backdrop {
-        pointer-events: none !important;
-        background-color: rgba(0, 0, 0, 0.1) !important; /* Light backdrop */
+        z-index: 9998 !important;
     }
     
-    /* When modal is shown, backdrop should be clickable to close, but not block modal content */
-    .modal.show ~ .modal-backdrop {
-        pointer-events: auto !important;
-        background-color: rgba(0, 0, 0, 0.1) !important; /* Keep light when shown */
+    .modal-dialog {
+        z-index: 9999 !important;
     }
     
-    /* Ensure modal content is always clickable and above backdrop */
-    .modal.show {
-        pointer-events: auto !important;
+    .modal-content {
+        z-index: 10000 !important;
     }
     
-    .modal.show .modal-dialog {
-        pointer-events: auto !important;
+    /* Ensure navbar/header stays below modal */
+    .navbar {
+        z-index: 1000 !important;
     }
     
-    .modal.show .modal-content {
-        pointer-events: auto !important;
+    /* Prevent any page content from being blurred */
+    body.modal-open > *:not(.modal):not(.modal-backdrop) {
+        filter: none !important;
+        backdrop-filter: none !important;
+        -webkit-backdrop-filter: none !important;
     }
     
     /* Enhanced UI Styles */
@@ -230,6 +261,18 @@
     .editable-expiration {
         cursor: pointer;
         user-select: none;
+    }
+    
+    .editable-expiration.editing {
+        pointer-events: none;
+        opacity: 0.7;
+        cursor: wait;
+    }
+    
+    .editable-quantity.editing {
+        pointer-events: none;
+        opacity: 0.7;
+        cursor: wait;
     }
     
     .editable-quantity:hover,
@@ -439,48 +482,145 @@
         background: white;
     }
     
-    /* Photo upload zone styling */
+    /* Photo upload zone styling - responsive */
     .photo-upload-zone {
-        border: 2px dashed var(--gray-300);
-        border-radius: 1rem;
-        padding: 3rem 2rem;
+        border: 2px dashed #cbd5e0;
+        border-radius: 16px;
+        padding: 2rem 1.5rem;
         text-align: center;
-        background: white;
-        transition: all 0.3s ease;
+        background: #f8f9fa;
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
         cursor: pointer;
+        min-height: 200px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        width: 100%;
+        max-width: 100%;
+        box-sizing: border-box;
+    }
+    
+    /* Responsive styles for modal and photo upload */
+    @media (max-width: 768px) {
+        .photo-upload-zone {
+            padding: 1.5rem 1rem;
+            min-height: 150px;
+        }
+        
+        .modal-dialog {
+            margin: 0.5rem !important;
+            max-width: calc(100% - 1rem) !important;
+        }
+        
+        .modal-content {
+            max-height: 95vh !important;
+            border-radius: 16px !important;
+        }
+        
+        .camera-preview {
+            min-height: 250px;
+        }
+        
+        .image-preview {
+            max-height: 300px;
+        }
+    }
+    
+    @media (max-width: 576px) {
+        .modal-dialog {
+            margin: 0.25rem !important;
+            max-width: calc(100% - 0.5rem) !important;
+        }
+        
+        .modal-content {
+            max-height: 98vh !important;
+            border-radius: 12px !important;
+        }
+        
+        .photo-upload-zone {
+            padding: 1rem 0.75rem;
+            min-height: 120px;
+        }
+        
+        .photo-upload-zone h5 {
+            font-size: 1rem;
+        }
+        
+        .photo-upload-zone .display-1 {
+            font-size: 2.5rem !important;
+        }
     }
     
     .photo-upload-zone:hover {
-        border-color: var(--primary-purple);
-        background: rgba(139, 92, 246, 0.02);
+        border-color: #8B5CF6;
+        background: #f0f4ff;
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(139, 92, 246, 0.15);
     }
     
     .photo-upload-zone.dragover {
-        border-color: var(--primary-purple);
-        background: rgba(139, 92, 246, 0.05);
+        border-color: #8B5CF6;
+        background: #e6edff;
         transform: scale(1.02);
+        box-shadow: 0 8px 24px rgba(139, 92, 246, 0.25);
     }
     
     .image-preview {
         max-width: 100%;
         max-height: 400px;
-        border-radius: 1rem;
-        box-shadow: var(--shadow-md);
-        margin: 1rem 0;
+        border-radius: 16px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        margin: 1rem auto;
+        display: block;
+        object-fit: contain;
     }
     
     /* Camera preview styling */
     .camera-preview {
         position: relative;
-        border-radius: 1rem;
+        border-radius: 16px;
         overflow: hidden;
-        background: var(--gray-900);
+        background: #000;
+        min-height: 300px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
     }
     
     .camera-preview video {
         width: 100%;
         height: auto;
         display: block;
+        max-height: 500px;
+        object-fit: contain;
+    }
+    
+    /* Preview section styling */
+    #previewSection {
+        transition: opacity 0.3s ease;
+    }
+    
+    #previewSection[style*="display: block"] {
+        animation: fadeIn 0.3s ease;
+    }
+    
+    @keyframes fadeIn {
+        from {
+            opacity: 0;
+            transform: translateY(10px);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+    
+    /* Upload zone and camera view transitions */
+    #uploadZone,
+    #cameraView,
+    #previewSection {
+        transition: opacity 0.3s ease, transform 0.3s ease;
     }
     
     .camera-controls {
@@ -883,7 +1023,7 @@
                         </h5>
                         <div class="d-flex align-items-center gap-2">
                             {% if items %}
-                            <span class="badge px-3 py-2" style="background: linear-gradient(135deg, #8B5CF6 0%, #3B82F6 100%); color: #ffffff; border-radius: 10px; font-size: 0.875rem; font-weight: 700; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);">
+                            <span class="badge px-3 py-2" style="background: linear-gradient(135deg, #7C3AED 0%, #2563EB 100%) !important; color: #ffffff !important; border-radius: 10px; font-size: 0.875rem; font-weight: 700; text-shadow: 0 1px 3px rgba(0, 0, 0, 0.2); box-shadow: 0 2px 8px rgba(124, 58, 237, 0.3);">
                                 <i class="bi bi-basket-fill me-1"></i>{{ items|length }} {{ 'item' if items|length == 1 else 'items' }}
                             </span>
                             {% endif %}
@@ -988,7 +1128,7 @@
                                                               data-current-expiration="{{ exp_date }}"
                                                               data-added-date="{{ item.get('addedDate', '') if item.get('addedDate') else '' }}"
                                                               data-exp-date="{{ exp_date }}" 
-                                                              style="font-size: 0.8rem; font-weight: 600; padding: 0.5rem 0.75rem; border-radius: 10px; cursor: pointer; transition: all 0.2s ease; border: 1px solid rgba(16, 185, 129, 0.2); min-width: 140px; display: inline-flex; align-items: center; justify-content: center;"
+                                                              style="font-size: 0.8rem; font-weight: 600; padding: 0.5rem 0.75rem; border-radius: 10px; cursor: pointer; transition: all 0.2s ease; border: 1px solid rgba(16, 185, 129, 0.2); min-width: 180px; display: inline-flex; align-items: center; justify-content: center;"
                                                               title="Click to edit expiration date"
                                                               onmouseover="this.style.opacity='0.9'; this.style.transform='scale(1.05)'; this.style.boxShadow='0 2px 8px rgba(16, 185, 129, 0.2)';"
                                                               onmouseout="this.style.opacity='1'; this.style.transform='scale(1)'; this.style.boxShadow='none';">
@@ -1013,7 +1153,7 @@
                                                               data-current-quantity="{{ quantity }}"
                                                               data-current-expiration=""
                                                               data-added-date="{{ item.get('addedDate', '') if item.get('addedDate') else '' }}"
-                                                              style="font-size: 0.8rem; font-weight: 600; padding: 0.5rem 0.75rem; cursor: pointer; background: linear-gradient(135deg, rgba(139, 92, 246, 0.12) 0%, rgba(59, 130, 246, 0.12) 100%); color: #8B5CF6; border-radius: 10px; transition: all 0.2s ease; border: 1px solid rgba(139, 92, 246, 0.2);"
+                                                              style="font-size: 0.8rem; font-weight: 600; padding: 0.5rem 0.75rem; cursor: pointer; background: linear-gradient(135deg, rgba(139, 92, 246, 0.12) 0%, rgba(59, 130, 246, 0.12) 100%); color: #8B5CF6; border-radius: 10px; transition: all 0.2s ease; border: 1px solid rgba(139, 92, 246, 0.2); min-width: 180px; display: inline-flex; align-items: center; justify-content: center;"
                                                               title="Click to add expiration date"
                                                               onmouseover="this.style.background='linear-gradient(135deg, rgba(139, 92, 246, 0.2) 0%, rgba(59, 130, 246, 0.2) 100%)'; this.style.transform='scale(1.05)'; this.style.borderColor='#8B5CF6';"
                                                               onmouseout="this.style.background='linear-gradient(135deg, rgba(139, 92, 246, 0.12) 0%, rgba(59, 130, 246, 0.12) 100%)'; this.style.transform='scale(1)'; this.style.borderColor='rgba(139, 92, 246, 0.2)';">
@@ -1023,7 +1163,7 @@
                                                 {% endif %}
                                                     {% elif exp_date and exp_date != 'None' and exp_date != '' %}
                                                         <!-- Non-editable Expiration Badge -->
-                                                        <span class="expiration-badge expiration-fresh" data-exp-date="{{ exp_date }}" style="font-size: 0.8rem; font-weight: 600; padding: 0.5rem 0.75rem; border-radius: 10px; border: 1px solid rgba(16, 185, 129, 0.2); min-width: 140px; display: inline-flex; align-items: center; justify-content: center;">
+                                                        <span class="expiration-badge expiration-fresh" data-exp-date="{{ exp_date }}" style="font-size: 0.8rem; font-weight: 600; padding: 0.5rem 0.75rem; border-radius: 10px; border: 1px solid rgba(16, 185, 129, 0.2); min-width: 180px; display: inline-flex; align-items: center; justify-content: center;">
                                                             <i class="bi bi-clock-fill me-1" style="font-size: 0.85rem;"></i>
                                                             <span style="white-space: nowrap;">
                                                                 {% if exp_date and exp_date != 'None' and exp_date != '' and exp_date != 'null' %}
@@ -1165,9 +1305,9 @@
 </div>
 
 <!-- Photo Upload Modal -->
-<div class="modal fade" id="photoModal" tabindex="-1" aria-labelledby="photoModalLabel" aria-hidden="true" data-bs-backdrop="true" data-bs-keyboard="true" style="pointer-events: auto;">
-    <div class="modal-dialog modal-lg modal-dialog-centered" style="pointer-events: auto; z-index: 1055;">
-        <div class="modal-content" style="border-radius: 24px; border: none; pointer-events: auto; z-index: 1056; position: relative;">
+<div class="modal fade" id="photoModal" tabindex="-1" aria-labelledby="photoModalLabel" aria-hidden="true" data-bs-backdrop="true" data-bs-keyboard="true" role="dialog" aria-modal="true" style="pointer-events: auto;">
+    <div class="modal-dialog modal-lg modal-dialog-centered" style="pointer-events: auto; z-index: 9999; max-height: 90vh; margin: 1rem auto;">
+        <div class="modal-content" style="border-radius: 24px; border: none; pointer-events: auto; z-index: 10000; position: relative; max-height: 90vh; overflow-y: auto;">
             <div class="modal-header border-0 pb-0" style="pointer-events: auto;">
                 <h5 class="modal-title fw-bold" id="photoModalLabel">
                     <i class="bi bi-camera-fill me-2 text-success"></i>Add Items with Photo
@@ -1329,9 +1469,29 @@
         selectedFile = file;
         const reader = new FileReader();
         reader.onload = (e) => {
-            if (imagePreview) imagePreview.src = e.target.result;
-            if (uploadZone) uploadZone.style.display = 'none';
-            if (previewSection) previewSection.style.display = 'block';
+            if (imagePreview) {
+                imagePreview.src = e.target.result;
+                imagePreview.style.opacity = '0';
+                setTimeout(() => {
+                    imagePreview.style.opacity = '1';
+                }, 50);
+            }
+            
+            // Smooth transition between upload zone and preview
+            if (uploadZone) {
+                uploadZone.style.opacity = '0';
+                setTimeout(() => {
+                    uploadZone.style.display = 'none';
+                    uploadZone.style.opacity = '1';
+                }, 150);
+            }
+            if (previewSection) {
+                previewSection.style.display = 'block';
+                previewSection.style.opacity = '0';
+                setTimeout(() => {
+                    previewSection.style.opacity = '1';
+                }, 150);
+            }
         };
         reader.readAsDataURL(file);
     }
@@ -1360,8 +1520,22 @@
                 video: { facingMode: 'environment' } 
             });
             if (cameraStreamVideo) cameraStreamVideo.srcObject = cameraStream;
-            if (uploadZone) uploadZone.style.display = 'none';
-            if (cameraView) cameraView.style.display = 'block';
+            
+            // Smooth transition between upload zone and camera view
+            if (uploadZone) {
+                uploadZone.style.opacity = '0';
+                setTimeout(() => {
+                    uploadZone.style.display = 'none';
+                    uploadZone.style.opacity = '1';
+                }, 150);
+            }
+            if (cameraView) {
+                cameraView.style.display = 'block';
+                cameraView.style.opacity = '0';
+                setTimeout(() => {
+                    cameraView.style.opacity = '1';
+                }, 150);
+            }
         } catch (err) {
                 // Stop any partial stream
                 if (cameraStream) {
@@ -1390,8 +1564,22 @@
             e.preventDefault();
             e.stopPropagation();
             stopCamera();
-            if (cameraView) cameraView.style.display = 'none';
-            if (uploadZone) uploadZone.style.display = 'block';
+            
+            // Smooth transition back to upload zone
+            if (cameraView) {
+                cameraView.style.opacity = '0';
+                setTimeout(() => {
+                    cameraView.style.display = 'none';
+                    cameraView.style.opacity = '1';
+                }, 150);
+            }
+            if (uploadZone) {
+                uploadZone.style.display = 'block';
+                uploadZone.style.opacity = '0';
+                setTimeout(() => {
+                    uploadZone.style.opacity = '1';
+                }, 150);
+            }
         });
         // Ensure button is clickable
         closeCameraBtn.style.pointerEvents = 'auto';
@@ -1408,10 +1596,30 @@
         
         canvas.toBlob((blob) => {
             selectedFile = new File([blob], 'camera-capture.jpg', { type: 'image/jpeg' });
-            if (imagePreview) imagePreview.src = canvas.toDataURL('image/jpeg');
+            if (imagePreview) {
+                imagePreview.src = canvas.toDataURL('image/jpeg');
+                imagePreview.style.opacity = '0';
+                setTimeout(() => {
+                    imagePreview.style.opacity = '1';
+                }, 50);
+            }
             stopCamera();
-            if (cameraView) cameraView.style.display = 'none';
-            if (previewSection) previewSection.style.display = 'block';
+            
+            // Smooth transition between camera view and preview
+            if (cameraView) {
+                cameraView.style.opacity = '0';
+                setTimeout(() => {
+                    cameraView.style.display = 'none';
+                    cameraView.style.opacity = '1';
+                }, 150);
+            }
+            if (previewSection) {
+                previewSection.style.display = 'block';
+                previewSection.style.opacity = '0';
+                setTimeout(() => {
+                    previewSection.style.opacity = '1';
+                }, 150);
+            }
         }, 'image/jpeg');
         });
     }
@@ -1426,14 +1634,7 @@
     // Cancel upload
     if (cancelUploadBtn) {
         cancelUploadBtn.addEventListener('click', () => {
-            selectedFile = null;
-            if (photoInput) photoInput.value = '';
-            if (mobileCameraInput) mobileCameraInput.value = '';
-            if (previewSection) previewSection.style.display = 'none';
-            if (uploadZone) uploadZone.style.display = 'block';
-            if (cameraView) cameraView.style.display = 'none';
-            stopCamera();
-            resetPhotoUploadButton();
+            resetPhotoUploadState();
         });
     }
 
@@ -1565,9 +1766,40 @@
         selectedFile = null;
         if (photoInput) photoInput.value = '';
         if (mobileCameraInput) mobileCameraInput.value = '';
-        if (cameraView) cameraView.style.display = 'none';
-        if (previewSection) previewSection.style.display = 'none';
-        if (uploadZone) uploadZone.style.display = 'block';
+        
+        // Reset display states with smooth transitions
+        if (cameraView) {
+            cameraView.style.opacity = '0';
+            setTimeout(() => {
+                cameraView.style.display = 'none';
+                cameraView.style.opacity = '1';
+            }, 150);
+        }
+        if (previewSection) {
+            previewSection.style.opacity = '0';
+            setTimeout(() => {
+                previewSection.style.display = 'none';
+                previewSection.style.opacity = '1';
+            }, 150);
+        }
+        if (uploadZone) {
+            uploadZone.style.display = 'block';
+            uploadZone.style.opacity = '0';
+            setTimeout(() => {
+                uploadZone.style.opacity = '1';
+            }, 50);
+        }
+        
+        // Reset drag over state
+        if (dropZone) {
+            dropZone.classList.remove('dragover');
+        }
+        
+        // Clear image preview
+        if (imagePreview) {
+            imagePreview.src = '';
+        }
+        
         stopCamera();
         resetPhotoUploadButton();
     }
@@ -1586,7 +1818,13 @@
     if (photoModal) {
         // Handle modal shown
         photoModal.addEventListener('show.bs.modal', () => {
-            // Animations are already removed, but keep this for any remaining transitions
+            // Prevent body scroll when modal opens
+            const scrollY = window.scrollY;
+            document.body.style.overflow = 'hidden';
+            document.body.style.position = 'fixed';
+            document.body.style.top = `-${scrollY}px`;
+            document.body.style.width = '100%';
+            document.body.classList.add('modal-open');
             document.body.classList.add('modal-open-no-animations');
             
             // Ensure modal content and all children are clickable
@@ -1594,7 +1832,7 @@
             const modalDialog = photoModal.querySelector('.modal-dialog');
             if (modalContent) {
                 modalContent.style.pointerEvents = 'auto';
-                modalContent.style.zIndex = '1056';
+                modalContent.style.zIndex = '10000';
                 modalContent.style.position = 'relative';
                 // Ensure all interactive elements are clickable
                 const allElements = modalContent.querySelectorAll('*');
@@ -1607,25 +1845,29 @@
             }
             if (modalDialog) {
                 modalDialog.style.pointerEvents = 'auto';
-                modalDialog.style.zIndex = '1055';
+                modalDialog.style.zIndex = '9999';
                 modalDialog.style.position = 'relative';
             }
-            // Ensure body can scroll
-            document.body.style.overflow = 'hidden';
             
             // Force enable pointer events on modal
             photoModal.style.pointerEvents = 'auto';
-            photoModal.style.zIndex = '1055';
+            photoModal.style.zIndex = '9999';
         });
         
-        // Also handle when modal is fully shown
+        // Also handle when modal is fully shown - focus trap
         photoModal.addEventListener('shown.bs.modal', () => {
+            // Focus trap - focus first focusable element
+            const firstFocusable = photoModal.querySelector('button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])');
+            if (firstFocusable) {
+                firstFocusable.focus();
+            }
+            
             // Double-check all elements are clickable
             const modalContent = photoModal.querySelector('.modal-content');
             const modalDialog = photoModal.querySelector('.modal-dialog');
             if (modalContent) {
                 modalContent.style.pointerEvents = 'auto';
-                modalContent.style.zIndex = '1056';
+                modalContent.style.zIndex = '10000';
                 modalContent.style.position = 'relative';
                 const allButtons = modalContent.querySelectorAll('button, input, a, [role="button"], .btn, .btn-close, select');
                 allButtons.forEach(btn => {
@@ -1637,7 +1879,7 @@
             }
             if (modalDialog) {
                 modalDialog.style.pointerEvents = 'auto';
-                modalDialog.style.zIndex = '1055';
+                modalDialog.style.zIndex = '9999';
                 modalDialog.style.position = 'relative';
             }
             
@@ -1647,7 +1889,7 @@
                 if (backdrop) {
                     // Backdrop should be clickable to close modal, but not block modal content
                     backdrop.style.pointerEvents = 'auto';
-                    backdrop.style.zIndex = '1040';
+                    backdrop.style.zIndex = '9998';
                     // Ensure backdrop clicks close the modal
                     backdrop.addEventListener('click', function(e) {
                         // Only close if clicking directly on backdrop, not if event bubbled from modal
@@ -1695,9 +1937,18 @@
             document.body.classList.remove('modal-open-no-animations');
         });
         
-        // Handle modal fully closed (after animation)
+        // Handle modal fully closed (after animation) - restore body scroll
         photoModal.addEventListener('hidden.bs.modal', () => {
             resetPhotoUploadState();
+            
+            // Restore body scroll position
+            const scrollY = document.body.style.top;
+            document.body.style.position = '';
+            document.body.style.top = '';
+            document.body.style.width = '';
+            if (scrollY) {
+                window.scrollTo(0, parseInt(scrollY || '0') * -1);
+            }
             
             // Comprehensive cleanup - remove all backdrops and restore body
             const cleanup = () => {
@@ -1743,25 +1994,6 @@
                 
                 // Force enable pointer events on body
                 document.body.style.pointerEvents = 'auto';
-                
-                // Add style to prevent backdrop from showing
-                if (!document.querySelector('style[data-modal-cleanup]')) {
-                    const style = document.createElement('style');
-                    style.setAttribute('data-modal-cleanup', 'true');
-                    style.textContent = `
-                        body:not(.modal-open) .modal-backdrop { 
-                            display: none !important; 
-                            opacity: 0 !important; 
-                            visibility: hidden !important; 
-                            pointer-events: none !important; 
-                        }
-                        body:not(.modal-open) {
-                            pointer-events: auto !important;
-                            overflow: auto !important;
-                        }
-                    `;
-                    document.head.appendChild(style);
-                }
             };
             
             // Cleanup immediately and also after delays to catch any delayed Bootstrap cleanup
@@ -1771,6 +2003,31 @@
             setTimeout(cleanup, 200);
             setTimeout(cleanup, 500);
             setTimeout(cleanup, 1000);
+        });
+        
+        // Focus trap - prevent tabbing outside modal
+        photoModal.addEventListener('keydown', (e) => {
+            if (e.key === 'Tab' && photoModal.classList.contains('show')) {
+                const focusableElements = photoModal.querySelectorAll(
+                    'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+                );
+                const firstElement = focusableElements[0];
+                const lastElement = focusableElements[focusableElements.length - 1];
+                
+                if (e.shiftKey) {
+                    // Shift + Tab
+                    if (document.activeElement === firstElement) {
+                        e.preventDefault();
+                        lastElement.focus();
+                    }
+                } else {
+                    // Tab
+                    if (document.activeElement === lastElement) {
+                        e.preventDefault();
+                        firstElement.focus();
+                    }
+                }
+            }
         });
     }
 
@@ -2762,12 +3019,18 @@
         const deleteButtons = document.querySelectorAll('.delete-item-btn');
         deleteButtons.forEach(btn => {
             // Remove existing listeners
+            if (!btn.parentNode) return; // Skip if button is not in DOM
+            
             const newBtn = btn.cloneNode(true);
             btn.parentNode.replaceChild(newBtn, btn);
             
             // Add new listener
             newBtn.addEventListener('click', function() {
                 const itemName = this.getAttribute('data-item-name');
+                if (!itemName || !itemName.trim()) {
+                    console.error('Item name is missing for delete');
+                    return;
+                }
                 handleDeleteItem(itemName);
             });
         });
@@ -2797,8 +3060,8 @@
                 'X-Requested-With': 'XMLHttpRequest'
             };
             
-            // Encode item ID for URL
-            const encodedItemId = encodeURIComponent(itemId);
+            // Encode item ID for URL (use 'unknown' if empty to avoid invalid URL)
+            const encodedItemId = itemId && itemId.trim() ? encodeURIComponent(itemId) : 'unknown';
             
             const response = await fetch(`/api/pantry/${encodedItemId}`, {
                 method: 'PUT',
@@ -2853,6 +3116,8 @@
         const quantityBadges = document.querySelectorAll('.editable-quantity');
         quantityBadges.forEach(badge => {
             // Remove existing listeners by cloning
+            if (!badge.parentNode) return; // Skip if badge is not in DOM
+            
             const newBadge = badge.cloneNode(true);
             badge.parentNode.replaceChild(newBadge, badge);
             
@@ -2860,10 +3125,20 @@
             newBadge.addEventListener('click', function(e) {
                 e.stopPropagation(); // Prevent card click
                 
+                // Prevent multiple simultaneous edits
+                if (this.classList.contains('editing')) return;
+                this.classList.add('editing');
+                
                 const itemId = this.getAttribute('data-item-id') || '';
                 // Item ID can be empty - backend will use name matching as fallback
                 
                 const itemName = this.getAttribute('data-item-name');
+                if (!itemName || !itemName.trim()) {
+                    console.error('Item name is missing for quantity edit');
+                    this.classList.remove('editing');
+                    return;
+                }
+                
                 const currentQuantity = this.getAttribute('data-current-quantity') || '1';
                 // Get expiration date from the expiration badge if it exists, or from data attribute
                 const expirationBadge = this.closest('.pantry-item-wrapper')?.querySelector('.editable-expiration');
@@ -2874,7 +3149,10 @@
                 
                 // Create input field
                 const quantityValue = this.querySelector('.quantity-value');
-                if (!quantityValue) return;
+                if (!quantityValue) {
+                    this.classList.remove('editing');
+                    return;
+                }
                 
                 const oldText = quantityValue.textContent;
                 const input = document.createElement('input');
@@ -2907,16 +3185,27 @@
                             // The reloadPantryItems() in handleUpdateQuantity will refresh the display
                         } catch (error) {
                             // On error, restore original display
-                            quantityValue.textContent = oldText;
+                            if (quantityValue) {
+                                quantityValue.textContent = oldText;
+                            }
+                        } finally {
+                            // Always remove editing class
+                            newBadge.classList.remove('editing');
                         }
                     } else {
                         // Restore original text if no change
-                        quantityValue.textContent = oldText;
+                        if (quantityValue) {
+                            quantityValue.textContent = oldText;
+                        }
+                        newBadge.classList.remove('editing');
                     }
                 };
                 
                 const cancelEdit = () => {
-                    quantityValue.textContent = oldText;
+                    if (quantityValue) {
+                        quantityValue.textContent = oldText;
+                    }
+                    newBadge.classList.remove('editing');
                 };
                 
                 input.addEventListener('blur', saveQuantity);
@@ -2938,6 +3227,8 @@
         const expirationBadges = document.querySelectorAll('.editable-expiration');
         expirationBadges.forEach(badge => {
             // Remove existing listeners by cloning
+            if (!badge.parentNode) return; // Skip if badge is not in DOM
+            
             const newBadge = badge.cloneNode(true);
             badge.parentNode.replaceChild(newBadge, badge);
             
@@ -2945,17 +3236,30 @@
             newBadge.addEventListener('click', function(e) {
                 e.stopPropagation(); // Prevent card click
                 
+                // Prevent multiple simultaneous edits
+                if (this.classList.contains('editing')) return;
+                this.classList.add('editing');
+                
                 const itemId = this.getAttribute('data-item-id') || '';
                 // Item ID can be empty - backend will use name matching as fallback
                 
                 const itemName = this.getAttribute('data-item-name');
+                if (!itemName || !itemName.trim()) {
+                    console.error('Item name is missing for expiration date edit');
+                    this.classList.remove('editing');
+                    return;
+                }
+                
                 const currentQuantity = this.getAttribute('data-current-quantity') || '1';
                 const currentExpiration = this.getAttribute('data-current-expiration') || '';
                 const addedDate = this.getAttribute('data-added-date') || new Date().toISOString();
                 
                 // Create date input field
                 const expirationValue = this.querySelector('.expiration-value');
-                if (!expirationValue) return;
+                if (!expirationValue) {
+                    this.classList.remove('editing');
+                    return;
+                }
                 
                 const oldText = expirationValue.textContent;
                 const input = document.createElement('input');
@@ -3004,7 +3308,7 @@
                 const today = new Date().toISOString().split('T')[0];
                 input.min = today;
                 
-                input.style.cssText = 'background: white !important; border: 2px solid #8B5CF6 !important; border-radius: 8px !important; padding: 6px 10px !important; font-size: 0.8rem !important; font-weight: 600 !important; color: #8B5CF6 !important; width: 160px !important; min-width: 160px !important; display: inline-block !important; outline: none !important; box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.1) !important;';
+                input.style.cssText = 'background: white !important; border: 2px solid #8B5CF6 !important; border-radius: 8px !important; padding: 6px 10px !important; font-size: 0.8rem !important; font-weight: 600 !important; color: #8B5CF6 !important; width: 200px !important; min-width: 200px !important; display: inline-block !important; outline: none !important; box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.1) !important;';
                 input.className = 'expiration-input';
                 
                 // Clear and replace content properly
@@ -3052,19 +3356,23 @@
                             // So we don't need to manually update here
                         } catch (error) {
                             // On error, restore original display (just text, icon is already outside)
-                            if (oldText && oldText.trim() !== '') {
+                            if (expirationValue && oldText && oldText.trim() !== '') {
                                 expirationValue.textContent = oldText;
-                            } else {
+                            } else if (expirationValue) {
                                 expirationValue.textContent = 'Add Date';
                             }
+                        } finally {
+                            // Always remove editing class
+                            newBadge.classList.remove('editing');
                         }
                     } else {
                         // Restore original display if no change (just text, icon is already outside)
-                        if (oldText && oldText.trim() !== '') {
+                        if (expirationValue && oldText && oldText.trim() !== '') {
                             expirationValue.textContent = oldText;
-                        } else {
+                        } else if (expirationValue) {
                             expirationValue.textContent = 'Add Date';
                         }
+                        newBadge.classList.remove('editing');
                     }
                 };
                 

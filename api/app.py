@@ -2844,7 +2844,7 @@ def api_update_item(item_id):
         
         # Find and update item by ID (exact match, case-sensitive for IDs)
         # If ID match fails, fallback to name match (case-insensitive) for backward compatibility
-        item_id_clean = item_id.strip()
+        item_id_clean = item_id.strip() if item_id else ''
         item_name_lower = item_name.lower().strip()
         
         for i, pantry_item in enumerate(pantry_list):
@@ -2853,19 +2853,22 @@ def api_update_item(item_id):
                 item_name_from_dict = pantry_item.get('name', '').strip().lower() if pantry_item.get('name') else ''
                 
                 # Try exact ID match first (case-sensitive)
-                if item_id_from_dict and item_id_from_dict == item_id_clean:
+                if item_id_clean and item_id_from_dict and item_id_from_dict == item_id_clean:
+                    # Ensure the updated item retains its original ID
+                    if not updated_item.get('id'):
+                        updated_item['id'] = item_id_from_dict
                     pantry_list[i] = updated_item
                     item_found = True
                     break
-                # Fallback to name match if ID is empty or doesn't match (for backward compatibility)
-                elif not item_id_from_dict or item_id_clean == '':
-                    if item_name_from_dict == item_name_lower:
-                        # Generate ID for items without one
-                        if not item_id_from_dict:
-                            updated_item['id'] = str(uuid.uuid4())
-                        pantry_list[i] = updated_item
-                        item_found = True
-                        break
+                
+                # Fallback to name match (case-insensitive) if ID doesn't match or is empty
+                if item_name_from_dict == item_name_lower:
+                    # Generate ID for items without one
+                    if not updated_item.get('id'):
+                        updated_item['id'] = item_id_from_dict if item_id_from_dict else str(uuid.uuid4())
+                    pantry_list[i] = updated_item
+                    item_found = True
+                    break
         
         if item_found:
             print(f"💾 Updating pantry for user {user_id} with {len(pantry_list)} items")
@@ -2878,7 +2881,8 @@ def api_update_item(item_id):
                 'total_items': len(pantry_list)
             }), 200
         else:
-            print(f"❌ Item not found in pantry. Item ID: {item_id}")
+            print(f"❌ Item not found in pantry. Item ID: {item_id}, Item Name: {item_name}")
+            print(f"   Available items: {[item.get('name', 'NO_NAME') + ' (ID: ' + item.get('id', 'NO_ID') + ')' for item in pantry_list[:5]]}")
             return jsonify({'success': False, 'error': f'Item not found in pantry'}), 404
     else:
         # Use anonymous pantry
@@ -2905,7 +2909,7 @@ def api_update_item(item_id):
         
         # Find and update item by ID (exact match, case-sensitive for IDs)
         # If ID match fails, fallback to name match (case-insensitive) for backward compatibility
-        item_id_clean = item_id.strip()
+        item_id_clean = item_id.strip() if item_id else ''
         item_name_lower = item_name.lower().strip()
         
         for i, pantry_item in enumerate(pantry_list):
@@ -2914,19 +2918,22 @@ def api_update_item(item_id):
                 item_name_from_dict = pantry_item.get('name', '').strip().lower() if pantry_item.get('name') else ''
                 
                 # Try exact ID match first (case-sensitive)
-                if item_id_from_dict and item_id_from_dict == item_id_clean:
+                if item_id_clean and item_id_from_dict and item_id_from_dict == item_id_clean:
+                    # Ensure the updated item retains its original ID
+                    if not updated_item.get('id'):
+                        updated_item['id'] = item_id_from_dict
                     pantry_list[i] = updated_item
                     item_found = True
                     break
-                # Fallback to name match if ID is empty or doesn't match (for backward compatibility)
-                elif not item_id_from_dict or item_id_clean == '':
-                    if item_name_from_dict == item_name_lower:
-                        # Generate ID for items without one
-                        if not item_id_from_dict:
-                            updated_item['id'] = str(uuid.uuid4())
-                        pantry_list[i] = updated_item
-                        item_found = True
-                        break
+                
+                # Fallback to name match (case-insensitive) if ID doesn't match or is empty
+                if item_name_from_dict == item_name_lower:
+                    # Generate ID for items without one
+                    if not updated_item.get('id'):
+                        updated_item['id'] = item_id_from_dict if item_id_from_dict else str(uuid.uuid4())
+                    pantry_list[i] = updated_item
+                    item_found = True
+                    break
         
         if item_found:
             if client_type == 'mobile':
@@ -2940,6 +2947,7 @@ def api_update_item(item_id):
                 'total_items': len(pantry_list)
             }), 200
         else:
+            print(f"❌ Item not found in anonymous pantry. Item ID: {item_id}, Item Name: {item_name}")
             return jsonify({'success': False, 'error': f'Item not found in pantry'}), 404
 
 @app.route('/api/recipes/suggest', methods=['POST'])
