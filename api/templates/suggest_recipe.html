@@ -181,7 +181,7 @@
                                     
                                     {% if pantry_items_full %}
                                         {% for item in pantry_items_full %}
-                                            {% if item.get('name', '')|lower == ing_lower %}
+                                            {% if not is_in_pantry and item.get('name', '')|lower == ing_lower %}
                                                 {% set pantry_item = item %}
                                                 {% set is_in_pantry = True %}
                                                 {% set exp_date = item.get('expirationDate', '') %}
@@ -190,7 +190,6 @@
                                                         {% set is_expiring_soon = True %}
                                                     {% endif %}
                                                 {% endif %}
-                                                {% break %}
                                             {% endif %}
                                         {% endfor %}
                                     {% elif pantry_items and ing in pantry_items %}
