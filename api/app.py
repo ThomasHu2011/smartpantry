@@ -54,10 +54,45 @@ if IS_VERCEL:
 else:
     app.config['DEBUG'] = True
 
+# Add 404 error handler for better debugging
+@app.errorhandler(404)
+def handle_404(e):
+    """Handle 404 Not Found errors"""
+    from werkzeug.exceptions import NotFound
+    
+    error_msg = str(e)
+    request_path = request.path if hasattr(request, 'path') else 'unknown'
+    
+    # Log the 404 error
+    print(f"\n{'='*60}")
+    print(f"404 NOT FOUND: {request_path}")
+    print(f"Method: {request.method if hasattr(request, 'method') else 'unknown'}")
+    print(f"Headers: {dict(request.headers) if hasattr(request, 'headers') else 'unknown'}")
+    print(f"{'='*60}\n")
+    
+    # Check if this is an API request
+    is_api_request = request_path.startswith('/api/') if request_path else False
+    
+    if is_api_request:
+        return jsonify({
+            'success': False,
+            'error': f'Route not found: {request_path}',
+            'path': request_path
+        }), 404
+    else:
+        # For HTML routes, redirect to home page
+        return redirect(url_for('index'))
+
 # Add global error handler for better debugging in serverless
 @app.errorhandler(Exception)
 def handle_exception(e):
     """Global exception handler - logs errors for debugging in Vercel"""
+    from werkzeug.exceptions import NotFound, HTTPException
+    
+    # Don't handle 404 here - it's handled by handle_404
+    if isinstance(e, NotFound):
+        return handle_404(e)
+    
     error_msg = str(e)
     error_type = type(e).__name__
     
@@ -72,7 +107,8 @@ def handle_exception(e):
     # Return safe error response
     try:
         # Check if this is an API request
-        is_api_request = (hasattr(request, 'path') and request.path.startswith('/api/')) or \
+        request_path = request.path if hasattr(request, 'path') else ''
+        is_api_request = request_path.startswith('/api/') or \
                         (hasattr(request, 'is_json') and request.is_json)
         
         if is_api_request:
