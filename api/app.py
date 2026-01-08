@@ -2977,6 +2977,10 @@ def api_update_item(item_id):
     if item_id and item_id.strip() and item_id.strip() != 'unknown':
         updated_item['id'] = item_id.strip()
     
+    # Initialize pantry_list to avoid UnboundLocalError
+    pantry_list = []
+    item_found = False
+    
     # Check if user is authenticated
     if user_id:
         print(f"✅ User authenticated: {user_id}")
