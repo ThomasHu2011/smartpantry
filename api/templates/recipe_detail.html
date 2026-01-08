@@ -115,12 +115,11 @@
                         <div class="col-md-6 mb-2">
                             <div class="form-check">
                                 <input class="form-check-input" type="checkbox" id="ingredient{{ loop.index }}">
-                                <label class="form-check-label" for="ingredient{{ loop.index }}" 
-                                       style="{% if is_expiring_soon %}background: linear-gradient(135deg, rgba(245, 158, 11, 0.15) 0%, rgba(217, 119, 6, 0.1) 100%); padding: 8px 12px; border-radius: 8px; border-left: 4px solid #F59E0B; font-weight: 600; color: #D97706;{% elif is_in_pantry %}background: linear-gradient(135deg, rgba(16, 185, 129, 0.15) 0%, rgba(5, 150, 105, 0.1) 100%); padding: 8px 12px; border-radius: 8px; border-left: 4px solid #10B981; font-weight: 600; color: #059669;{% endif %}">
+                                <label class="form-check-label{% if is_expiring_soon %} ingredient-expiring-soon{% elif is_in_pantry %} ingredient-in-pantry{% endif %}" for="ingredient{{ loop.index }}">
                                     {% if is_expiring_soon %}
-                                        <i class="bi bi-exclamation-triangle-fill me-1" style="color: #F59E0B;"></i>
+                                        <i class="bi bi-exclamation-triangle-fill me-1"></i>
                                     {% elif is_in_pantry %}
-                                        <i class="bi bi-check-circle-fill me-1" style="color: #10B981;"></i>
+                                        <i class="bi bi-check-circle-fill me-1"></i>
                                     {% endif %}
                                     {{ ingredient }}
                                 </label>
@@ -447,6 +446,33 @@ window.addEventListener('scroll', () => {
 </script>
 
 <style>
+/* Ingredient highlighting styles */
+.ingredient-expiring-soon {
+    background: linear-gradient(135deg, rgba(245, 158, 11, 0.15) 0%, rgba(217, 119, 6, 0.1) 100%) !important;
+    padding: 8px 12px;
+    border-radius: 8px;
+    border-left: 4px solid #F59E0B;
+    font-weight: 600;
+    color: #D97706;
+}
+
+.ingredient-expiring-soon .bi-exclamation-triangle-fill {
+    color: #F59E0B;
+}
+
+.ingredient-in-pantry {
+    background: linear-gradient(135deg, rgba(16, 185, 129, 0.15) 0%, rgba(5, 150, 105, 0.1) 100%) !important;
+    padding: 8px 12px;
+    border-radius: 8px;
+    border-left: 4px solid #10B981;
+    font-weight: 600;
+    color: #059669;
+}
+
+.ingredient-in-pantry .bi-check-circle-fill {
+    color: #10B981;
+}
+
 @media print {
     /* Hide interactive elements */
     .btn, .modal, .breadcrumb, .timer-display, .timer-btn, .form-check-input, nav, .navbar {
