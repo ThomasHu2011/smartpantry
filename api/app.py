@@ -2828,6 +2828,9 @@ def api_update_item(item_id):
     print(f"Item ID: {item_id}")
     print(f"X-User-ID: {request.headers.get('X-User-ID', 'NOT PROVIDED')}")
     print(f"X-Client-Type: {request.headers.get('X-Client-Type', 'NOT PROVIDED')}")
+    print(f"Session keys: {list(session.keys())}")
+    print(f"Session user_id: {session.get('user_id', 'NOT IN SESSION')}")
+    print(f"Session username: {session.get('username', 'NOT IN SESSION')}")
     
     data = request.get_json()
     if not data:
@@ -2838,6 +2841,9 @@ def api_update_item(item_id):
     user_id = request.headers.get('X-User-ID')
     if not user_id and 'user_id' in session:
         user_id = session['user_id']
+        print(f"✅ Using user_id from session: {user_id}")
+    elif not user_id:
+        print(f"⚠️ No user_id in headers or session - treating as anonymous user")
     
     # Validate required fields
     item_name = data.get('name', '').strip() if data.get('name') else ''
@@ -2971,24 +2977,27 @@ def api_update_item(item_id):
     if item_id and item_id.strip() and item_id.strip() != 'unknown':
         updated_item['id'] = item_id.strip()
     
-    # Check if user is authenticated
-    if user_id:
-        pantry_to_use = get_user_pantry(user_id)
-        # Convert to list of dicts if needed
-        pantry_list = []
-        item_found = False
-        
-        for item in pantry_to_use:
-            if isinstance(item, dict):
-                pantry_list.append(item)
-            else:
-                pantry_list.append({
-                    'id': str(uuid.uuid4()),
-                    'name': item,
-                    'quantity': '1',
-                    'expirationDate': None,
-                    'addedDate': datetime.now().isoformat()
-                })
+        # Check if user is authenticated
+        if user_id:
+            print(f"✅ User authenticated: {user_id}")
+            pantry_to_use = get_user_pantry(user_id)
+            print(f"📦 User pantry has {len(pantry_to_use) if isinstance(pantry_to_use, list) else 0} items")
+            # Convert to list of dicts if needed
+            pantry_list = []
+            item_found = False
+            
+            for item in pantry_to_use:
+                if isinstance(item, dict):
+                    pantry_list.append(item)
+                else:
+                    pantry_list.append({
+                        'id': str(uuid.uuid4()),
+                        'name': item,
+                        'quantity': '1',
+                        'expirationDate': None,
+                        'addedDate': datetime.now().isoformat()
+                    })
+            print(f"📦 Converted pantry list has {len(pantry_list)} items")
         
         # Find and update item by ID (exact match, case-sensitive for IDs)
         # If ID match fails, fallback to name match (case-insensitive) for backward compatibility
@@ -3049,10 +3058,12 @@ def api_update_item(item_id):
             return jsonify({'success': False, 'error': f'Item not found in pantry'}), 404
     else:
         # Use anonymous pantry
+        print(f"⚠️ No user_id found - using anonymous pantry (client_type: {client_type})")
         pantry_to_use = mobile_pantry if client_type == 'mobile' else web_pantry
         # Ensure pantry_to_use is a list
         if not isinstance(pantry_to_use, list):
             pantry_to_use = []
+        print(f"📦 Anonymous pantry has {len(pantry_to_use)} items")
         # Convert to list of dicts if needed
         pantry_list = []
         item_found = False

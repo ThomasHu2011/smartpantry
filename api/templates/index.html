@@ -3358,9 +3358,11 @@
             };
             
             // Get user ID and client type from headers (if available)
+            // For web requests, we rely on session cookies, but set X-Client-Type for clarity
             const headers = {
                 'Content-Type': 'application/json',
-                'X-Requested-With': 'XMLHttpRequest'
+                'X-Requested-With': 'XMLHttpRequest',
+                'X-Client-Type': 'web'  // Explicitly identify as web client
             };
             
             // Encode item ID for URL (use 'unknown' if empty to avoid invalid URL)
