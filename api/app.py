@@ -2977,27 +2977,27 @@ def api_update_item(item_id):
     if item_id and item_id.strip() and item_id.strip() != 'unknown':
         updated_item['id'] = item_id.strip()
     
-        # Check if user is authenticated
-        if user_id:
-            print(f"✅ User authenticated: {user_id}")
-            pantry_to_use = get_user_pantry(user_id)
-            print(f"📦 User pantry has {len(pantry_to_use) if isinstance(pantry_to_use, list) else 0} items")
-            # Convert to list of dicts if needed
-            pantry_list = []
-            item_found = False
-            
-            for item in pantry_to_use:
-                if isinstance(item, dict):
-                    pantry_list.append(item)
-                else:
-                    pantry_list.append({
-                        'id': str(uuid.uuid4()),
-                        'name': item,
-                        'quantity': '1',
-                        'expirationDate': None,
-                        'addedDate': datetime.now().isoformat()
-                    })
-            print(f"📦 Converted pantry list has {len(pantry_list)} items")
+    # Check if user is authenticated
+    if user_id:
+        print(f"✅ User authenticated: {user_id}")
+        pantry_to_use = get_user_pantry(user_id)
+        print(f"📦 User pantry has {len(pantry_to_use) if isinstance(pantry_to_use, list) else 0} items")
+        # Convert to list of dicts if needed
+        pantry_list = []
+        item_found = False
+        
+        for item in pantry_to_use:
+            if isinstance(item, dict):
+                pantry_list.append(item)
+            else:
+                pantry_list.append({
+                    'id': str(uuid.uuid4()),
+                    'name': item,
+                    'quantity': '1',
+                    'expirationDate': None,
+                    'addedDate': datetime.now().isoformat()
+                })
+        print(f"📦 Converted pantry list has {len(pantry_list)} items")
         
         # Find and update item by ID (exact match, case-sensitive for IDs)
         # If ID match fails, fallback to name match (case-insensitive) for backward compatibility
