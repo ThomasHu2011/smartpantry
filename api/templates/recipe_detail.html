@@ -189,8 +189,7 @@
                             <div class="text-end">
                                 <button class="btn btn-outline-primary btn-sm timer-btn" 
                                         data-timer="{{ step.timer }}" 
-                                        data-step="{{ step.step }}"
-                                        onclick="startTimer({{ step.step }}, '{{ step.timer }}')">
+                                        data-step="{{ step.step }}">
                                     <i class="bi bi-stopwatch me-1"></i>{{ step.timer }}
                                 </button>
                             </div>
@@ -209,7 +208,7 @@
                             </div>
                             <div class="text-center">
                                 <h4 class="timer-text" id="timerText{{ step.step }}">00:00</h4>
-                                <button class="btn btn-danger btn-sm" onclick="stopTimer({{ step.step }})">
+                                <button class="btn btn-danger btn-sm stop-timer-btn" data-step="{{ step.step }}">
                                     <i class="bi bi-stop me-1"></i>Stop Timer
                                 </button>
                             </div>
@@ -344,6 +343,26 @@
 <script>
 let timers = {};
 let currentStep = 0;
+
+// Set up event listeners when page loads
+document.addEventListener('DOMContentLoaded', function() {
+    // Add event listeners for timer buttons using data attributes
+    document.querySelectorAll('.timer-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+            const step = parseInt(this.getAttribute('data-step'));
+            const duration = this.getAttribute('data-timer');
+            startTimer(step, duration);
+        });
+    });
+    
+    // Add event listeners for stop timer buttons
+    document.querySelectorAll('.stop-timer-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+            const step = parseInt(this.getAttribute('data-step'));
+            stopTimer(step);
+        });
+    });
+});
 
 function startCooking() {
     // Scroll to first step
