@@ -1710,42 +1710,45 @@ def upload_photo():
         flash(f"Invalid file type. Allowed types: {', '.join(allowed_extensions)}", "danger")
         return redirect(url_for("index"))
     
-    # Validate file size (max 10MB)
-    photo.seek(0, os.SEEK_END)
-    file_size = photo.tell()
+    # Read file content once and keep it in memory
     photo.seek(0)
+    img_bytes = photo.read()
+    
+    # Validate file size (max 10MB)
+    file_size = len(img_bytes)
     if file_size > 10 * 1024 * 1024:  # 10MB
         flash("File too large. Maximum size is 10MB.", "danger")
         return redirect(url_for("index"))
     
-    # Save photo to uploads folder
+    if file_size == 0:
+        flash("File is empty or could not be read.", "danger")
+        return redirect(url_for("index"))
+    
+    # Save photo to uploads folder (optional, for debugging)
     # In serverless, use /tmp directory which is writable
     if IS_VERCEL:
         upload_folder = '/tmp/uploads'
     else:
         upload_folder = os.path.join(os.path.dirname(__file__), "uploads")
-    os.makedirs(upload_folder, exist_ok=True)
     
-    # Generate safe filename
-    safe_filename = photo.filename or 'upload.jpg'
-    # Remove any path components for security
-    safe_filename = os.path.basename(safe_filename)
-    # Add timestamp to avoid collisions
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    name, ext = os.path.splitext(safe_filename)
-    safe_filename = f"{name}_{timestamp}{ext}"
-    
-    photo_path = os.path.join(upload_folder, safe_filename)
+    # Only save if folder exists and is writable (skip on Vercel if /tmp is not available)
     try:
-        photo.save(photo_path)
+        os.makedirs(upload_folder, exist_ok=True)
+        safe_filename = photo.filename or 'upload.jpg'
+        safe_filename = os.path.basename(safe_filename)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        name, ext = os.path.splitext(safe_filename)
+        safe_filename = f"{name}_{timestamp}{ext}"
+        photo_path = os.path.join(upload_folder, safe_filename)
+        with open(photo_path, 'wb') as f:
+            f.write(img_bytes)
     except Exception as e:
-        flash(f"Error saving photo: {str(e)}", "danger")
-        return redirect(url_for("index"))
+        # Log but don't fail - saving is optional
+        if VERBOSE_LOGGING:
+            print(f"Warning: Could not save photo to disk: {str(e)}")
 
     # Send image to OpenAI vision API
     import base64
-    photo.seek(0)
-    img_bytes = photo.read()
     img_b64 = base64.b64encode(img_bytes).decode('utf-8')
     
     prompt = """Analyze this photo and identify all food items with their quantities. 
@@ -2829,6 +2832,9 @@ def api_update_item(item_id):
             pantry_list = []
             item_found = False
             item_id_clean = item_id.strip() if item_id else ''
+            # Treat 'unknown' as empty ID (frontend sends 'unknown' when item has no ID)
+            if item_id_clean == 'unknown':
+                item_id_clean = ''
             item_name_lower = item_name.lower().strip()
             
             for item in pantry_to_use:
@@ -2837,7 +2843,8 @@ def api_update_item(item_id):
                     item_name_from_dict = item.get('name', '').strip().lower() if item.get('name') else ''
                     
                     # Skip the item to delete (match by ID or name)
-                    if (item_id_clean and item_id_from_dict == item_id_clean) or item_name_from_dict == item_name_lower:
+                    # If ID is empty or 'unknown', match by name only
+                    if (item_id_clean and item_id_from_dict and item_id_from_dict == item_id_clean) or item_name_from_dict == item_name_lower:
                         item_found = True
                         continue  # Don't add to pantry_list (effectively deletes it)
                     pantry_list.append(item)
@@ -2870,6 +2877,9 @@ def api_update_item(item_id):
             pantry_list = []
             item_found = False
             item_id_clean = item_id.strip() if item_id else ''
+            # Treat 'unknown' as empty ID (frontend sends 'unknown' when item has no ID)
+            if item_id_clean == 'unknown':
+                item_id_clean = ''
             item_name_lower = item_name.lower().strip()
             
             for item in pantry_to_use:
@@ -2877,7 +2887,8 @@ def api_update_item(item_id):
                     item_id_from_dict = item.get('id', '').strip() if item.get('id') else ''
                     item_name_from_dict = item.get('name', '').strip().lower() if item.get('name') else ''
                     
-                    if (item_id_clean and item_id_from_dict == item_id_clean) or item_name_from_dict == item_name_lower:
+                    # Match by ID or name (if ID is empty or 'unknown', match by name only)
+                    if (item_id_clean and item_id_from_dict and item_id_from_dict == item_id_clean) or item_name_from_dict == item_name_lower:
                         item_found = True
                         continue
                     pantry_list.append(item)
@@ -2911,13 +2922,18 @@ def api_update_item(item_id):
     if not isinstance(quantity, str):
         quantity = str(quantity)
     
+    # Don't set ID in updated_item yet - we'll set it when we find the matching item
+    # This prevents setting 'unknown' as the ID
     updated_item = {
-        'id': item_id,
         'name': item_name,
         'quantity': quantity.strip() if isinstance(quantity, str) else str(quantity),
         'expirationDate': expiration_date,
         'addedDate': data.get('addedDate', datetime.now().isoformat())
     }
+    
+    # Only set ID if we have a valid one from the request
+    if item_id and item_id.strip() and item_id.strip() != 'unknown':
+        updated_item['id'] = item_id.strip()
     
     # Check if user is authenticated
     if user_id:
@@ -2941,6 +2957,9 @@ def api_update_item(item_id):
         # Find and update item by ID (exact match, case-sensitive for IDs)
         # If ID match fails, fallback to name match (case-insensitive) for backward compatibility
         item_id_clean = item_id.strip() if item_id else ''
+        # Treat 'unknown' as empty ID (frontend sends 'unknown' when item has no ID)
+        if item_id_clean == 'unknown':
+            item_id_clean = ''
         item_name_lower = item_name.lower().strip()
         
         for i, pantry_item in enumerate(pantry_list):
@@ -2948,7 +2967,7 @@ def api_update_item(item_id):
                 item_id_from_dict = pantry_item.get('id', '').strip() if pantry_item.get('id') else ''
                 item_name_from_dict = pantry_item.get('name', '').strip().lower() if pantry_item.get('name') else ''
                 
-                # Try exact ID match first (case-sensitive)
+                # Try exact ID match first (only if we have a valid ID to match)
                 if item_id_clean and item_id_from_dict and item_id_from_dict == item_id_clean:
                     # Ensure the updated item retains its original ID
                     if not updated_item.get('id'):
@@ -2958,8 +2977,9 @@ def api_update_item(item_id):
                     break
                 
                 # Fallback to name match (case-insensitive) if ID doesn't match or is empty
+                # This handles cases where item has no ID or ID is 'unknown'
                 if item_name_from_dict == item_name_lower:
-                    # Generate ID for items without one
+                    # Preserve existing ID if item has one, otherwise generate new ID
                     if not updated_item.get('id'):
                         updated_item['id'] = item_id_from_dict if item_id_from_dict else str(uuid.uuid4())
                     pantry_list[i] = updated_item
@@ -2978,7 +2998,18 @@ def api_update_item(item_id):
             }), 200
         else:
             print(f"❌ Item not found in pantry. Item ID: {item_id}, Item Name: {item_name}")
-            print(f"   Available items: {[item.get('name', 'NO_NAME') + ' (ID: ' + item.get('id', 'NO_ID') + ')' for item in pantry_list[:5]]}")
+            print(f"   Cleaned Item ID: '{item_id_clean}' (was '{item_id}')")
+            print(f"   User ID: {user_id}")
+            print(f"   Pantry has {len(pantry_list)} items")
+            if pantry_list:
+                print(f"   Available items: {[item.get('name', 'NO_NAME') + ' (ID: ' + (item.get('id', 'NO_ID') or 'NO_ID') + ')' for item in pantry_list[:5]]}")
+                # Also check if name matches exist (case-insensitive)
+                matching_names = [item.get('name', '') for item in pantry_list if item.get('name', '').lower().strip() == item_name_lower]
+                if matching_names:
+                    print(f"   ⚠️ Found items with matching name (case-insensitive): {matching_names}")
+            else:
+                print(f"   Pantry is empty")
+            print(f"{'='*60}\n")
             return jsonify({'success': False, 'error': f'Item not found in pantry'}), 404
     else:
         # Use anonymous pantry
@@ -3005,6 +3036,9 @@ def api_update_item(item_id):
         # Find and update item by ID (exact match, case-sensitive for IDs)
         # If ID match fails, fallback to name match (case-insensitive) for backward compatibility
         item_id_clean = item_id.strip() if item_id else ''
+        # Treat 'unknown' as empty ID (frontend sends 'unknown' when item has no ID)
+        if item_id_clean == 'unknown':
+            item_id_clean = ''
         item_name_lower = item_name.lower().strip()
         
         for i, pantry_item in enumerate(pantry_list):
@@ -3012,7 +3046,7 @@ def api_update_item(item_id):
                 item_id_from_dict = pantry_item.get('id', '').strip() if pantry_item.get('id') else ''
                 item_name_from_dict = pantry_item.get('name', '').strip().lower() if pantry_item.get('name') else ''
                 
-                # Try exact ID match first (case-sensitive)
+                # Try exact ID match first (only if we have a valid ID to match)
                 if item_id_clean and item_id_from_dict and item_id_from_dict == item_id_clean:
                     # Ensure the updated item retains its original ID
                     if not updated_item.get('id'):
@@ -3022,8 +3056,9 @@ def api_update_item(item_id):
                     break
                 
                 # Fallback to name match (case-insensitive) if ID doesn't match or is empty
+                # This handles cases where item has no ID or ID is 'unknown'
                 if item_name_from_dict == item_name_lower:
-                    # Generate ID for items without one
+                    # Preserve existing ID if item has one, otherwise generate new ID
                     if not updated_item.get('id'):
                         updated_item['id'] = item_id_from_dict if item_id_from_dict else str(uuid.uuid4())
                     pantry_list[i] = updated_item
@@ -3043,6 +3078,18 @@ def api_update_item(item_id):
             }), 200
         else:
             print(f"❌ Item not found in anonymous pantry. Item ID: {item_id}, Item Name: {item_name}")
+            print(f"   Cleaned Item ID: '{item_id_clean}' (was '{item_id}')")
+            print(f"   Client Type: {client_type}")
+            print(f"   Pantry has {len(pantry_list)} items")
+            if pantry_list:
+                print(f"   Available items: {[item.get('name', 'NO_NAME') + ' (ID: ' + (item.get('id', 'NO_ID') or 'NO_ID') + ')' for item in pantry_list[:5]]}")
+                # Also check if name matches exist (case-insensitive)
+                matching_names = [item.get('name', '') for item in pantry_list if item.get('name', '').lower().strip() == item_name_lower]
+                if matching_names:
+                    print(f"   ⚠️ Found items with matching name (case-insensitive): {matching_names}")
+            else:
+                print(f"   Pantry is empty")
+            print(f"{'='*60}\n")
             return jsonify({'success': False, 'error': f'Item not found in pantry'}), 404
 
 @app.route('/api/recipes/suggest', methods=['POST'])
@@ -3335,18 +3382,42 @@ def api_fallback_recipes():
 def api_upload_photo():
     """Upload photo via API (for mobile app)"""
     
-    if 'photo' not in request.files:
-        return jsonify({'success': False, 'error': 'No photo uploaded'}), 400
-    
-    photo = request.files['photo']
-    if photo.filename == '':
-        return jsonify({'success': False, 'error': 'No photo selected'}), 400
-    
     try:
-        # Send image to OpenAI vision API
-        import base64
+        # Check if request has files
+        if 'photo' not in request.files:
+            # Also check if data was sent as raw body (for debugging)
+            if request.content_type and 'multipart' in request.content_type:
+                return jsonify({'success': False, 'error': 'No photo field found in multipart form data'}), 400
+            return jsonify({'success': False, 'error': 'No photo uploaded. Content-Type: ' + str(request.content_type)}), 400
+        
+        photo = request.files['photo']
+        if photo.filename == '':
+            return jsonify({'success': False, 'error': 'No photo selected'}), 400
+        
+        # Read file content once
         photo.seek(0)
         img_bytes = photo.read()
+        
+        # Validate file size
+        if len(img_bytes) == 0:
+            return jsonify({'success': False, 'error': 'File is empty or could not be read'}), 400
+        
+        # Validate file size (max 10MB)
+        if len(img_bytes) > 10 * 1024 * 1024:
+            return jsonify({'success': False, 'error': 'File too large. Maximum size is 10MB'}), 400
+        
+        # Basic validation: check if it looks like an image (JPEG/PNG magic bytes)
+        if len(img_bytes) < 4:
+            return jsonify({'success': False, 'error': 'Invalid image file'}), 400
+        
+        # Check for JPEG magic bytes (FF D8 FF) or PNG magic bytes (89 50 4E 47)
+        is_jpeg = img_bytes[:3] == b'\xff\xd8\xff'
+        is_png = img_bytes[:4] == b'\x89PNG'
+        if not (is_jpeg or is_png):
+            return jsonify({'success': False, 'error': 'Invalid image format. Only JPEG and PNG are supported'}), 400
+        
+        # Send image to OpenAI vision API
+        import base64
         img_b64 = base64.b64encode(img_bytes).decode('utf-8')
         
         prompt = """Analyze this photo and identify all food items with their quantities. 
@@ -3420,16 +3491,24 @@ If you cannot determine a quantity, use "1" as the default. Return ONLY valid JS
         client_type = request.headers.get('X-Client-Type', 'web')
         user_id = request.headers.get('X-User-ID')
         
+        total_items = 0
         if user_id:
             # Add to user's pantry
             user_pantry = get_user_pantry(user_id)
-            user_pantry.extend(detected_items)
+            # Convert detected_items to proper format (list of dicts)
+            for item in pantry_items:
+                user_pantry.append(item)
             update_user_pantry(user_id, user_pantry)
+            total_items = len(user_pantry)
         else:
             # Add to anonymous pantry
             global mobile_pantry, web_pantry  # Declare globals at function start
             if client_type == 'mobile':
-                mobile_pantry.extend(detected_items)
+                if not isinstance(mobile_pantry, list):
+                    mobile_pantry = []
+                for item in pantry_items:
+                    mobile_pantry.append(item)
+                total_items = len(mobile_pantry)
             else:
                 # Add to anonymous web pantry (stored in session)
                 # CRITICAL: Mark session as permanent for anonymous users
@@ -3437,18 +3516,28 @@ If you cannot determine a quantity, use "1" as the default. Return ONLY valid JS
                 
                 if 'web_pantry' not in session:
                     session['web_pantry'] = []
-                session['web_pantry'].extend(detected_items)
+                for item in pantry_items:
+                    session['web_pantry'].append(item)
                 # Mark session as modified to ensure it's saved
                 session.modified = True
+                total_items = len(session.get('web_pantry', []))
+        
+        # Return item names as strings for backward compatibility with iOS app
+        item_names = [item['name'] for item in pantry_items]
         
         return jsonify({
             'success': True,
-            'message': f'Successfully analyzed photo! Added {len(detected_items)} items',
-            'items': detected_items,
-            'total_items': len(user_pantry) if user_id else len(mobile_pantry if client_type == 'mobile' else web_pantry)
+            'message': f'Successfully analyzed photo! Added {len(pantry_items)} items',
+            'items': item_names,  # Return as list of strings for iOS compatibility
+            'total_items': total_items
         })
         
     except Exception as e:
+        import traceback
+        error_trace = traceback.format_exc()
+        if VERBOSE_LOGGING:
+            print(f"❌ Error in api_upload_photo: {str(e)}")
+            print(f"   Traceback: {error_trace}")
         return jsonify({
             'success': False,
             'error': f'Error analyzing photo: {str(e)}'

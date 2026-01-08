@@ -1303,7 +1303,7 @@
                                                                         {% set date_part = date_str[:10] %}
                                                                         {% if date_part|length == 10 and date_part[4] == '-' and date_part[7] == '-' %}
                                                                             {{ date_part }}
-                                                                        {% else %}
+                                                            {% else %}
                                                                             Add Date
                                                                         {% endif %}
                                                                     {% else %}
@@ -1311,8 +1311,8 @@
                                                                     {% endif %}
                                                                 {% else %}
                                                                     Add Date
-                                                                {% endif %}
-                                                            </span>
+                                                            {% endif %}
+                                                        </span>
                                                         </span>
                                                         {% else %}
                                                         <span class="badge editable-expiration" 
@@ -1855,7 +1855,8 @@
                 const response = await fetch('{{ url_for("upload_photo") }}', {
                     method: 'POST',
                     body: formData,
-                    credentials: 'same-origin'
+                    credentials: 'same-origin',
+                    // Don't set Content-Type header - browser will set it automatically with boundary for FormData
                 });
 
                 if (response.ok) {
@@ -1875,15 +1876,15 @@
                     
                     // Close modal after short delay to show success message
                     setTimeout(() => {
-                        closePhotoModal();
-                        
-                        // Reset upload state
-                        resetPhotoUploadState();
-                        
-                        // Update pantry items after a short delay
-                        setTimeout(async () => {
-                            await reloadPantryItems();
-                        }, 300);
+                    closePhotoModal();
+                    
+                    // Reset upload state
+                    resetPhotoUploadState();
+                    
+                    // Update pantry items after a short delay
+                    setTimeout(async () => {
+                        await reloadPantryItems();
+                    }, 300);
                     }, 1500);
                 } else {
                     // Handle error response
@@ -1913,6 +1914,9 @@
                     } else {
                         alert(errorMessage);
                     }
+                    
+                    // Reset button state on error
+                    resetPhotoUploadButton();
                 }
             } catch (err) {
                 console.error('Photo upload error:', err);
