@@ -2986,8 +2986,8 @@ def api_update_item(item_id):
         print(f"✅ User authenticated: {user_id}")
         pantry_to_use = get_user_pantry(user_id)
         print(f"📦 User pantry has {len(pantry_to_use) if isinstance(pantry_to_use, list) else 0} items")
-        # Convert to list of dicts if needed
-        pantry_list = []
+        # Convert to list of dicts if needed (reuse initialized pantry_list)
+        pantry_list.clear()  # Clear instead of reassigning to avoid UnboundLocalError
         item_found = False
         
         for item in pantry_to_use:
