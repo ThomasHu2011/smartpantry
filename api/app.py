@@ -2866,12 +2866,17 @@ def api_update_item(item_id):
     except (ValueError, TypeError):
         quantity_num = 0
     
+    # Initialize pantry_list early to avoid UnboundLocalError
+    # This must be done before any conditional blocks that might use it
+    pantry_list = []
+    item_found = False
+    
     # If quantity is 0 or less, delete the item instead of updating
     if quantity_num <= 0:
         # Delete the item
         if user_id:
             pantry_to_use = get_user_pantry(user_id)
-            pantry_list = []
+            pantry_list.clear()  # Use clear() instead of reassignment
             item_found = False
             item_id_clean = item_id.strip() if item_id else ''
             # Treat 'unknown' as empty ID (frontend sends 'unknown' when item has no ID)
