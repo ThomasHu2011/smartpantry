@@ -2921,7 +2921,7 @@ def api_update_item(item_id):
             if not isinstance(pantry_to_use, list):
                 pantry_to_use = []
             
-            pantry_list = []
+            pantry_list.clear()  # Use clear() instead of reassignment
             item_found = False
             item_id_clean = item_id.strip() if item_id else ''
             # Treat 'unknown' as empty ID (frontend sends 'unknown' when item has no ID)
