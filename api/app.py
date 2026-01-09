@@ -3068,8 +3068,8 @@ def api_update_item(item_id):
         if not isinstance(pantry_to_use, list):
             pantry_to_use = []
         print(f"📦 Anonymous pantry has {len(pantry_to_use)} items")
-        # Convert to list of dicts if needed
-        pantry_list = []
+        # Convert to list of dicts if needed (reuse initialized pantry_list)
+        pantry_list.clear()  # Clear instead of reassigning to avoid UnboundLocalError
         item_found = False
         
         for item in pantry_to_use:
