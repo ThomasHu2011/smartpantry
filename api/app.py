@@ -80,20 +80,23 @@ def handle_404(e):
             'path': request_path
         }), 404
     else:
-        # For HTML routes, try to render a helpful error page instead of redirect
-        # This helps debug routing issues
+        # For HTML routes, redirect to home page with a flash message
+        # This ensures users can navigate back to a working page
         try:
-            return render_template("index.html", items=[], username=None), 404
-        except:
-            # Fallback if template rendering fails
+            flash(f"Page not found: {request_path}. Redirecting to home.", "warning")
+            return redirect(url_for('index'))
+        except Exception as e:
+            # Fallback if redirect fails
+            print(f"Error in 404 handler: {e}")
             return f"""
             <html>
-                <head><title>404 - Page Not Found</title></head>
-                <body>
+                <head><title>404 - Page Not Found</title>
+                <meta http-equiv="refresh" content="3;url=/">
+                </head>
+                <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
                     <h1>404 - Page Not Found</h1>
-                    <p>The requested URL <strong>{request_path}</strong> was not found on this server.</p>
-                    <p><a href="/">Go to Home</a></p>
-                    <p><a href="/suggest">Go to Recipes</a></p>
+                    <p>The requested URL <strong>{request_path}</strong> was not found.</p>
+                    <p>Redirecting to <a href="/">home page</a>...</p>
                 </body>
             </html>
             """, 404
