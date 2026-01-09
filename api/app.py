@@ -80,8 +80,23 @@ def handle_404(e):
             'path': request_path
         }), 404
     else:
-        # For HTML routes, redirect to home page
-        return redirect(url_for('index'))
+        # For HTML routes, try to render a helpful error page instead of redirect
+        # This helps debug routing issues
+        try:
+            return render_template("index.html", items=[], username=None), 404
+        except:
+            # Fallback if template rendering fails
+            return f"""
+            <html>
+                <head><title>404 - Page Not Found</title></head>
+                <body>
+                    <h1>404 - Page Not Found</h1>
+                    <p>The requested URL <strong>{request_path}</strong> was not found on this server.</p>
+                    <p><a href="/">Go to Home</a></p>
+                    <p><a href="/suggest">Go to Recipes</a></p>
+                </body>
+            </html>
+            """, 404
 
 # Add global error handler for better debugging in serverless
 @app.errorhandler(Exception)
