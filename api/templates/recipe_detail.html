@@ -96,10 +96,12 @@
                         {% set ing_lower = ingredient|lower %}
                         {% set is_in_pantry = False %}
                         {% set is_expiring_soon = False %}
+                        {% set item_found = False %}
                         
                         {% if pantry_items_full %}
                             {% for item in pantry_items_full %}
-                                {% if item.get('name', '')|lower == ing_lower %}
+                                {% if not item_found and item.get('name', '')|lower == ing_lower %}
+                                    {% set item_found = True %}
                                     {% set is_in_pantry = True %}
                                     {% set exp_date = item.get('expirationDate', '') %}
                                     {% if exp_date and exp_date != 'None' and exp_date != '' and exp_date != 'null' %}
@@ -107,7 +109,6 @@
                                             {% set is_expiring_soon = True %}
                                         {% endif %}
                                     {% endif %}
-                                    {% break %}
                                 {% endif %}
                             {% endfor %}
                         {% endif %}

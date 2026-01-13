@@ -149,6 +149,36 @@
             font-size: 0.875rem !important;
         }
         
+        /* Mobile keyboard handling - ensure inputs are visible when keyboard appears */
+        @supports (-webkit-touch-callout: none) {
+            /* iOS specific */
+            .modal.show {
+                position: fixed;
+                height: 100vh;
+                overflow-y: auto;
+                -webkit-overflow-scrolling: touch;
+            }
+            
+            .modal-dialog {
+                margin: 1rem auto !important;
+                min-height: auto !important;
+            }
+            
+            /* Scroll input into view when focused */
+            input:focus, textarea:focus, select:focus {
+                scroll-margin-top: 100px;
+            }
+        }
+        
+        /* Android and general mobile */
+        @media (max-height: 600px) {
+            /* When keyboard is likely open */
+            .modal-dialog-centered {
+                align-items: flex-start !important;
+                padding-top: 1rem;
+            }
+        }
+        
         #photoModal .photo-upload-zone {
             padding: 1.5rem 1rem !important;
             min-height: 200px !important;
@@ -333,6 +363,30 @@
         white-space: nowrap;
         max-width: 100%;
         display: block;
+        word-break: break-word; /* Fallback for very long words */
+    }
+    
+    /* Ensure card layout doesn't break with long names */
+    .pantry-item-card {
+        min-height: 120px;
+        display: flex;
+        flex-direction: column;
+    }
+    
+    .pantry-item-card .card-body {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+    }
+    
+    /* Prevent delete button from overlapping text */
+    .pantry-item-card .position-absolute {
+        z-index: 10;
+    }
+    
+    .pantry-item-card .fw-bold {
+        padding-right: 40px; /* Space for delete button */
     }
     
     /* Prevent card hover overflow */
@@ -1431,8 +1485,8 @@
                     </h5>
                 </div>
                 <div class="card-body">
-                    <div class="stat-card">
-                        <div class="stat-number mb-2">{{ items|length }}</div>
+                    <div class="stat-card" id="pantryStatsCard">
+                        <div class="stat-number mb-2" id="pantryStatsCount">{{ items|length if items else 0 }}</div>
                         <div class="text-muted fw-semibold">Total Items</div>
                     </div>
                 </div>
@@ -2816,10 +2870,19 @@
     }
     
     // Handle add item form submission
+    // Track if form is currently submitting to prevent race conditions
+    let isSubmitting = false;
+    
     function handleAddItem(event) {
         // Always prevent default form submission
         if (event) {
             event.preventDefault();
+        }
+        
+        // Prevent race conditions - check if already submitting
+        if (isSubmitting) {
+            console.log('Form submission already in progress, ignoring duplicate request');
+            return false;
         }
         
         const form = document.getElementById('addItemForm');
@@ -2835,18 +2898,29 @@
         const btnText = document.getElementById('addItemBtnText');
         const feedback = document.getElementById('addItemFeedback');
         const itemInput = document.getElementById('itemInput');
+        const quantityInput = document.getElementById('quantityInput');
+        
+        // Validate quantity input
+        if (quantityInput) {
+            const quantityValue = quantityInput.value.trim() || '1';
+            const quantityNum = parseInt(quantityValue, 10);
+            if (isNaN(quantityNum) || quantityNum < 0) {
+                if (feedback) {
+                    showFeedback('Quantity must be a positive number', 'danger');
+                }
+                if (quantityInput) {
+                    quantityInput.focus();
+                    quantityInput.select();
+                }
+                return false;
+            }
+            formData.set('quantity', Math.max(0, quantityNum).toString());
+        }
         
         // Ensure expiration_date is included in FormData (even if empty)
         if (expirationDateInput) {
             const expirationDateValue = expirationDateInput.value || '';
             formData.set('expiration_date', expirationDateValue);
-        }
-        
-        // Ensure quantity is included
-        const quantityInput = document.getElementById('quantityInput');
-        if (quantityInput) {
-            const quantityValue = quantityInput.value || '1';
-            formData.set('quantity', quantityValue);
         }
         
         // Validate input
@@ -2860,7 +2934,8 @@
             return false;
         }
         
-        // Disable button and show loading state
+        // Set submitting flag and disable button
+        isSubmitting = true;
         if (btn) {
             btn.disabled = true;
         }
@@ -2950,6 +3025,7 @@
         });
         
         function resetButton() {
+            isSubmitting = false; // Reset submitting flag
             if (btn) {
                 btn.disabled = false;
             }
@@ -3100,6 +3176,13 @@
                     }
                 }
                 
+                // Update pantry stats card with actual item count (use current container after update)
+                const itemCount = currentContainer.querySelectorAll('.pantry-item-wrapper').length;
+                const statsCountElement = document.getElementById('pantryStatsCount');
+                if (statsCountElement) {
+                    statsCountElement.textContent = itemCount;
+                }
+                
                 // Show/hide sort controls section based on item count
                 const sortControlsSection = currentCardBody ? currentCardBody.querySelector('.d-flex.justify-content-between.align-items-center.mb-3.pb-3') : null;
                 if (sortControlsSection) {
@@ -3157,6 +3240,12 @@
                     const emptyState = currentCardBody?.querySelector('.empty-state');
                     if (emptyState) {
                         emptyState.style.display = '';
+                    }
+                    
+                    // Update pantry stats card to show 0 items
+                    const statsCountElement = document.getElementById('pantryStatsCount');
+                    if (statsCountElement) {
+                        statsCountElement.textContent = '0';
                     }
                     
                     // Hide sort controls section
@@ -3485,7 +3574,21 @@
                     // Remove event listeners to prevent double calls
                     input.removeEventListener('blur', saveQuantity);
                     
-                    const newQuantity = input.value.trim() || '1';
+                    let newQuantity = input.value.trim() || '1';
+                    // Validate quantity: must be a positive integer
+                    const quantityNum = parseInt(newQuantity, 10);
+                    if (isNaN(quantityNum) || quantityNum < 0) {
+                        // Invalid input - restore original value
+                        if (quantityValue) {
+                            quantityValue.textContent = oldText;
+                        }
+                        newBadge.classList.remove('editing');
+                        showFeedback('Quantity must be a positive number', 'danger');
+                        return;
+                    }
+                    // Ensure quantity is at least 0 (0 will delete the item)
+                    newQuantity = Math.max(0, quantityNum).toString();
+                    
                     if (newQuantity !== currentQuantity) {
                         // Show loading state
                         quantityValue.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Saving...';
