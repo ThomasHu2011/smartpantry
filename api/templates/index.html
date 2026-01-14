@@ -1521,7 +1521,7 @@
                     <div class="card-body p-3">
                         <div class="row g-3">
                             <div class="col-6">
-                                <button type="button" class="btn btn-primary w-100" onclick="scrollToAddItemForm()" style="background: linear-gradient(135deg, #8B5CF6 0%, #3B82F6 100%); border: none; border-radius: 12px; padding: 12px; font-weight: 600;">
+                                <button type="button" class="btn btn-primary w-100" data-bs-toggle="modal" data-bs-target="#addItemModal" style="background: linear-gradient(135deg, #8B5CF6 0%, #3B82F6 100%); border: none; border-radius: 12px; padding: 12px; font-weight: 600;">
                                     <i class="bi bi-plus-circle-fill me-2"></i>Add Item
                                 </button>
                             </div>
@@ -2000,6 +2000,56 @@
                         </div>
                     </div>
                 </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Add Item Modal -->
+<div class="modal fade" id="addItemModal" tabindex="-1" aria-labelledby="addItemModalLabel" aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="true" role="dialog" aria-modal="true" style="pointer-events: auto;">
+    <div class="modal-dialog modal-dialog-centered" style="pointer-events: auto; z-index: 9999; max-height: 90vh; margin: 1rem auto; max-width: 600px; width: 90%;">
+        <div class="modal-content" style="border-radius: 24px; border: none; pointer-events: auto; z-index: 10000; position: relative; max-height: 90vh; overflow-y: auto;">
+            <div class="modal-header border-0 pb-0" style="pointer-events: auto;">
+                <h5 class="modal-title fw-bold" id="addItemModalLabel">
+                    <i class="bi bi-plus-circle-fill me-2 text-primary"></i>Add Item to Pantry
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close" style="pointer-events: auto; cursor: pointer; z-index: 10;"></button>
+            </div>
+            <div class="modal-body p-4">
+                <form action="/add" method="post" id="addItemModalForm" onsubmit="return handleAddItem(event);">
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold mb-2" style="color: #1e293b;">Item Name</label>
+                        <input type="text" name="item" id="addItemModalInput" class="form-control form-control-lg" 
+                               placeholder="e.g., Milk, Bread, Eggs" required autocomplete="off"
+                               style="border-radius: 12px; border: 2px solid #e2e8f0; padding: 14px 16px; font-size: 1rem;">
+                    </div>
+                    <div class="row g-3 mb-3">
+                        <div class="col-6">
+                            <label class="form-label fw-semibold mb-2" style="color: #1e293b;">Quantity</label>
+                            <input type="text" name="quantity" id="addItemModalQuantity" class="form-control" 
+                                   placeholder="1" value="1" autocomplete="off"
+                                   style="border-radius: 10px; border: 2px solid #e2e8f0; padding: 12px;">
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label fw-semibold mb-2" style="color: #1e293b;">
+                                Expires <span class="text-muted" style="font-weight: normal; font-size: 0.9rem;">(optional)</span>
+                            </label>
+                            <input type="date" name="expiration_date" id="addItemModalExpiration" class="form-control"
+                                   style="border-radius: 10px; border: 2px solid #e2e8f0; padding: 12px;"
+                                   value="">
+                        </div>
+                    </div>
+                    <div id="addItemModalFeedback" class="mt-3" style="display: none;"></div>
+                    <div class="d-flex gap-2 mt-4">
+                        <button type="button" class="btn btn-outline-secondary flex-fill" data-bs-dismiss="modal">
+                            <i class="bi bi-x-circle me-2"></i>Cancel
+                        </button>
+                        <button type="submit" class="btn btn-primary flex-fill" id="addItemModalBtn"
+                                style="background: linear-gradient(135deg, #8B5CF6 0%, #3B82F6 100%); border: none; border-radius: 12px; padding: 12px; font-weight: 600; box-shadow: 0 4px 12px rgba(139, 92, 246, 0.3);">
+                            <i class="bi bi-plus-circle-fill me-2"></i><span id="addItemModalBtnText">Add to Pantry</span>
+                        </button>
+                    </div>
+                </form>
             </div>
         </div>
     </div>
@@ -3511,7 +3561,28 @@
             return false;
         }
         
-        const form = document.getElementById('addItemForm');
+        // Try modal form first, then fallback to regular form
+        let form = document.getElementById('addItemModalForm');
+        let itemInput = document.getElementById('addItemModalInput');
+        let quantityInput = document.getElementById('addItemModalQuantity');
+        let expirationDateInput = document.getElementById('addItemModalExpiration');
+        let btn = document.getElementById('addItemModalBtn');
+        let btnText = document.getElementById('addItemModalBtnText');
+        let feedback = document.getElementById('addItemModalFeedback');
+        let isModal = true;
+        
+        // Fallback to regular form if modal form doesn't exist
+        if (!form) {
+            form = document.getElementById('addItemForm');
+            itemInput = document.getElementById('itemInput');
+            quantityInput = document.getElementById('quantityInput');
+            expirationDateInput = document.getElementById('expirationInput');
+            btn = document.getElementById('addItemBtn');
+            btnText = document.getElementById('addItemBtnText');
+            feedback = document.getElementById('addItemFeedback');
+            isModal = false;
+        }
+        
         if (!form) {
             console.error('Form not found');
             return false;
@@ -3519,12 +3590,6 @@
         
         const formData = new FormData(form);
         const itemName = formData.get('item');
-        const expirationDateInput = document.getElementById('expirationInput');
-        const btn = document.getElementById('addItemBtn');
-        const btnText = document.getElementById('addItemBtnText');
-        const feedback = document.getElementById('addItemFeedback');
-        const itemInput = document.getElementById('itemInput');
-        const quantityInput = document.getElementById('quantityInput');
         
         // Validate quantity input
         if (quantityInput) {
@@ -3597,6 +3662,18 @@
                         }
                         // Reset button state immediately
                         resetButton();
+                        // Close modal if it's the modal form
+                        if (isModal) {
+                            const addItemModal = document.getElementById('addItemModal');
+                            if (addItemModal && typeof bootstrap !== 'undefined' && bootstrap.Modal) {
+                                const modalInstance = bootstrap.Modal.getInstance(addItemModal);
+                                if (modalInstance) {
+                                    setTimeout(() => {
+                                        modalInstance.hide();
+                                    }, 1500); // Close after showing success message
+                                }
+                            }
+                        }
                         // Update pantry items without reloading page
                         // Add small delay to ensure server has finished saving
                         setTimeout(async () => {
@@ -3625,6 +3702,18 @@
                     }
                     // Reset button state
                     resetButton();
+                    // Close modal if it's the modal form
+                    if (isModal) {
+                        const addItemModal = document.getElementById('addItemModal');
+                        if (addItemModal && typeof bootstrap !== 'undefined' && bootstrap.Modal) {
+                            const modalInstance = bootstrap.Modal.getInstance(addItemModal);
+                            if (modalInstance) {
+                                setTimeout(() => {
+                                    modalInstance.hide();
+                                }, 1500); // Close after showing success message
+                            }
+                        }
+                    }
                     // Update pantry items without reloading page
                     // Add small delay to ensure server has finished saving
                     setTimeout(async () => {
@@ -4703,7 +4792,7 @@
         mobileStickyBar.innerHTML = `
             <div class="row g-2 m-0">
                 <div class="col-6">
-                    <button type="button" class="btn btn-primary w-100" onclick="scrollToAddItemForm()" style="background: linear-gradient(135deg, #8B5CF6 0%, #3B82F6 100%); border: none; border-radius: 12px; padding: 12px; font-weight: 600; font-size: 0.9rem;">
+                    <button type="button" class="btn btn-primary w-100" data-bs-toggle="modal" data-bs-target="#addItemModal" style="background: linear-gradient(135deg, #8B5CF6 0%, #3B82F6 100%); border: none; border-radius: 12px; padding: 12px; font-weight: 600; font-size: 0.9rem;">
                         <i class="bi bi-plus-circle-fill me-2"></i>Add Item
                     </button>
                 </div>
