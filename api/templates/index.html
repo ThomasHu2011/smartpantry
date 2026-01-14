@@ -356,16 +356,17 @@
         white-space: nowrap;
     }
     
-    /* Fix text overflow in pantry item names - allow wrapping for full display */
+    /* Fix text overflow in pantry item names - wrap only at word boundaries */
     .pantry-item-card .fw-bold {
         overflow: visible;
         text-overflow: clip;
         white-space: normal;
         max-width: 100%;
         display: block;
-        word-wrap: break-word;
-        overflow-wrap: break-word;
-        hyphens: auto;
+        word-wrap: normal;
+        overflow-wrap: normal;
+        word-break: normal;
+        hyphens: none;
         line-height: 1.4;
     }
     
@@ -390,8 +391,9 @@
     
     .pantry-item-card .fw-bold {
         padding-right: 40px; /* Space for delete button */
-        word-wrap: break-word;
-        overflow-wrap: break-word;
+        word-wrap: normal;
+        overflow-wrap: normal;
+        word-break: normal;
     }
     
     /* Prevent card hover overflow */
@@ -696,7 +698,7 @@
         padding: 2rem 1.5rem;
         text-align: center;
         background: #f8f9fa;
-        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        transition: border-color 0.2s ease, background-color 0.2s ease, box-shadow 0.2s ease;
         cursor: pointer;
         min-height: 200px;
         display: flex;
@@ -706,6 +708,8 @@
         width: 100%;
         max-width: 100%;
         box-sizing: border-box;
+        position: relative;
+        user-select: none;
     }
     
     /* Responsive styles for modal and photo upload */
@@ -762,15 +766,31 @@
     .photo-upload-zone:hover {
         border-color: #8B5CF6;
         background: #f0f4ff;
-        transform: translateY(-2px);
         box-shadow: 0 4px 12px rgba(139, 92, 246, 0.15);
+    }
+    
+    .photo-upload-zone:hover .bi-cloud-upload {
+        color: #8B5CF6 !important;
+        transform: scale(1.1);
+        transition: color 0.2s ease, transform 0.2s ease;
     }
     
     .photo-upload-zone.dragover {
         border-color: #8B5CF6;
         background: #e6edff;
-        transform: scale(1.02);
-        box-shadow: 0 8px 24px rgba(139, 92, 246, 0.25);
+        border-width: 3px;
+        box-shadow: 0 8px 24px rgba(139, 92, 246, 0.3);
+    }
+    
+    .photo-upload-zone.dragover .bi-cloud-upload {
+        color: #8B5CF6 !important;
+        transform: scale(1.15);
+        transition: color 0.2s ease, transform 0.2s ease;
+    }
+    
+    .photo-upload-zone.dragover h5 {
+        color: #8B5CF6;
+        font-weight: 600;
     }
     
     .image-preview {
@@ -781,6 +801,79 @@
         margin: 1rem auto;
         display: block;
         object-fit: contain;
+    }
+    
+    /* Fix button blur/shift issues - prevent layout shifts */
+    .photo-modal-btn {
+        will-change: auto !important;
+        transform: none !important;
+        filter: none !important;
+        backdrop-filter: none !important;
+        -webkit-backdrop-filter: none !important;
+        position: relative;
+    }
+    
+    .photo-modal-btn:hover {
+        opacity: 0.9 !important;
+        transform: none !important;
+        filter: none !important;
+        backdrop-filter: none !important;
+        -webkit-backdrop-filter: none !important;
+    }
+    
+    .photo-modal-btn:active {
+        opacity: 0.8 !important;
+        transform: scale(0.98) !important;
+    }
+    
+    .photo-modal-btn:focus {
+        outline: 2px solid rgba(59, 130, 246, 0.5);
+        outline-offset: 2px;
+        box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+    }
+    
+    /* Override global button transforms for photo modal */
+    #photoModal .btn-primary,
+    #photoModal .btn-success,
+    #photoModal .btn-outline-success,
+    #photoModal .btn-outline-secondary {
+        transform: none !important;
+    }
+    
+    #photoModal .btn-primary:hover,
+    #photoModal .btn-success:hover,
+    #photoModal .btn-outline-success:hover,
+    #photoModal .btn-outline-secondary:hover {
+        transform: none !important;
+    }
+    
+    /* Ensure consistent theme colors in photo modal */
+    #photoModal .modal-content {
+        background: #ffffff;
+        color: #1e293b;
+    }
+    
+    #photoModal .modal-header {
+        background: #ffffff;
+        border-bottom: 1px solid #e2e8f0;
+    }
+    
+    #photoModal .modal-body {
+        background: #ffffff;
+        color: #1e293b;
+    }
+    
+    #photoModal .text-muted {
+        color: #64748b !important;
+    }
+    
+    #photoModal .btn-close {
+        filter: none;
+        opacity: 0.5;
+    }
+    
+    #photoModal .btn-close:hover {
+        opacity: 1;
     }
     
     /* Camera preview styling */
@@ -1108,10 +1201,24 @@
         overflow: visible; /* Allow dropdowns to overflow */
     }
     
-    /* Fix flex-grow text overflow */
+    /* Fix flex-grow text overflow - but allow proper word wrapping for item names */
     .flex-grow-1 {
         min-width: 0;
         overflow: hidden;
+    }
+    
+    /* Override for pantry item name containers - allow proper word wrapping */
+    .pantry-item-card .flex-grow-1 {
+        min-width: 120px;
+        overflow: visible;
+    }
+    
+    /* Ensure item names wrap at word boundaries, not mid-word */
+    .pantry-item-card .flex-grow-1 h6.fw-bold {
+        word-break: keep-all;
+        word-wrap: normal;
+        overflow-wrap: normal;
+        white-space: normal;
     }
     
     /* Recipe card improvements */
@@ -1141,6 +1248,124 @@
         .card-header .d-flex > div:last-child {
             width: 100%;
         }
+    }
+    
+    /* Sticky Action Bar */
+    .sticky-action-bar {
+        position: sticky;
+        top: 20px;
+        z-index: 100;
+        margin-bottom: 20px;
+    }
+    
+    @media (max-width: 991px) {
+        .sticky-action-bar {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            top: auto;
+            background: white;
+            box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.1);
+            padding: 12px 16px;
+            border-top: 1px solid #e2e8f0;
+            margin: 0;
+        }
+        
+        /* Add padding to body when sticky bar is visible on mobile */
+        body.has-sticky-bar {
+            padding-bottom: 80px;
+        }
+    }
+    
+    /* Smart Suggestions Banner */
+    .smart-suggestions-banner {
+        background: linear-gradient(135deg, rgba(139, 92, 246, 0.1) 0%, rgba(59, 130, 246, 0.08) 100%);
+        border-left: 4px solid #8B5CF6;
+        border-radius: 12px;
+        padding: 16px 20px;
+        margin-bottom: 20px;
+    }
+    
+    /* Progress Indicator */
+    .progress-indicator {
+        background: linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(5, 150, 105, 0.08) 100%);
+        border-radius: 12px;
+        padding: 16px 20px;
+        margin-bottom: 20px;
+    }
+    
+    .progress-bar-custom {
+        height: 8px;
+        border-radius: 10px;
+        background: linear-gradient(90deg, #10B981 0%, #059669 100%);
+        transition: width 0.5s ease;
+    }
+    
+    /* Category Badge on Cards */
+    .category-badge-card {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 4px 10px;
+        border-radius: 8px;
+        font-size: 0.75rem;
+        font-weight: 600;
+        margin-bottom: 8px;
+    }
+    
+    /* Enhanced Expiration Badge Colors */
+    .expiration-badge.expiration-expired {
+        background: linear-gradient(135deg, #EF4444 0%, #DC2626 100%) !important;
+        color: white !important;
+        border-color: #EF4444 !important;
+    }
+    
+    .expiration-badge.expiration-soon {
+        background: linear-gradient(135deg, #F59E0B 0%, #D97706 100%) !important;
+        color: white !important;
+        border-color: #F59E0B !important;
+    }
+    
+    .expiration-badge.expiration-fresh {
+        background: linear-gradient(135deg, #10B981 0%, #059669 100%) !important;
+        color: white !important;
+        border-color: #10B981 !important;
+    }
+    
+    /* Typography Hierarchy */
+    .section-title {
+        font-size: 1.5rem;
+        font-weight: 700;
+        color: #1e293b;
+        margin-bottom: 1rem;
+    }
+    
+    .section-subtitle {
+        font-size: 1.1rem;
+        font-weight: 600;
+        color: #334155;
+        margin-bottom: 0.75rem;
+    }
+    
+    .label-text {
+        font-size: 0.875rem;
+        font-weight: 500;
+        color: #64748b;
+    }
+    
+    /* Achievements/Badges */
+    .achievement-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 14px;
+        background: linear-gradient(135deg, rgba(245, 158, 11, 0.1) 0%, rgba(217, 119, 6, 0.08) 100%);
+        border: 1px solid rgba(245, 158, 11, 0.2);
+        border-radius: 12px;
+        font-size: 0.875rem;
+        font-weight: 600;
+        color: #92400E;
     }
 </style>
 {% endblock %}
@@ -1186,8 +1411,59 @@
     <div class="row">
         <!-- Main Content -->
         <div class="col-lg-8">
+            <!-- Smart Suggestions Banner -->
+            <div id="smartSuggestionsBanner" class="smart-suggestions-banner" style="display: none;">
+                <div class="d-flex align-items-center gap-3">
+                    <div style="width: 48px; height: 48px; background: linear-gradient(135deg, #8B5CF6 0%, #3B82F6 100%); border-radius: 12px; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+                        <i class="bi bi-lightbulb-fill text-white" style="font-size: 1.5rem;"></i>
+                    </div>
+                    <div class="flex-grow-1">
+                        <h6 class="mb-1 fw-bold" style="color: #1e293b; font-size: 1rem;">Smart Suggestion</h6>
+                        <p class="mb-0 text-muted small" id="suggestionText" style="font-size: 0.875rem;">Loading suggestions...</p>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Progress Indicator -->
+            <div id="progressIndicator" class="progress-indicator" style="display: none;">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <div>
+                        <h6 class="mb-1 fw-bold" style="color: #1e293b; font-size: 0.95rem;">
+                            <i class="bi bi-graph-up me-2" style="color: #10B981;"></i>Pantry Progress
+                        </h6>
+                        <p class="mb-0 text-muted small" id="progressText" style="font-size: 0.8rem;">0 items tracked</p>
+                    </div>
+                    <div class="text-end">
+                        <span class="fw-bold" style="color: #10B981; font-size: 1.25rem;" id="progressPercent">0%</span>
+                    </div>
+                </div>
+                <div style="background: #e2e8f0; border-radius: 10px; height: 8px; overflow: hidden;">
+                    <div class="progress-bar-custom" id="progressBar" style="width: 0%;"></div>
+                </div>
+            </div>
+            
+            <!-- Sticky Action Bar (Desktop) -->
+            <div class="sticky-action-bar d-none d-lg-block mb-4">
+                <div class="card shadow-sm border-0" style="border-radius: 20px; overflow: hidden;">
+                    <div class="card-body p-3">
+                        <div class="row g-3">
+                            <div class="col-6">
+                                <button type="button" class="btn btn-primary w-100" data-bs-toggle="modal" data-bs-target="#addItemModal" style="background: linear-gradient(135deg, #8B5CF6 0%, #3B82F6 100%); border: none; border-radius: 12px; padding: 12px; font-weight: 600;">
+                                    <i class="bi bi-plus-circle-fill me-2"></i>Add Item
+                                </button>
+                            </div>
+                            <div class="col-6">
+                                <button type="button" class="btn btn-success w-100" data-bs-toggle="modal" data-bs-target="#photoModal" style="background: linear-gradient(135deg, #10B981 0%, #059669 100%); border: none; border-radius: 12px; padding: 12px; font-weight: 600;">
+                                    <i class="bi bi-camera-fill me-2"></i>Upload Photo
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
             <!-- Quick Actions Card - Cleaner Design -->
-            <div class="card shadow-sm border-0 mb-4" style="border-radius: 20px; overflow: hidden;">
+            <div class="card shadow-sm border-0 mb-4 d-lg-none" style="border-radius: 20px; overflow: hidden;">
                 <div class="card-body p-4">
                     <div class="row g-4">
                         <!-- Manual Add Item -->
@@ -1266,18 +1542,30 @@
                     </div>
                 </div>
                 <div class="card-body p-4" style="position: relative; z-index: 5; overflow: visible;">
-                    <!-- Search Bar -->
+                    <!-- Search Bar with Filters -->
                     <div class="mb-3">
-                        <div class="input-group" style="max-width: 100%;">
+                        <div class="input-group mb-2" style="max-width: 100%;">
                             <span class="input-group-text bg-white border-end-0" style="border: 2px solid #e2e8f0; border-radius: 10px 0 0 10px; padding: 0.75rem 1rem;">
                                 <i class="bi bi-search text-muted"></i>
                             </span>
                             <input type="text" 
                                    class="form-control border-start-0" 
                                    id="searchItemsInput" 
-                                   placeholder="Search items..." 
+                                   placeholder="🔍 Search pantry items..." 
                                    style="border: 2px solid #e2e8f0; border-left: none; border-radius: 0 10px 10px 0; padding: 0.75rem 1rem; font-size: 0.95rem;"
                                    autocomplete="off">
+                        </div>
+                        <!-- Filter Chips -->
+                        <div class="d-flex flex-wrap gap-2">
+                            <button type="button" class="btn btn-sm filter-chip" data-filter="expiring-soon" style="background: rgba(245, 158, 11, 0.1); border: 1px solid rgba(245, 158, 11, 0.3); color: #92400E; border-radius: 20px; padding: 6px 14px; font-size: 0.8rem; font-weight: 600;">
+                                <i class="bi bi-exclamation-triangle me-1"></i>Expiring Soon
+                            </button>
+                            <button type="button" class="btn btn-sm filter-chip" data-filter="category" style="background: rgba(139, 92, 246, 0.1); border: 1px solid rgba(139, 92, 246, 0.3); color: #6D28D9; border-radius: 20px; padding: 6px 14px; font-size: 0.8rem; font-weight: 600;">
+                                <i class="bi bi-grid-3x3-gap me-1"></i>By Category
+                            </button>
+                            <button type="button" class="btn btn-sm filter-chip" data-filter="recent" style="background: rgba(59, 130, 246, 0.1); border: 1px solid rgba(59, 130, 246, 0.3); color: #1E40AF; border-radius: 20px; padding: 6px 14px; font-size: 0.8rem; font-weight: 600;">
+                                <i class="bi bi-clock-history me-1"></i>Recently Added
+                            </button>
                         </div>
                     </div>
                     
@@ -1332,13 +1620,22 @@
                                 <div class="card-body p-4">
                                     <div class="d-flex justify-content-between align-items-start mb-3">
                                         <!-- Item name with icon -->
-                                        <div class="flex-grow-1" style="min-width: 0; overflow: hidden;">
+                                        <div class="flex-grow-1" style="min-width: 0; overflow: visible;">
+                                            <!-- Category Badge -->
+                                            {% set item_category = item.get('category', '') if item|is_dict else '' %}
+                                            {% if item_category %}
+                                            <span class="category-badge-card" style="background: linear-gradient(135deg, rgba(139, 92, 246, 0.12) 0%, rgba(59, 130, 246, 0.1) 100%); color: #6D28D9; border: 1px solid rgba(139, 92, 246, 0.2);" data-category="{{ item_category|lower }}">
+                                                <i class="bi bi-tag-fill" style="font-size: 0.7rem;"></i>
+                                                <span>{{ item_category|title }}</span>
+                                                </span>
+                                            {% endif %}
+                                            
                                             <div class="d-flex align-items-center mb-3">
                                                 <div class="me-3" style="width: 40px; height: 40px; background: linear-gradient(135deg, rgba(139, 92, 246, 0.15) 0%, rgba(59, 130, 246, 0.15) 100%); border-radius: 12px; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
                                                     <i class="bi bi-box-seam" style="font-size: 1.25rem; color: #8B5CF6;"></i>
-                                                </div>
-                                                <div class="flex-grow-1" style="min-width: 0;">
-                                                    <h6 class="mb-0 fw-bold text-dark" style="font-size: 1.1rem; line-height: 1.4; word-wrap: break-word; overflow-wrap: break-word; hyphens: auto;" title="{{ item_name }}">
+                                            </div>
+                                                <div class="flex-grow-1" style="min-width: 120px; flex: 1 1 auto;">
+                                                    <h6 class="mb-0 fw-bold text-dark" style="font-size: 1.1rem; line-height: 1.4; word-wrap: normal; overflow-wrap: normal; word-break: keep-all; white-space: normal; display: block;" title="{{ item_name }}">
                                                     {{ item_name }}
                                                     </h6>
                                             </div>
@@ -1460,14 +1757,49 @@
                         {% endfor %}
                     </div>
                     {% else %}
-                    <div class="empty-state text-center py-5">
+                    <div class="empty-state text-center py-5 px-3">
                         <div class="mb-4">
-                            <div style="width: 120px; height: 120px; margin: 0 auto; background: linear-gradient(135deg, rgba(139, 92, 246, 0.1) 0%, rgba(59, 130, 246, 0.08) 100%); border-radius: 30px; display: flex; align-items: center; justify-content: center;">
-                                <i class="bi bi-basket" style="font-size: 4rem; color: #8B5CF6; opacity: 0.6;"></i>
+                            <div style="width: 140px; height: 140px; margin: 0 auto; background: linear-gradient(135deg, rgba(139, 92, 246, 0.15) 0%, rgba(59, 130, 246, 0.12) 100%); border-radius: 35px; display: flex; align-items: center; justify-content: center; box-shadow: 0 8px 24px rgba(139, 92, 246, 0.15);">
+                                <i class="bi bi-basket" style="font-size: 5rem; color: #8B5CF6; opacity: 0.8;"></i>
                             </div>
                         </div>
-                        <h4 class="mt-4 mb-2 fw-bold" style="color: #1e293b;">Your pantry is empty</h4>
-                        <p class="mb-4 text-muted" style="font-size: 1rem;">Start adding items to get personalized recipe suggestions!</p>
+                        <h3 class="mt-4 mb-3 fw-bold" style="color: #1e293b; font-size: 1.75rem;">
+                            <span style="font-size: 2rem; display: inline-block; margin-right: 8px;">📦</span>Your pantry is empty
+                        </h3>
+                        <p class="mb-4 text-muted" style="font-size: 1.1rem; max-width: 500px; margin: 0 auto;">Get started by adding your first items to unlock smart recipe suggestions!</p>
+                        
+                        <!-- Step-by-step guide -->
+                        <div class="mt-5" style="max-width: 600px; margin: 0 auto;">
+                            <div class="row g-3 text-start">
+                                <div class="col-md-4">
+                                    <div class="p-3" style="background: linear-gradient(135deg, rgba(139, 92, 246, 0.08) 0%, rgba(59, 130, 246, 0.05) 100%); border-radius: 16px; border-left: 4px solid #8B5CF6; height: 100%;">
+                                        <div class="d-flex align-items-center mb-2">
+                                            <div style="width: 32px; height: 32px; background: linear-gradient(135deg, #8B5CF6 0%, #3B82F6 100%); border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; font-weight: 700; font-size: 0.9rem; flex-shrink: 0; margin-right: 12px;">1</div>
+                                            <h6 class="mb-0 fw-bold" style="color: #1e293b; font-size: 1rem;">Upload or Add</h6>
+                                        </div>
+                                        <p class="mb-0 text-muted small" style="font-size: 0.875rem; line-height: 1.5;">Upload a photo or add items manually to your pantry</p>
+                                    </div>
+                                </div>
+                                <div class="col-md-4">
+                                    <div class="p-3" style="background: linear-gradient(135deg, rgba(16, 185, 129, 0.08) 0%, rgba(5, 150, 105, 0.05) 100%); border-radius: 16px; border-left: 4px solid #10B981; height: 100%;">
+                                        <div class="d-flex align-items-center mb-2">
+                                            <div style="width: 32px; height: 32px; background: linear-gradient(135deg, #10B981 0%, #059669 100%); border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; font-weight: 700; font-size: 0.9rem; flex-shrink: 0; margin-right: 12px;">2</div>
+                                            <h6 class="mb-0 fw-bold" style="color: #1e293b; font-size: 1rem;">Set Dates</h6>
+                                        </div>
+                                        <p class="mb-0 text-muted small" style="font-size: 0.875rem; line-height: 1.5;">Set expiration dates to track freshness and reduce waste</p>
+                                    </div>
+                                </div>
+                                <div class="col-md-4">
+                                    <div class="p-3" style="background: linear-gradient(135deg, rgba(245, 158, 11, 0.08) 0%, rgba(217, 119, 6, 0.05) 100%); border-radius: 16px; border-left: 4px solid #F59E0B; height: 100%;">
+                                        <div class="d-flex align-items-center mb-2">
+                                            <div style="width: 32px; height: 32px; background: linear-gradient(135deg, #F59E0B 0%, #D97706 100%); border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; font-weight: 700; font-size: 0.9rem; flex-shrink: 0; margin-right: 12px;">3</div>
+                                            <h6 class="mb-0 fw-bold" style="color: #1e293b; font-size: 1rem;">Get Recipes</h6>
+                                        </div>
+                                        <p class="mb-0 text-muted small" style="font-size: 0.875rem; line-height: 1.5;">Get instant recipe suggestions based on your pantry items</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                     {% endif %}
                 </div>
@@ -1521,6 +1853,40 @@
                     <div class="stat-card" id="pantryStatsCard">
                         <div class="stat-number mb-2" id="pantryStatsCount">{{ items|length if items else 0 }}</div>
                         <div class="text-muted fw-semibold">Total Items</div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Achievements -->
+            <div class="card shadow-sm border-0 mb-4">
+                <div class="card-header bg-gradient-warning text-white border-0">
+                    <h5 class="mb-0 fw-bold">
+                        <i class="bi bi-trophy-fill me-2"></i>Achievements
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div id="achievementsList">
+                        {% if items and items|length > 0 %}
+                        <div class="achievement-badge mb-2 w-100">
+                            <i class="bi bi-trophy-fill" style="color: #F59E0B;"></i>
+                            <span>🏅 First Item Added</span>
+                        </div>
+                        {% endif %}
+                        {% if items and items|length >= 5 %}
+                        <div class="achievement-badge mb-2 w-100">
+                            <i class="bi bi-star-fill" style="color: #F59E0B;"></i>
+                            <span>⭐ Growing Pantry (5+ items)</span>
+                        </div>
+                        {% endif %}
+                        {% if items and items|length >= 10 %}
+                        <div class="achievement-badge mb-2 w-100">
+                            <i class="bi bi-award-fill" style="color: #F59E0B;"></i>
+                            <span>🎖️ Pantry Master (10+ items)</span>
+                        </div>
+                        {% endif %}
+                        {% if not items or items|length == 0 %}
+                        <p class="text-muted small mb-0 text-center">Start adding items to unlock achievements!</p>
+                        {% endif %}
                     </div>
                 </div>
             </div>
@@ -1590,49 +1956,76 @@
 
                 <!-- Upload Zone -->
                 <div id="uploadZone">
-                    <!-- Camera Buttons -->
+                    <!-- Toggle: Take Photo vs Upload Image -->
+                    <div class="btn-group w-100 mb-4" role="group" style="border-radius: 12px; overflow: hidden; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);">
+                        <button type="button" class="btn photo-toggle-btn active" id="takePhotoToggle" style="flex: 1; border: none; padding: 12px; font-weight: 600; background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white; transition: all 0.2s ease;">
+                            <i class="bi bi-camera-fill me-2"></i>📷 Take Photo
+                        </button>
+                        <button type="button" class="btn photo-toggle-btn" id="uploadImageToggle" style="flex: 1; border: none; padding: 12px; font-weight: 600; background: #f8f9fa; color: #64748b; transition: all 0.2s ease;">
+                            <i class="bi bi-image me-2"></i>🖼 Upload Image
+                        </button>
+                    </div>
+                    
+                    <!-- Take Photo Section -->
+                    <div id="takePhotoSection" class="photo-section">
                     <div class="row g-2 mb-3">
                         <div class="col-6">
-                            <button type="button" class="btn btn-outline-success w-100" id="openCameraBtn">
+                                <button type="button" class="btn btn-outline-success w-100 photo-modal-btn" id="openCameraBtn" style="border: 2px solid #10b981; color: #10b981; background: transparent; transition: all 0.2s ease; will-change: auto;">
                                 <i class="bi bi-camera-video me-2"></i>Live Camera
                             </button>
                         </div>
                         <div class="col-6">
-                            <button type="button" class="btn btn-success w-100" id="mobileCameraBtn">
+                                <button type="button" class="btn btn-success w-100 photo-modal-btn" id="mobileCameraBtn" style="background: #10b981; border: 2px solid #10b981; color: white; transition: all 0.2s ease; will-change: auto;">
                                 <i class="bi bi-camera-fill me-2"></i>Take Photo
                             </button>
                         </div>
                     </div>
-
-                    <div class="text-center mb-3">
-                        <span class="text-muted">or</span>
+                        <label for="mobileCameraInput" class="visually-hidden">Take photo with camera</label>
+                        <input type="file" id="mobileCameraInput" accept="image/*" capture="environment" style="position: absolute; width: 1px; height: 1px; opacity: 0; overflow: hidden; pointer-events: none;">
                     </div>
 
-                    <!-- Drag & Drop Zone -->
+                    <!-- Upload Image Section -->
+                    <div id="uploadImageSection" class="photo-section" style="display: none;">
                     <div class="photo-upload-zone" id="dropZone">
                         <i class="bi bi-cloud-upload display-1 text-muted mb-3"></i>
                         <h5 class="mb-2">Drag & Drop Photo Here</h5>
                         <p class="text-muted mb-3">or click to browse</p>
-                        <button type="button" class="btn btn-primary" id="browseBtn">
+                            <button type="button" class="btn btn-primary photo-modal-btn" id="browseBtn" style="background: #3b82f6; border: 2px solid #3b82f6; color: white; transition: all 0.2s ease; will-change: auto;">
                             <i class="bi bi-folder2-open me-2"></i>Browse Files
                         </button>
-                        <input type="file" id="photoInput" accept="image/*" style="display: none;">
-                        <input type="file" id="mobileCameraInput" accept="image/*" capture="environment" style="display: none;">
+                            <label for="photoInput" class="visually-hidden">Select photo file</label>
+                            <input type="file" id="photoInput" accept="image/*" style="position: absolute; width: 1px; height: 1px; opacity: 0; overflow: hidden; pointer-events: none;">
+                        </div>
                     </div>
                 </div>
 
                 <!-- Preview & Upload Section (Hidden by default) -->
                 <div id="previewSection" style="display: none;">
                     <div class="text-center">
+                        <!-- Upload Progress Feedback -->
+                        <div id="uploadProgressFeedback" class="mb-3" style="display: none;">
+                            <div class="d-flex align-items-center justify-content-center gap-2 p-3" style="background: linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(5, 150, 105, 0.08) 100%); border-radius: 12px; border-left: 4px solid #10B981;">
+                                <i class="bi bi-check-circle-fill" style="color: #10B981; font-size: 1.25rem;"></i>
+                                <span class="fw-semibold" style="color: #1e293b;" id="progressFeedbackText">Photo selected ✓</span>
+                            </div>
+                        </div>
+                        
                         <!-- Loading/Feedback Message -->
                         <div id="uploadFeedback" class="feedback-message" style="display: none;"></div>
                         
+                        <!-- Preview with Remove Button -->
+                        <div class="position-relative d-inline-block mb-3">
                         <img id="imagePreview" class="image-preview" alt="Preview">
+                            <button type="button" class="btn btn-danger btn-sm" id="removePreviewBtn" style="position: absolute; top: 8px; right: 8px; width: 36px; height: 36px; border-radius: 50%; padding: 0; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);" title="Remove photo">
+                                <i class="bi bi-x-lg"></i>
+                            </button>
+                        </div>
+                        
                         <div class="mt-3 d-flex flex-wrap justify-content-center gap-2">
-                            <button type="button" class="btn btn-outline-secondary" id="cancelUploadBtn">
+                            <button type="button" class="btn btn-outline-secondary photo-modal-btn" id="cancelUploadBtn" style="border: 2px solid #6b7280; color: #6b7280; background: transparent; transition: all 0.2s ease; will-change: auto;">
                                 <i class="bi bi-x-circle me-2"></i>Cancel
                             </button>
-                            <button type="button" class="btn btn-success btn-lg" id="uploadBtn">
+                            <button type="button" class="btn btn-success btn-lg photo-modal-btn" id="uploadBtn" style="background: #10b981; border: 2px solid #10b981; color: white; transition: all 0.2s ease; will-change: auto;">
                                 <i class="bi bi-stars me-2"></i><span id="uploadBtnText">Analyze & Add Items</span>
                             </button>
                         </div>
@@ -1669,14 +2062,56 @@
     const closeCameraBtn = document.getElementById('closeCameraBtn');
     const captureBtn = document.getElementById('captureBtn');
 
-    // Browse button click
+    // Photo Toggle Functionality
+    const takePhotoToggle = document.getElementById('takePhotoToggle');
+    const uploadImageToggle = document.getElementById('uploadImageToggle');
+    const takePhotoSection = document.getElementById('takePhotoSection');
+    const uploadImageSection = document.getElementById('uploadImageSection');
+    
+    if (takePhotoToggle && uploadImageToggle && takePhotoSection && uploadImageSection) {
+        takePhotoToggle.addEventListener('click', () => {
+            takePhotoToggle.classList.add('active');
+            takePhotoToggle.style.background = 'linear-gradient(135deg, #10b981 0%, #059669 100%)';
+            takePhotoToggle.style.color = 'white';
+            uploadImageToggle.classList.remove('active');
+            uploadImageToggle.style.background = '#f8f9fa';
+            uploadImageToggle.style.color = '#64748b';
+            takePhotoSection.style.display = 'block';
+            uploadImageSection.style.display = 'none';
+        });
+        
+        uploadImageToggle.addEventListener('click', () => {
+            uploadImageToggle.classList.add('active');
+            uploadImageToggle.style.background = 'linear-gradient(135deg, #10b981 0%, #059669 100%)';
+            uploadImageToggle.style.color = 'white';
+            takePhotoToggle.classList.remove('active');
+            takePhotoToggle.style.background = '#f8f9fa';
+            takePhotoToggle.style.color = '#64748b';
+            takePhotoSection.style.display = 'none';
+            uploadImageSection.style.display = 'block';
+        });
+    }
+    
+    // Browse button click - ensure it works properly
     if (browseBtn && photoInput) {
-        browseBtn.addEventListener('click', () => photoInput.click());
+        browseBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            if (photoInput) {
+                photoInput.click();
+            }
+        });
     }
 
     // Mobile camera button (works without HTTPS)
     if (mobileCameraBtn && mobileCameraInput) {
-        mobileCameraBtn.addEventListener('click', () => mobileCameraInput.click());
+        mobileCameraBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            if (mobileCameraInput) {
+                mobileCameraInput.click();
+            }
+        });
     }
 
     // File input change
@@ -1687,19 +2122,36 @@
         mobileCameraInput.addEventListener('change', handleFileSelect);
     }
 
-    // Drag and drop handlers
+    // Drag and drop handlers with better feedback
     if (dropZone) {
-        dropZone.addEventListener('dragover', (e) => {
+        let dragCounter = 0;
+        
+        dropZone.addEventListener('dragenter', (e) => {
             e.preventDefault();
+            e.stopPropagation();
+            dragCounter++;
             dropZone.classList.add('dragover');
         });
 
-        dropZone.addEventListener('dragleave', () => {
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            dropZone.classList.add('dragover');
+        });
+
+        dropZone.addEventListener('dragleave', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            dragCounter--;
+            if (dragCounter === 0) {
             dropZone.classList.remove('dragover');
+            }
         });
 
         dropZone.addEventListener('drop', (e) => {
             e.preventDefault();
+            e.stopPropagation();
+            dragCounter = 0;
             dropZone.classList.remove('dragover');
             const files = e.dataTransfer.files;
             if (files.length > 0) {
@@ -1707,11 +2159,20 @@
             }
         });
 
+        // Click anywhere in drop zone to open file picker
         dropZone.addEventListener('click', (e) => {
-            if (e.target === dropZone || e.target.closest('#dropZone')) {
+            // Don't trigger if clicking the browse button (it has its own handler)
+            if (e.target.closest('#browseBtn')) {
+                return;
+            }
+            // Don't trigger if clicking file inputs
+            if (e.target === photoInput || e.target === mobileCameraInput) {
+                return;
+            }
+            e.preventDefault();
+            e.stopPropagation();
                 if (photoInput) {
                     photoInput.click();
-                }
             }
         });
     }
@@ -1726,7 +2187,7 @@
 
     // Handle file
     function handleFile(file) {
-        if (!file.type.startsWith('image/')) {
+        if (!file || !file.type.startsWith('image/')) {
             alert('Please select an image file');
             return;
         }
@@ -1736,29 +2197,77 @@
         reader.onload = (e) => {
             if (imagePreview) {
                 imagePreview.src = e.target.result;
+                imagePreview.style.display = 'block';
                 imagePreview.style.opacity = '0';
+                imagePreview.style.transition = 'opacity 0.3s ease';
                 setTimeout(() => {
                     imagePreview.style.opacity = '1';
                 }, 50);
             }
             
+            // Show progress feedback
+            const progressFeedback = document.getElementById('uploadProgressFeedback');
+            const progressFeedbackText = document.getElementById('progressFeedbackText');
+            if (progressFeedback && progressFeedbackText) {
+                progressFeedback.style.display = 'block';
+                progressFeedbackText.textContent = 'Photo selected ✓ Ready to analyze';
+            }
+            
             // Smooth transition between upload zone and preview
             if (uploadZone) {
+                uploadZone.style.transition = 'opacity 0.2s ease';
                 uploadZone.style.opacity = '0';
                 setTimeout(() => {
                     uploadZone.style.display = 'none';
                     uploadZone.style.opacity = '1';
-                }, 150);
+                }, 200);
             }
             if (previewSection) {
                 previewSection.style.display = 'block';
                 previewSection.style.opacity = '0';
+                previewSection.style.transition = 'opacity 0.3s ease';
                 setTimeout(() => {
                     previewSection.style.opacity = '1';
-                }, 150);
+                }, 200);
+            }
+            
+            // Reset upload feedback
+            const uploadFeedback = document.getElementById('uploadFeedback');
+            if (uploadFeedback) {
+                uploadFeedback.style.display = 'none';
+                uploadFeedback.className = 'feedback-message';
             }
         };
+        reader.onerror = () => {
+            alert('Error reading file. Please try again.');
+        };
         reader.readAsDataURL(file);
+    }
+    
+    // Remove Preview Button
+    const removePreviewBtn = document.getElementById('removePreviewBtn');
+    if (removePreviewBtn) {
+        removePreviewBtn.addEventListener('click', () => {
+            selectedFile = null;
+            if (imagePreview) {
+                imagePreview.src = '';
+                imagePreview.style.display = 'none';
+            }
+            if (previewSection) {
+                previewSection.style.display = 'none';
+            }
+            if (uploadZone) {
+                uploadZone.style.display = 'block';
+                uploadZone.style.opacity = '1';
+            }
+            const progressFeedback = document.getElementById('uploadProgressFeedback');
+            if (progressFeedback) {
+                progressFeedback.style.display = 'none';
+            }
+            // Reset file inputs
+            if (photoInput) photoInput.value = '';
+            if (mobileCameraInput) mobileCameraInput.value = '';
+        });
     }
 
     // Camera Functions
@@ -2073,6 +2582,25 @@
         selectedFile = null;
         if (photoInput) photoInput.value = '';
         if (mobileCameraInput) mobileCameraInput.value = '';
+        
+        // Reset preview section
+        if (previewSection) {
+            previewSection.style.display = 'none';
+        }
+        if (uploadZone) {
+            uploadZone.style.display = 'block';
+            uploadZone.style.opacity = '1';
+        }
+        if (imagePreview) {
+            imagePreview.src = '';
+            imagePreview.style.display = 'none';
+        }
+        
+        // Clear progress feedback
+        const progressFeedback = document.getElementById('uploadProgressFeedback');
+        if (progressFeedback) {
+            progressFeedback.style.display = 'none';
+        }
         
         // Clear feedback message
         const uploadFeedback = document.getElementById('uploadFeedback');
@@ -3881,6 +4409,208 @@
             }, 200);
         }
     });
+    
+    // Smart Suggestions Banner
+    function updateSmartSuggestions() {
+        const banner = document.getElementById('smartSuggestionsBanner');
+        const suggestionText = document.getElementById('suggestionText');
+        if (!banner || !suggestionText) return;
+        
+        const items = document.querySelectorAll('.pantry-item-wrapper');
+        if (items.length === 0) {
+            banner.style.display = 'none';
+            return;
+        }
+        
+        // Count expiring items
+        let expiringCount = 0;
+        items.forEach(item => {
+            const expirationBadge = item.querySelector('.expiration-badge.expiration-soon, .expiration-badge.expiration-expired');
+            if (expirationBadge) {
+                const expDate = expirationBadge.getAttribute('data-exp-date');
+                if (expDate && expDate !== '9999-12-31') {
+                    const daysDiff = getDaysUntilExpiration(expDate);
+                    if (daysDiff >= 0 && daysDiff <= 7) {
+                        expiringCount++;
+                    }
+                }
+            }
+        });
+        
+        if (expiringCount > 0) {
+            banner.style.display = 'block';
+            suggestionText.textContent = `You have ${expiringCount} item${expiringCount > 1 ? 's' : ''} expiring this week. Consider using them in recipes!`;
+        } else {
+            banner.style.display = 'none';
+        }
+    }
+    
+    // Progress Indicator
+    function updateProgressIndicator() {
+        const indicator = document.getElementById('progressIndicator');
+        const progressText = document.getElementById('progressText');
+        const progressPercent = document.getElementById('progressPercent');
+        const progressBar = document.getElementById('progressBar');
+        
+        if (!indicator || !progressText || !progressPercent || !progressBar) return;
+        
+        const items = document.querySelectorAll('.pantry-item-wrapper');
+        const totalItems = items.length;
+        
+        if (totalItems === 0) {
+            indicator.style.display = 'none';
+            return;
+        }
+        
+        // Count items with expiration dates
+        let itemsWithDates = 0;
+        items.forEach(item => {
+            const expirationBadge = item.querySelector('.expiration-badge[data-exp-date]');
+            if (expirationBadge) {
+                const expDate = expirationBadge.getAttribute('data-exp-date');
+                if (expDate && expDate !== '9999-12-31' && expDate !== 'None' && expDate !== '') {
+                    itemsWithDates++;
+                }
+            }
+        });
+        
+        const completeness = totalItems > 0 ? Math.round((itemsWithDates / totalItems) * 100) : 0;
+        
+        indicator.style.display = 'block';
+        progressText.textContent = `${totalItems} item${totalItems > 1 ? 's' : ''} tracked`;
+        progressPercent.textContent = `${completeness}%`;
+        progressBar.style.width = `${completeness}%`;
+    }
+    
+    // Filter functionality
+    document.querySelectorAll('.filter-chip').forEach(chip => {
+        chip.addEventListener('click', function() {
+            const filter = this.getAttribute('data-filter');
+            this.classList.toggle('active');
+            
+            // Apply filter
+            const items = document.querySelectorAll('.pantry-item-wrapper');
+            items.forEach(item => {
+                let show = true;
+                
+                if (filter === 'expiring-soon' && this.classList.contains('active')) {
+                    const expirationBadge = item.querySelector('.expiration-badge[data-exp-date]');
+                    if (expirationBadge) {
+                        const expDate = expirationBadge.getAttribute('data-exp-date');
+                        if (expDate && expDate !== '9999-12-31') {
+                            const daysDiff = getDaysUntilExpiration(expDate);
+                            show = daysDiff >= 0 && daysDiff <= 7;
+                        } else {
+                            show = false;
+                        }
+                    } else {
+                        show = false;
+                    }
+                } else if (filter === 'recent' && this.classList.contains('active')) {
+                    // Show items added in last 7 days (simplified - would need addedDate)
+                    show = true; // Placeholder
+                }
+                
+                item.style.display = show ? '' : 'none';
+            });
+            
+            // Update active state styling
+            if (this.classList.contains('active')) {
+                this.style.background = 'linear-gradient(135deg, rgba(139, 92, 246, 0.2) 0%, rgba(59, 130, 246, 0.2) 100%)';
+                this.style.borderColor = '#8B5CF6';
+                this.style.color = '#6D28D9';
+            } else {
+                this.style.background = '';
+                this.style.borderColor = '';
+                this.style.color = '';
+            }
+        });
+    });
+    
+    // Helper function to get days until expiration
+    function getDaysUntilExpiration(expDate) {
+        if (!expDate || expDate === '9999-12-31' || expDate === 'None' || expDate === '') {
+            return 999;
+        }
+        try {
+            const exp = new Date(expDate);
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            exp.setHours(0, 0, 0, 0);
+            const diffTime = exp - today;
+            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+            return diffDays;
+        } catch (e) {
+            return 999;
+        }
+    }
+    
+    // Update suggestions and progress after pantry reload
+    // Wait for reloadPantryItems to be defined, then wrap it
+    function wrapReloadPantryItems() {
+        if (typeof window.reloadPantryItems === 'function') {
+            const originalReloadPantryItems = window.reloadPantryItems;
+            window.reloadPantryItems = async function() {
+                await originalReloadPantryItems();
+                setTimeout(() => {
+                    updateSmartSuggestions();
+                    updateProgressIndicator();
+                }, 300);
+            };
+        } else {
+            // If not defined yet, try again after a short delay
+            setTimeout(wrapReloadPantryItems, 100);
+        }
+    }
+    
+    // Start wrapping after DOM is ready
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', wrapReloadPantryItems);
+    } else {
+        wrapReloadPantryItems();
+    }
+    
+    // Initialize on page load
+    document.addEventListener('DOMContentLoaded', function() {
+        setTimeout(() => {
+            updateSmartSuggestions();
+            updateProgressIndicator();
+        }, 500);
+    });
+    
+    // Mobile sticky action bar - create after DOM is ready
+    function createMobileStickyBar() {
+        // Check if already exists
+        if (document.querySelector('.sticky-action-bar.d-lg-none')) {
+            return;
+        }
+        
+        const mobileStickyBar = document.createElement('div');
+        mobileStickyBar.className = 'sticky-action-bar d-lg-none';
+        mobileStickyBar.innerHTML = `
+            <div class="row g-2 m-0">
+                <div class="col-6">
+                    <button type="button" class="btn btn-primary w-100" data-bs-toggle="modal" data-bs-target="#addItemModal" style="background: linear-gradient(135deg, #8B5CF6 0%, #3B82F6 100%); border: none; border-radius: 12px; padding: 12px; font-weight: 600; font-size: 0.9rem;">
+                        <i class="bi bi-plus-circle-fill me-2"></i>Add Item
+                    </button>
+                </div>
+                <div class="col-6">
+                    <button type="button" class="btn btn-success w-100" data-bs-toggle="modal" data-bs-target="#photoModal" style="background: linear-gradient(135deg, #10B981 0%, #059669 100%); border: none; border-radius: 12px; padding: 12px; font-weight: 600; font-size: 0.9rem;">
+                        <i class="bi bi-camera-fill me-2"></i>Upload Photo
+                    </button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(mobileStickyBar);
+        document.body.classList.add('has-sticky-bar');
+    }
+    
+    // Create mobile sticky bar after DOM is ready
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', createMobileStickyBar);
+    } else {
+        createMobileStickyBar();
+    }
 </script>
 {% endblock %}
 
