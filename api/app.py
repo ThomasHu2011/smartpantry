@@ -1239,6 +1239,8 @@ def delete_item(item_name):
     if VERBOSE_LOGGING:
         print(f"DEBUG: Attempting to delete item: '{item_name}'")
     
+    item_found = False
+    
     if 'user_id' in session:
         # Remove from user's pantry
         user_pantry = get_user_pantry(session['user_id'])
@@ -1251,21 +1253,23 @@ def delete_item(item_name):
         
         # Convert to list of dicts if needed
         pantry_list = []
-        item_found = False
+        item_name_normalized = item_name.strip().lower()  # Normalize once for comparison
         for pantry_item in user_pantry:
             if isinstance(pantry_item, dict):
                 pantry_name = pantry_item.get('name', '').strip() if pantry_item.get('name') else ''
                 # Compare with stripped names (case-insensitive)
-                if pantry_name and pantry_name.lower() == item_name.lower():
+                if pantry_name and pantry_name.lower() == item_name_normalized:
                     item_found = True
-                    print(f"DEBUG: Found matching item: '{pantry_name}' == '{item_name}'")
+                    if VERBOSE_LOGGING:
+                        print(f"DEBUG: Found matching item: '{pantry_name}' == '{item_name}'")
                 else:
                     pantry_list.append(pantry_item)
             else:
                 pantry_str = str(pantry_item).strip() if pantry_item else ''
-                if pantry_str and pantry_str.lower() == item_name.lower():
+                if pantry_str and pantry_str.lower() == item_name_normalized:
                     item_found = True
-                    print(f"DEBUG: Found matching item (string): '{pantry_str}' == '{item_name}'")
+                    if VERBOSE_LOGGING:
+                        print(f"DEBUG: Found matching item (string): '{pantry_str}' == '{item_name}'")
                 elif pantry_str:
                     # Convert old string format to dict format
                     pantry_list.append({
@@ -1282,6 +1286,7 @@ def delete_item(item_name):
             if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
                 return jsonify({'success': True, 'message': f'{item_name} removed from pantry.'}), 200
             flash(f"{item_name} removed from pantry.", "info")
+            return redirect(url_for("index"))
         else:
             # Debug: print available item names
             if VERBOSE_LOGGING:
@@ -1300,6 +1305,8 @@ def delete_item(item_name):
             if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
                 return jsonify({'success': False, 'error': f"Item '{item_name}' not found in pantry."}), 404
             flash(f"Item '{item_name}' not found in pantry.", "warning")
+            return redirect(url_for("index"))
+    else:
         # Remove from anonymous web pantry (stored in session)
         # CRITICAL: Mark session as permanent for anonymous users
         session.permanent = True
@@ -1312,7 +1319,6 @@ def delete_item(item_name):
         
         # Convert to list of dicts if needed
         pantry_list = []
-        item_found = False
         item_name_normalized = item_name.strip().lower()  # Normalize once for comparison
         for pantry_item in session['web_pantry']:
             if isinstance(pantry_item, dict):
@@ -1320,14 +1326,16 @@ def delete_item(item_name):
                 # Compare with stripped names (case-insensitive)
                 if pantry_name and pantry_name.lower() == item_name_normalized:
                     item_found = True
-                    print(f"DEBUG: Found matching item: '{pantry_name}' == '{item_name}'")
+                    if VERBOSE_LOGGING:
+                        print(f"DEBUG: Found matching item: '{pantry_name}' == '{item_name}'")
                 else:
                     pantry_list.append(pantry_item)
             else:
                 pantry_str = str(pantry_item).strip() if pantry_item else ''
                 if pantry_str and pantry_str.lower() == item_name_normalized:
                     item_found = True
-                    print(f"DEBUG: Found matching item (string): '{pantry_str}' == '{item_name}'")
+                    if VERBOSE_LOGGING:
+                        print(f"DEBUG: Found matching item (string): '{pantry_str}' == '{item_name}'")
                 elif pantry_str:
                     # Convert old string format to dict format
                     pantry_list.append({
@@ -1364,6 +1372,7 @@ def delete_item(item_name):
             if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
                 return jsonify({'success': False, 'error': f"Item '{item_name}' not found in pantry."}), 404
             flash(f"Item '{item_name}' not found in pantry.", "warning")
+    
     # Check if AJAX request
     if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
         return jsonify({'success': True, 'message': 'Item deleted successfully.'}), 200

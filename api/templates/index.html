@@ -1818,7 +1818,7 @@
                                            class="btn btn-sm delete-item-btn" 
                                            style="border-radius: 12px; width: 40px; height: 40px; padding: 0; display: flex; align-items: center; justify-content: center; transition: all 0.3s ease; flex-shrink: 0; background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.2); color: #EF4444;"
                                            title="Remove item"
-                                           data-item-name="{{ item_name|urlencode }}"
+                                           data-item-name="{{ item_name }}"
                                            onmouseover="this.style.background='#ef4444'; this.style.color='white'; this.style.transform='scale(1.1) rotate(90deg)'; this.style.borderColor='#ef4444';"
                                            onmouseout="this.style.background='rgba(239, 68, 68, 0.1)'; this.style.color='#EF4444'; this.style.transform='scale(1) rotate(0deg)'; this.style.borderColor='rgba(239, 68, 68, 0.2)';">
                                             <i class="bi bi-trash3-fill" style="font-size: 0.9rem;"></i>
@@ -4089,22 +4089,19 @@
         // Store scroll position before deletion
         const scrollPosition = window.pageYOffset || document.documentElement.scrollTop;
         
-        // Decode and sanitize item name for display
-        let decodedName;
-        try {
-            decodedName = decodeURIComponent(itemName);
-        } catch (e) {
-            decodedName = itemName; // Fallback if decode fails
-        }
+        // Use item name as-is for display (it should already be decoded)
+        const displayName = itemName.trim();
         
         // Confirm deletion
-        if (!confirm(`Remove "${decodedName}" from pantry?`)) {
+        if (!confirm(`Remove "${displayName}" from pantry?`)) {
             return;
         }
         
         try {
             // Properly encode the item name for URL
-            const encodedName = encodeURIComponent(itemName);
+            const encodedName = encodeURIComponent(itemName.trim());
+            console.log('Deleting item:', itemName, 'Encoded:', encodedName);
+            
             const response = await fetch(`/delete/${encodedName}`, {
                 method: 'GET',
                 headers: {
@@ -4115,7 +4112,20 @@
                 credentials: 'same-origin'
             });
             
+            console.log('Delete response status:', response.status);
+            
             if (response.ok) {
+                // Try to parse JSON response
+                const contentType = response.headers.get('content-type');
+                if (contentType && contentType.includes('application/json')) {
+                    const data = await response.json();
+                    if (data.success) {
+                        console.log('Delete successful:', data.message);
+                    } else {
+                        throw new Error(data.error || 'Failed to delete item');
+                    }
+                }
+                
                 // Add small delay to ensure server has finished processing
                 await new Promise(resolve => setTimeout(resolve, 300));
                 
@@ -4143,7 +4153,8 @@
                 } catch (e) {
                     errorData = { error: errorText || 'Unknown error' };
                 }
-                throw new Error(errorData.error || 'Failed to delete item');
+                console.error('Delete failed:', errorData);
+                throw new Error(errorData.error || `Failed to delete item (Status: ${response.status})`);
             }
         } catch (error) {
             console.error('Delete error:', error);
@@ -4172,15 +4183,20 @@
                 e.preventDefault();
                 e.stopPropagation();
                 
-                const itemName = this.getAttribute('data-item-name');
+                let itemName = this.getAttribute('data-item-name');
                 if (!itemName || !itemName.trim()) {
                     console.error('Item name is missing for delete button');
                     alert('Error: Item name is missing. Please refresh the page.');
                     return;
                 }
                 
-                // Decode the item name for display
-                const decodedName = decodeURIComponent(itemName);
+                // Decode if it was URL-encoded, but keep original for API call
+                try {
+                    itemName = decodeURIComponent(itemName);
+                } catch (e) {
+                    // If decode fails, use as-is
+                }
+                
                 handleDeleteItem(itemName);
             });
         });
