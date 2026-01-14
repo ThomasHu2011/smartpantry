@@ -33,7 +33,7 @@ An intelligent kitchen management application that uses AI to help you track you
 
 1. **Clone the repository**
    ```bash
-   git clone <repository-url>
+   git clone https://github.com/ThomasHu2011/smartpantry
    cd code
    ```
 
@@ -81,7 +81,6 @@ code/
 ├── Smart_pantry/          # iOS mobile app
 ├── requirements.txt        # Python dependencies
 ├── vercel.json            # Vercel configuration
-└── Procfile              # Render configuration
 ```
 
 ## 🔧 API Endpoints
@@ -156,9 +155,6 @@ code/
 3. Make your changes
 4. Submit a pull request
 
-## 📝 License
-
-[Add your license here]
 
 ## 🙏 Acknowledgments
 
