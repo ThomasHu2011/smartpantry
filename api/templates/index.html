@@ -3741,6 +3741,18 @@
         
         function resetButton() {
             isSubmitting = false; // Reset submitting flag
+            // Reset modal button
+            let btn = document.getElementById('addItemModalBtn');
+            let btnText = document.getElementById('addItemModalBtnText');
+            if (btn) {
+                btn.disabled = false;
+            }
+            if (btnText) {
+                btnText.innerHTML = '<i class="bi bi-plus-circle-fill me-2"></i>Add to Pantry';
+            }
+            // Reset regular form button (fallback)
+            btn = document.getElementById('addItemBtn');
+            btnText = document.getElementById('addItemBtnText');
             if (btn) {
                 btn.disabled = false;
             }
@@ -3753,7 +3765,11 @@
     }
     
     function showFeedback(message, type) {
-        const feedback = document.getElementById('addItemFeedback');
+        // Try modal feedback first, then fallback to regular feedback
+        let feedback = document.getElementById('addItemModalFeedback');
+        if (!feedback) {
+            feedback = document.getElementById('addItemFeedback');
+        }
         if (!feedback) return;
         
         feedback.className = `alert alert-${type} alert-dismissible fade show mt-3`;
