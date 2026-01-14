@@ -1270,11 +1270,12 @@
             padding: 12px 16px;
             border-top: 1px solid #e2e8f0;
             margin: 0;
+            z-index: 1000;
         }
         
         /* Add padding to body when sticky bar is visible on mobile */
         body.has-sticky-bar {
-            padding-bottom: 80px;
+            padding-bottom: 90px;
         }
     }
     
@@ -1448,7 +1449,7 @@
                     <div class="card-body p-3">
                         <div class="row g-3">
                             <div class="col-6">
-                                <button type="button" class="btn btn-primary w-100" data-bs-toggle="modal" data-bs-target="#addItemModal" style="background: linear-gradient(135deg, #8B5CF6 0%, #3B82F6 100%); border: none; border-radius: 12px; padding: 12px; font-weight: 600;">
+                                <button type="button" class="btn btn-primary w-100" onclick="scrollToAddItemForm()" style="background: linear-gradient(135deg, #8B5CF6 0%, #3B82F6 100%); border: none; border-radius: 12px; padding: 12px; font-weight: 600;">
                                     <i class="bi bi-plus-circle-fill me-2"></i>Add Item
                                 </button>
                             </div>
@@ -1933,7 +1934,7 @@
 </div>
 
 <!-- Photo Upload Modal -->
-<div class="modal fade" id="photoModal" tabindex="-1" aria-labelledby="photoModalLabel" aria-hidden="true" data-bs-backdrop="true" data-bs-keyboard="true" role="dialog" aria-modal="true" style="pointer-events: auto;">
+<div class="modal fade" id="photoModal" tabindex="-1" aria-labelledby="photoModalLabel" aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="true" role="dialog" aria-modal="true" style="pointer-events: auto;">
     <div class="modal-dialog modal-dialog-centered" style="pointer-events: auto; z-index: 9999; max-height: 90vh; margin: 1rem auto; max-width: 600px; width: 90%;">
         <div class="modal-content" style="border-radius: 24px; border: none; pointer-events: auto; z-index: 10000; position: relative; max-height: 90vh; overflow-y: auto;">
             <div class="modal-header border-0 pb-0" style="pointer-events: auto;">
@@ -2727,23 +2728,15 @@
                 modalDialog.style.position = 'relative';
             }
             
-            // Ensure backdrop is properly configured
+            // Ensure backdrop is properly configured - but don't close on click (backdrop is static)
             setTimeout(() => {
                 const backdrop = document.querySelector('.modal-backdrop');
                 if (backdrop) {
-                    // Backdrop should be clickable to close modal, but not block modal content
+                    // Backdrop should not close modal (static backdrop)
                     backdrop.style.pointerEvents = 'auto';
                     backdrop.style.zIndex = '9998';
-                    // Ensure backdrop clicks close the modal
-                    backdrop.addEventListener('click', function(e) {
-                        // Only close if clicking directly on backdrop, not if event bubbled from modal
-                        if (e.target === backdrop) {
-                            const bootstrapModal = bootstrap.Modal.getInstance(photoModal);
-                            if (bootstrapModal) {
-                                bootstrapModal.hide();
-                            }
-                        }
-                    }, { once: true });
+                    // Remove any existing click handlers that might close the modal
+                    backdrop.onclick = null;
                 }
             }, 50);
             
@@ -3912,14 +3905,22 @@
     async function handleDeleteItem(itemName) {
         if (!itemName) {
             console.error('Item name is required for deletion');
+            alert('Error: Item name is missing. Please try again.');
             return;
         }
         
         // Store scroll position before deletion
         const scrollPosition = window.pageYOffset || document.documentElement.scrollTop;
         
-        // Decode and sanitize item name
-        const decodedName = decodeURIComponent(itemName);
+        // Decode and sanitize item name for display
+        let decodedName;
+        try {
+            decodedName = decodeURIComponent(itemName);
+        } catch (e) {
+            decodedName = itemName; // Fallback if decode fails
+        }
+        
+        // Confirm deletion
         if (!confirm(`Remove "${decodedName}" from pantry?`)) {
             return;
         }
@@ -3930,9 +3931,11 @@
             const response = await fetch(`/delete/${encodedName}`, {
                 method: 'GET',
                 headers: {
-                    'X-Requested-With': 'XMLHttpRequest'
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'X-Client-Type': 'web'
                 },
-                cache: 'no-cache'  // Prevent caching
+                cache: 'no-cache',  // Prevent caching
+                credentials: 'same-origin'
             });
             
             if (response.ok) {
@@ -3951,13 +3954,22 @@
                 const feedback = document.getElementById('addItemFeedback');
                 if (feedback) {
                     showFeedback('Item removed successfully!', 'success');
+                } else {
+                    // Fallback alert if feedback element doesn't exist
+                    console.log('Item removed successfully!');
                 }
             } else {
-                const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+                const errorText = await response.text();
+                let errorData;
+                try {
+                    errorData = JSON.parse(errorText);
+                } catch (e) {
+                    errorData = { error: errorText || 'Unknown error' };
+                }
                 throw new Error(errorData.error || 'Failed to delete item');
             }
         } catch (error) {
-            console.error('Error deleting item:', error);
+            console.error('Delete error:', error);
             const feedback = document.getElementById('addItemFeedback');
             if (feedback) {
                 showFeedback('Failed to delete item: ' + error.message, 'danger');
@@ -3971,23 +3983,52 @@
     function initializeDeleteButtons() {
         const deleteButtons = document.querySelectorAll('.delete-item-btn');
         deleteButtons.forEach(btn => {
-            // Remove existing listeners
-            if (!btn.parentNode) return; // Skip if button is not in DOM
+            // Skip if button is not in DOM
+            if (!btn.parentNode) return;
             
+            // Remove any existing listeners by cloning
             const newBtn = btn.cloneNode(true);
             btn.parentNode.replaceChild(newBtn, btn);
             
-            // Add new listener
-            newBtn.addEventListener('click', function() {
+            // Add click listener with event delegation
+            newBtn.addEventListener('click', function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                
                 const itemName = this.getAttribute('data-item-name');
                 if (!itemName || !itemName.trim()) {
-                    console.error('Item name is missing for delete');
+                    console.error('Item name is missing for delete button');
+                    alert('Error: Item name is missing. Please refresh the page.');
                     return;
                 }
+                
+                // Decode the item name for display
+                const decodedName = decodeURIComponent(itemName);
                 handleDeleteItem(itemName);
             });
         });
     }
+    
+    // Scroll to add item form function
+    function scrollToAddItemForm() {
+        const addItemForm = document.getElementById('addItemForm');
+        if (addItemForm) {
+            addItemForm.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            // Focus on the input after scrolling
+            setTimeout(() => {
+                const itemInput = document.getElementById('itemInput');
+                if (itemInput) {
+                    itemInput.focus();
+                }
+            }, 500);
+        } else {
+            // Fallback: scroll to top where the form should be
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+    }
+    
+    // Make function globally available
+    window.scrollToAddItemForm = scrollToAddItemForm;
     
     // Handle item update via API (for both quantity and expiration date)
     async function handleUpdateItem(itemId, itemName, quantity, expirationDate, addedDate, updateType = 'item') {
@@ -4590,7 +4631,7 @@
         mobileStickyBar.innerHTML = `
             <div class="row g-2 m-0">
                 <div class="col-6">
-                    <button type="button" class="btn btn-primary w-100" data-bs-toggle="modal" data-bs-target="#addItemModal" style="background: linear-gradient(135deg, #8B5CF6 0%, #3B82F6 100%); border: none; border-radius: 12px; padding: 12px; font-weight: 600; font-size: 0.9rem;">
+                    <button type="button" class="btn btn-primary w-100" onclick="scrollToAddItemForm()" style="background: linear-gradient(135deg, #8B5CF6 0%, #3B82F6 100%); border: none; border-radius: 12px; padding: 12px; font-weight: 600; font-size: 0.9rem;">
                         <i class="bi bi-plus-circle-fill me-2"></i>Add Item
                     </button>
                 </div>
