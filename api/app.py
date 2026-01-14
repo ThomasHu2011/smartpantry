@@ -1399,6 +1399,12 @@ def get_expiring_items(pantry_items, expiring_days=None):
     
     return expiring_items if expiring_items else pantry_items  # Fallback to all if none match
 
+# Pantry Insights page
+@app.route("/insights")
+def insights():
+    """Display pantry insights and statistics"""
+    return render_template("insights.html")
+
 # Suggest recipes based on pantry
 @app.route("/suggest")
 def suggest_recipe():
@@ -1811,21 +1817,28 @@ def upload_photo():
     import base64
     img_b64 = base64.b64encode(img_bytes).decode('utf-8')
     
-    prompt = """Analyze this photo and identify all food items with their quantities. 
+    prompt = """Analyze this photo and identify all food items with their quantities, expiration dates (if visible on packaging), and categories. 
 For each food item, detect:
 1. The quantity (e.g., "2 bottles", "three cans", "1 loaf", "5 slices")
 2. The food item name (generic name only, no brand names)
+3. Expiration date (if visible on packaging/labels - format: YYYY-MM-DD, or null if not visible)
+4. Category/tag (choose one: "dairy", "canned goods", "produce", "meat", "beverages", "frozen", "bakery", "snacks", "condiments", "grains", "other")
 
 Return the results in this exact JSON format:
 {
   "items": [
-    {"name": "milk", "quantity": "2 bottles"},
-    {"name": "soup", "quantity": "3 cans"},
-    {"name": "bread", "quantity": "1 loaf"}
+    {"name": "milk", "quantity": "2 bottles", "expirationDate": "2024-01-15", "category": "dairy"},
+    {"name": "soup", "quantity": "3 cans", "expirationDate": null, "category": "canned goods"},
+    {"name": "bread", "quantity": "1 loaf", "expirationDate": "2024-01-10", "category": "bakery"}
   ]
 }
 
-If you cannot determine a quantity, use "1" as the default. Return ONLY valid JSON, no other text."""
+Guidelines:
+- If expiration date is visible on packaging/labels, include it in YYYY-MM-DD format
+- If expiration date is not visible or unclear, set expirationDate to null
+- Categories should be one of: dairy, canned goods, produce, meat, beverages, frozen, bakery, snacks, condiments, grains, other
+- If you cannot determine a quantity, use "1" as the default
+- Return ONLY valid JSON, no other text."""
     
     try:
         if not client:
@@ -1833,7 +1846,7 @@ If you cannot determine a quantity, use "1" as the default. Return ONLY valid JS
         response = client.chat.completions.create(
             model="gpt-4o",
             messages=[
-                {"role": "system", "content": "You are a food recognition assistant. Analyze images and identify food items with their quantities. Return results in JSON format with item names and quantities."},
+                {"role": "system", "content": "You are a food recognition assistant. Analyze images and identify food items with their quantities, expiration dates (if visible), and categories. Return results in JSON format."},
                 {"role": "user", "content": [
                     {"type": "text", "text": prompt},
                     {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img_b64}"}}
@@ -1855,12 +1868,19 @@ If you cannot determine a quantity, use "1" as the default. Return ONLY valid JS
             for item in detected_items_data:
                 name = item.get('name', '').strip()
                 quantity = item.get('quantity', '1').strip()
+                expiration_date = item.get('expirationDate')
+                category = item.get('category', 'other')
                 if name:
+                    # Normalize expiration date if provided
+                    normalized_exp_date = None
+                    if expiration_date:
+                        normalized_exp_date = normalize_expiration_date(str(expiration_date))
                     pantry_items.append({
                         'id': str(uuid.uuid4()),
                         'name': name,
                         'quantity': quantity,
-                        'expirationDate': None,
+                        'expirationDate': normalized_exp_date,
+                        'category': category,  # Store category for insights
                         'addedDate': datetime.now().isoformat()
                     })
         except json.JSONDecodeError:
@@ -3524,21 +3544,28 @@ def api_upload_photo():
         import base64
         img_b64 = base64.b64encode(img_bytes).decode('utf-8')
         
-        prompt = """Analyze this photo and identify all food items with their quantities. 
+        prompt = """Analyze this photo and identify all food items with their quantities, expiration dates (if visible on packaging), and categories. 
 For each food item, detect:
 1. The quantity (e.g., "2 bottles", "three cans", "1 loaf", "5 slices")
 2. The food item name (generic name only, no brand names)
+3. Expiration date (if visible on packaging/labels - format: YYYY-MM-DD, or null if not visible)
+4. Category/tag (choose one: "dairy", "canned goods", "produce", "meat", "beverages", "frozen", "bakery", "snacks", "condiments", "grains", "other")
 
 Return the results in this exact JSON format:
 {
   "items": [
-    {"name": "milk", "quantity": "2 bottles"},
-    {"name": "soup", "quantity": "3 cans"},
-    {"name": "bread", "quantity": "1 loaf"}
+    {"name": "milk", "quantity": "2 bottles", "expirationDate": "2024-01-15", "category": "dairy"},
+    {"name": "soup", "quantity": "3 cans", "expirationDate": null, "category": "canned goods"},
+    {"name": "bread", "quantity": "1 loaf", "expirationDate": "2024-01-10", "category": "bakery"}
   ]
 }
 
-If you cannot determine a quantity, use "1" as the default. Return ONLY valid JSON, no other text."""
+Guidelines:
+- If expiration date is visible on packaging/labels, include it in YYYY-MM-DD format
+- If expiration date is not visible or unclear, set expirationDate to null
+- Categories should be one of: dairy, canned goods, produce, meat, beverages, frozen, bakery, snacks, condiments, grains, other
+- If you cannot determine a quantity, use "1" as the default
+- Return ONLY valid JSON, no other text."""
         
         if not client:
             return jsonify({
@@ -3548,13 +3575,13 @@ If you cannot determine a quantity, use "1" as the default. Return ONLY valid JS
         response = client.chat.completions.create(
             model="gpt-4o",
             messages=[
-                {"role": "system", "content": "You are a food recognition assistant. Analyze images and identify food items with their quantities. Return results in JSON format with item names and quantities."},
+                {"role": "system", "content": "You are a food recognition assistant. Analyze images and identify food items with their quantities, expiration dates (if visible), and categories. Return results in JSON format."},
                 {"role": "user", "content": [
                     {"type": "text", "text": prompt},
                     {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img_b64}"}}
                 ]}
             ],
-            max_tokens=500,
+            max_tokens=1000,  # Increased for expiration dates and categories
             response_format={"type": "json_object"}
         )
         food_response = response.choices[0].message.content
@@ -3570,12 +3597,19 @@ If you cannot determine a quantity, use "1" as the default. Return ONLY valid JS
             for item in detected_items:
                 name = item.get('name', '').strip()
                 quantity = item.get('quantity', '1').strip()
+                expiration_date = item.get('expirationDate')
+                category = item.get('category', 'other')
                 if name:
+                    # Normalize expiration date if provided
+                    normalized_exp_date = None
+                    if expiration_date:
+                        normalized_exp_date = normalize_expiration_date(str(expiration_date))
                     pantry_items.append({
                         'id': str(uuid.uuid4()),
                         'name': name,
                         'quantity': quantity,
-                        'expirationDate': None,
+                        'expirationDate': normalized_exp_date,
+                        'category': category,  # Store category for insights
                         'addedDate': datetime.now().isoformat()
                     })
         except json.JSONDecodeError:
@@ -3656,6 +3690,146 @@ If you cannot determine a quantity, use "1" as the default. Return ONLY valid JS
             'success': False,
             'error': f'Error analyzing photo: {str(e)}'
             }), 500
+
+@app.route('/api/insights', methods=['GET'])
+def api_insights():
+    """Get pantry insights and statistics"""
+    try:
+        client_type = request.headers.get('X-Client-Type', 'web')
+        user_id = request.headers.get('X-User-ID')
+        
+        # Get appropriate pantry
+        if user_id:
+            pantry_items = get_user_pantry(user_id)
+        elif 'user_id' in session:
+            pantry_items = get_user_pantry(session['user_id'])
+        else:
+            # Use session-based pantry for anonymous users
+            if client_type == 'mobile':
+                pantry_items = mobile_pantry
+            else:
+                pantry_items = session.get('web_pantry', [])
+        
+        # Ensure pantry_items is a list
+        if not isinstance(pantry_items, list):
+            pantry_items = []
+        
+        # Calculate statistics
+        today = datetime.now().date()
+        item_counts = {}
+        category_counts = {}
+        expired_items = []
+        expiring_soon_items = []
+        total_days_in_pantry = 0
+        items_with_dates = 0
+        
+        for item in pantry_items:
+            if not isinstance(item, dict):
+                continue
+            
+            item_name = item.get('name', '').strip().lower()
+            if item_name:
+                # Most common items
+                item_counts[item_name] = item_counts.get(item_name, 0) + 1
+            
+            # Category counts
+            category = item.get('category', 'other')
+            category_counts[category] = category_counts.get(category, 0) + 1
+            
+            # Average time in pantry
+            added_date_str = item.get('addedDate')
+            if added_date_str:
+                try:
+                    # Handle different date formats
+                    date_str = str(added_date_str).strip()
+                    if 'T' in date_str:
+                        # ISO format with time
+                        if date_str.endswith('Z'):
+                            date_str = date_str.replace('Z', '+00:00')
+                        added_date = datetime.fromisoformat(date_str).date()
+                    else:
+                        # Date only format (YYYY-MM-DD)
+                        added_date = datetime.strptime(date_str[:10], '%Y-%m-%d').date()
+                    days_in_pantry = (today - added_date).days
+                    if days_in_pantry >= 0:
+                        total_days_in_pantry += days_in_pantry
+                        items_with_dates += 1
+                except Exception as e:
+                    if VERBOSE_LOGGING:
+                        print(f"Warning: Could not parse addedDate '{added_date_str}': {e}")
+                    pass
+            
+            # Expired and expiring soon items
+            exp_date_str = item.get('expirationDate')
+            if exp_date_str:
+                try:
+                    # Handle different date formats
+                    date_str = str(exp_date_str).strip()
+                    if len(date_str) >= 10:
+                        # Try ISO format first
+                        if 'T' in date_str:
+                            if date_str.endswith('Z'):
+                                date_str = date_str.replace('Z', '+00:00')
+                            exp_date = datetime.fromisoformat(date_str).date()
+                        else:
+                            # Date only format (YYYY-MM-DD)
+                            exp_date = datetime.strptime(date_str[:10], '%Y-%m-%d').date()
+                        
+                        days_until_exp = (exp_date - today).days
+                        
+                        if days_until_exp < 0:
+                            expired_items.append({
+                                'name': item.get('name', 'Unknown'),
+                                'expired_days': abs(days_until_exp)
+                            })
+                        elif days_until_exp <= 7:
+                            expiring_soon_items.append({
+                                'name': item.get('name', 'Unknown'),
+                                'days_remaining': days_until_exp
+                            })
+                except Exception as e:
+                    if VERBOSE_LOGGING:
+                        print(f"Warning: Could not parse expirationDate '{exp_date_str}': {e}")
+                    pass
+        
+        # Sort most common items
+        most_common = sorted(item_counts.items(), key=lambda x: x[1], reverse=True)[:10]
+        most_common_items = [{'name': name, 'count': count} for name, count in most_common]
+        
+        # Sort categories
+        category_list = [{'category': cat, 'count': count} for cat, count in category_counts.items()]
+        category_list.sort(key=lambda x: x['count'], reverse=True)
+        
+        # Sort expired items (most expired first)
+        expired_items.sort(key=lambda x: x['expired_days'], reverse=True)
+        
+        # Sort expiring soon items (soonest first)
+        expiring_soon_items.sort(key=lambda x: x['days_remaining'])
+        
+        # Calculate average time in pantry
+        avg_days_in_pantry = total_days_in_pantry / items_with_dates if items_with_dates > 0 else 0
+        
+        return jsonify({
+            'success': True,
+            'stats': {
+                'total_items': len(pantry_items),
+                'most_common_items': most_common_items if most_common_items else [],
+                'category_breakdown': category_list if category_list else [],
+                'average_days_in_pantry': round(avg_days_in_pantry, 1),
+                'expired_items_count': len(expired_items),
+                'expired_items': expired_items[:10] if expired_items else [],  # Top 10 most expired
+                'expiring_soon_count': len(expiring_soon_items),
+                'expiring_soon_items': expiring_soon_items[:10] if expiring_soon_items else []  # Top 10 expiring soonest
+            }
+        })
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
 
 @app.route('/api/health', methods=['GET'])
 def api_health():

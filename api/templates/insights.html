@@ -1,0 +1,721 @@
+{% extends "base.html" %}
+
+{% block title %}Pantry Insights - SmartPantry{% endblock %}
+
+{% block extra_head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+    /* Insights page - Enhanced UI matching app design */
+    body::before {
+        background: linear-gradient(135deg, 
+            rgba(139, 92, 246, 0.25) 0%, 
+            rgba(59, 130, 246, 0.22) 33%,
+            rgba(99, 102, 241, 0.20) 66%,
+            rgba(236, 72, 153, 0.18) 100%);
+    }
+    
+    .insights-header {
+        background: linear-gradient(135deg, rgba(139, 92, 246, 0.1) 0%, rgba(59, 130, 246, 0.08) 100%);
+        border-radius: 24px;
+        padding: 3rem 2rem;
+        margin-bottom: 2.5rem;
+        box-shadow: 0 8px 24px rgba(139, 92, 246, 0.1);
+        border: 1px solid rgba(139, 92, 246, 0.1);
+    }
+    
+    .insights-header h1 {
+        font-size: 2.5rem;
+        font-weight: 800;
+        background: linear-gradient(135deg, #8B5CF6 0%, #3B82F6 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+        margin-bottom: 0.5rem;
+    }
+    
+    .stat-card {
+        background: white;
+        border-radius: 20px;
+        padding: 2rem 1.5rem;
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        height: 100%;
+        border: 1px solid rgba(139, 92, 246, 0.1);
+        position: relative;
+        overflow: hidden;
+    }
+    
+    .stat-card::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 4px;
+        background: linear-gradient(90deg, #8B5CF6 0%, #3B82F6 100%);
+        transform: scaleX(0);
+        transition: transform 0.3s ease;
+    }
+    
+    .stat-card:hover {
+        transform: translateY(-8px);
+        box-shadow: 0 12px 32px rgba(139, 92, 246, 0.2);
+        border-color: rgba(139, 92, 246, 0.3);
+    }
+    
+    .stat-card:hover::before {
+        transform: scaleX(1);
+    }
+    
+    .stat-icon {
+        width: 56px;
+        height: 56px;
+        border-radius: 16px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin-bottom: 1rem;
+        background: linear-gradient(135deg, rgba(139, 92, 246, 0.15) 0%, rgba(59, 130, 246, 0.15) 100%);
+        font-size: 1.5rem;
+        color: #8B5CF6;
+    }
+    
+    .stat-value {
+        font-size: 3rem;
+        font-weight: 800;
+        background: linear-gradient(135deg, #8B5CF6 0%, #3B82F6 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+        line-height: 1;
+        margin-bottom: 0.5rem;
+    }
+    
+    .stat-label {
+        color: #64748b;
+        font-size: 0.95rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.8px;
+    }
+    
+    .chart-container {
+        background: white;
+        border-radius: 20px;
+        padding: 2rem;
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+        margin-bottom: 2rem;
+        border: 1px solid rgba(139, 92, 246, 0.1);
+        transition: all 0.3s ease;
+    }
+    
+    .chart-container:hover {
+        box-shadow: 0 8px 24px rgba(139, 92, 246, 0.15);
+        transform: translateY(-2px);
+    }
+    
+    .chart-title {
+        font-size: 1.5rem;
+        font-weight: 700;
+        color: #1e293b;
+        margin-bottom: 2rem;
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        padding-bottom: 1rem;
+        border-bottom: 2px solid #e2e8f0;
+    }
+    
+    .chart-title i {
+        font-size: 1.75rem;
+    }
+    
+    .chart-wrapper {
+        position: relative;
+        height: 300px;
+        margin-top: 1rem;
+    }
+    
+    .insights-list {
+        background: white;
+        border-radius: 20px;
+        padding: 2rem;
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+        border: 1px solid rgba(139, 92, 246, 0.1);
+        margin-bottom: 2rem;
+    }
+    
+    .insights-list-item {
+        padding: 1.25rem;
+        border-bottom: 1px solid #e2e8f0;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        transition: all 0.2s ease;
+        border-radius: 12px;
+        margin-bottom: 0.5rem;
+    }
+    
+    .insights-list-item:hover {
+        background: rgba(139, 92, 246, 0.05);
+        transform: translateX(4px);
+    }
+    
+    .insights-list-item:last-child {
+        border-bottom: none;
+        margin-bottom: 0;
+    }
+    
+    .item-name {
+        font-weight: 600;
+        color: #1e293b;
+        font-size: 1.05rem;
+    }
+    
+    .item-value {
+        font-weight: 700;
+        font-size: 1rem;
+        padding: 0.5rem 1rem;
+        border-radius: 8px;
+        background: rgba(139, 92, 246, 0.1);
+        color: #8B5CF6;
+    }
+    
+    .item-value.expired {
+        background: rgba(239, 68, 68, 0.1);
+        color: #ef4444;
+    }
+    
+    .item-value.expiring {
+        background: rgba(245, 158, 11, 0.1);
+        color: #f59e0b;
+    }
+    
+    .loading-spinner {
+        text-align: center;
+        padding: 5rem 2rem;
+        background: white;
+        border-radius: 20px;
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+    }
+    
+    .loading-spinner .spinner-border {
+        width: 4rem;
+        height: 4rem;
+        border-width: 0.3rem;
+        color: #8B5CF6;
+    }
+    
+    .error-message {
+        background: linear-gradient(135deg, rgba(239, 68, 68, 0.1) 0%, rgba(220, 38, 38, 0.08) 100%);
+        color: #991b1b;
+        padding: 1.5rem;
+        border-radius: 16px;
+        margin: 2rem 0;
+        border: 1px solid rgba(239, 68, 68, 0.2);
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+    }
+    
+    .empty-state {
+        text-align: center;
+        padding: 3rem 2rem;
+        color: #64748b;
+    }
+    
+    .empty-state i {
+        font-size: 4rem;
+        color: #cbd5e1;
+        margin-bottom: 1rem;
+    }
+    
+    .empty-state p {
+        font-size: 1.1rem;
+        margin: 0;
+    }
+    
+    @media (max-width: 768px) {
+        .insights-header {
+            padding: 2rem 1.5rem;
+        }
+        
+        .insights-header h1 {
+            font-size: 1.75rem;
+        }
+        
+        .stat-value {
+            font-size: 2.25rem;
+        }
+        
+        .chart-container {
+            padding: 1.5rem;
+        }
+        
+        .chart-wrapper {
+            height: 250px;
+        }
+        
+        .chart-title {
+            font-size: 1.25rem;
+        }
+        
+        .insights-list {
+            padding: 1.5rem;
+        }
+        
+        .insights-list-item {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 0.75rem;
+        }
+        
+        .item-value {
+            align-self: flex-end;
+        }
+    }
+    
+    @media (max-width: 576px) {
+        .stat-card {
+            padding: 1.5rem;
+        }
+        
+        .stat-value {
+            font-size: 2rem;
+        }
+        
+        .chart-wrapper {
+            height: 200px;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container my-5">
+    <div class="insights-header text-center">
+        <h1>
+            <i class="bi bi-graph-up-arrow me-2"></i>Pantry Insights & Analytics
+        </h1>
+        <p class="text-muted mb-0 fs-5">Discover patterns and optimize your pantry management</p>
+    </div>
+    
+    <!-- Loading State -->
+    <div id="loadingState" class="loading-spinner">
+        <div class="spinner-border" role="status">
+            <span class="visually-hidden">Loading...</span>
+        </div>
+        <p class="mt-4 text-muted fs-5">Loading insights...</p>
+    </div>
+    
+    <!-- Error State -->
+    <div id="errorState" class="error-message" style="display: none;">
+        <i class="bi bi-exclamation-triangle fs-4"></i>
+        <div>
+            <strong>Error loading insights</strong>
+            <p class="mb-0" id="errorText">Failed to load insights. Please try again later.</p>
+        </div>
+    </div>
+    
+    <!-- Insights Content -->
+    <div id="insightsContent" style="display: none;">
+        <!-- Key Statistics -->
+        <div class="row g-4 mb-5">
+            <div class="col-md-4">
+                <div class="stat-card">
+                    <div class="stat-icon">
+                        <i class="bi bi-basket-fill"></i>
+                    </div>
+                    <div class="stat-value" id="totalItems">0</div>
+                    <div class="stat-label">
+                        Total Items in Pantry
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="stat-card">
+                    <div class="stat-icon">
+                        <i class="bi bi-calendar-check"></i>
+                    </div>
+                    <div class="stat-value" id="avgDays">0</div>
+                    <div class="stat-label">
+                        Average Days in Pantry
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="stat-card">
+                    <div class="stat-icon">
+                        <i class="bi bi-exclamation-triangle"></i>
+                    </div>
+                    <div class="stat-value" id="expiredCount">0</div>
+                    <div class="stat-label">
+                        Expired Items
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Most Common Items Chart -->
+        <div class="chart-container">
+            <div class="chart-title">
+                <i class="bi bi-bar-chart-fill" style="color: #8B5CF6;"></i>
+                Most Common Items
+            </div>
+            <div class="chart-wrapper">
+                <canvas id="mostCommonChart"></canvas>
+            </div>
+        </div>
+        
+        <!-- Category Breakdown Chart -->
+        <div class="chart-container">
+            <div class="chart-title">
+                <i class="bi bi-pie-chart-fill" style="color: #8B5CF6;"></i>
+                Category Breakdown
+            </div>
+            <div class="chart-wrapper">
+                <canvas id="categoryChart"></canvas>
+            </div>
+        </div>
+        
+        <!-- Expired Items List -->
+        <div class="insights-list">
+            <div class="chart-title" style="border-bottom: 2px solid #fee2e2; margin-bottom: 1.5rem; padding-bottom: 1rem;">
+                <i class="bi bi-exclamation-circle-fill" style="color: #ef4444;"></i>
+                Expired Items
+            </div>
+            <div id="expiredItemsList">
+                <div class="empty-state">
+                    <i class="bi bi-check-circle"></i>
+                    <p>No expired items 🎉</p>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Expiring Soon Items List -->
+        <div class="insights-list">
+            <div class="chart-title" style="border-bottom: 2px solid #fef3c7; margin-bottom: 1.5rem; padding-bottom: 1rem;">
+                <i class="bi bi-clock-fill" style="color: #f59e0b;"></i>
+                Expiring Soon (Next 7 Days)
+            </div>
+            <div id="expiringSoonList">
+                <div class="empty-state">
+                    <i class="bi bi-check-circle"></i>
+                    <p>No items expiring soon 🎉</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// Chart instances
+let mostCommonChart = null;
+let categoryChart = null;
+
+// Format category name for display
+function formatCategoryName(category) {
+    if (!category) return 'Other';
+    // Convert "canned_goods" to "Canned Goods"
+    return category
+        .split(/[_\s-]/)
+        .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+        .join(' ');
+}
+
+// Fetch insights data
+async function loadInsights() {
+    try {
+        const response = await fetch('/api/insights', {
+            credentials: 'same-origin',
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest',
+                'X-Client-Type': 'web'
+            }
+        });
+        
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.error || `HTTP ${response.status}: Failed to fetch insights`);
+        }
+        
+        const data = await response.json();
+        
+        if (data.success && data.stats) {
+            displayInsights(data.stats);
+        } else {
+            throw new Error(data.error || 'Invalid response format');
+        }
+    } catch (error) {
+        console.error('Error loading insights:', error);
+        document.getElementById('loadingState').style.display = 'none';
+        document.getElementById('errorState').style.display = 'flex';
+        const errorText = document.getElementById('errorText');
+        if (errorText) {
+            errorText.textContent = error.message || 'Failed to load insights. Please try again later.';
+        }
+    }
+}
+
+// Display insights data
+function displayInsights(stats) {
+    // Hide loading, show content
+    document.getElementById('loadingState').style.display = 'none';
+    document.getElementById('insightsContent').style.display = 'block';
+    
+    // Update key statistics with animation
+    animateValue('totalItems', 0, stats.total_items || 0, 1000);
+    animateValue('avgDays', 0, parseFloat(stats.average_days_in_pantry || 0), 1000);
+    animateValue('expiredCount', 0, stats.expired_items_count || 0, 1000);
+    
+    // Create Most Common Items Chart
+    const mostCommonContainer = document.getElementById('mostCommonChart');
+    if (stats.most_common_items && stats.most_common_items.length > 0) {
+        if (mostCommonChart) {
+            mostCommonChart.destroy();
+        }
+        
+        const ctx1 = mostCommonContainer.getContext('2d');
+        mostCommonChart = new Chart(ctx1, {
+            type: 'bar',
+            data: {
+                labels: stats.most_common_items.map(item => {
+                    const name = item.name || 'Unknown';
+                    return name.charAt(0).toUpperCase() + name.slice(1);
+                }),
+                datasets: [{
+                    label: 'Count',
+                    data: stats.most_common_items.map(item => item.count || 0),
+                    backgroundColor: 'rgba(139, 92, 246, 0.7)',
+                    borderColor: 'rgba(139, 92, 246, 1)',
+                    borderWidth: 2,
+                    borderRadius: 8,
+                    borderSkipped: false
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        display: false
+                    },
+                    tooltip: {
+                        backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                        padding: 12,
+                        titleFont: { size: 14, weight: 'bold' },
+                        bodyFont: { size: 13 },
+                        cornerRadius: 8
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: {
+                            stepSize: 1,
+                            font: { size: 12 }
+                        },
+                        grid: {
+                            color: 'rgba(0, 0, 0, 0.05)'
+                        }
+                    },
+                    x: {
+                        ticks: {
+                            font: { size: 12 },
+                            maxRotation: 45,
+                            minRotation: 0
+                        },
+                        grid: {
+                            display: false
+                        }
+                    }
+                },
+                animation: {
+                    duration: 1000,
+                    easing: 'easeOutQuart'
+                }
+            }
+        });
+    } else {
+        mostCommonContainer.parentElement.innerHTML = `
+            <div class="empty-state">
+                <i class="bi bi-bar-chart"></i>
+                <p>No data available yet. Add items to see statistics!</p>
+            </div>
+        `;
+    }
+    
+    // Create Category Breakdown Chart
+    const categoryContainer = document.getElementById('categoryChart');
+    if (stats.category_breakdown && stats.category_breakdown.length > 0) {
+        if (categoryChart) {
+            categoryChart.destroy();
+        }
+        
+        const ctx2 = categoryContainer.getContext('2d');
+        
+        const colors = [
+            'rgba(139, 92, 246, 0.8)',
+            'rgba(59, 130, 246, 0.8)',
+            'rgba(16, 185, 129, 0.8)',
+            'rgba(245, 158, 11, 0.8)',
+            'rgba(239, 68, 68, 0.8)',
+            'rgba(236, 72, 153, 0.8)',
+            'rgba(99, 102, 241, 0.8)',
+            'rgba(14, 165, 233, 0.8)',
+            'rgba(34, 197, 94, 0.8)',
+            'rgba(251, 146, 60, 0.8)',
+            'rgba(168, 85, 247, 0.8)'
+        ];
+        
+        categoryChart = new Chart(ctx2, {
+            type: 'doughnut',
+            data: {
+                labels: stats.category_breakdown.map(item => formatCategoryName(item.category)),
+                datasets: [{
+                    data: stats.category_breakdown.map(item => item.count || 0),
+                    backgroundColor: colors.slice(0, stats.category_breakdown.length),
+                    borderWidth: 3,
+                    borderColor: '#ffffff'
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'right',
+                        labels: {
+                            padding: 15,
+                            font: { size: 13 },
+                            usePointStyle: true
+                        }
+                    },
+                    tooltip: {
+                        backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                        padding: 12,
+                        titleFont: { size: 14, weight: 'bold' },
+                        bodyFont: { size: 13 },
+                        cornerRadius: 8,
+                        callbacks: {
+                            label: function(context) {
+                                const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                                const percentage = ((context.parsed / total) * 100).toFixed(1);
+                                return `${context.label}: ${context.parsed} (${percentage}%)`;
+                            }
+                        }
+                    }
+                },
+                animation: {
+                    animateRotate: true,
+                    animateScale: true,
+                    duration: 1000,
+                    easing: 'easeOutQuart'
+                }
+            }
+        });
+    } else {
+        categoryContainer.parentElement.innerHTML = `
+            <div class="empty-state">
+                <i class="bi bi-pie-chart"></i>
+                <p>No category data available. Add items with categories to see breakdown!</p>
+            </div>
+        `;
+    }
+    
+    // Display Expired Items
+    const expiredList = document.getElementById('expiredItemsList');
+    if (stats.expired_items && stats.expired_items.length > 0) {
+        expiredList.innerHTML = stats.expired_items.map(item => `
+            <div class="insights-list-item">
+                <span class="item-name">${escapeHtml(item.name || 'Unknown')}</span>
+                <span class="item-value expired">Expired ${item.expired_days || 0} day${(item.expired_days || 0) !== 1 ? 's' : ''} ago</span>
+            </div>
+        `).join('');
+    } else {
+        expiredList.innerHTML = `
+            <div class="empty-state">
+                <i class="bi bi-check-circle"></i>
+                <p>No expired items 🎉</p>
+            </div>
+        `;
+    }
+    
+    // Display Expiring Soon Items
+    const expiringList = document.getElementById('expiringSoonList');
+    if (stats.expiring_soon_items && stats.expiring_soon_items.length > 0) {
+        expiringList.innerHTML = stats.expiring_soon_items.map(item => `
+            <div class="insights-list-item">
+                <span class="item-name">${escapeHtml(item.name || 'Unknown')}</span>
+                <span class="item-value expiring">${item.days_remaining || 0} day${(item.days_remaining || 0) !== 1 ? 's' : ''} remaining</span>
+            </div>
+        `).join('');
+    } else {
+        expiringList.innerHTML = `
+            <div class="empty-state">
+                <i class="bi bi-check-circle"></i>
+                <p>No items expiring soon 🎉</p>
+            </div>
+        `;
+    }
+}
+
+// Animate number counting
+function animateValue(id, start, end, duration) {
+    const element = document.getElementById(id);
+    if (!element) return;
+    
+    const startTime = performance.now();
+    const isDecimal = end % 1 !== 0;
+    
+    function update(currentTime) {
+        const elapsed = currentTime - startTime;
+        const progress = Math.min(elapsed / duration, 1);
+        
+        // Easing function
+        const easeOutQuart = 1 - Math.pow(1 - progress, 4);
+        const current = start + (end - start) * easeOutQuart;
+        
+        if (isDecimal) {
+            element.textContent = current.toFixed(1);
+        } else {
+            element.textContent = Math.floor(current);
+        }
+        
+        if (progress < 1) {
+            requestAnimationFrame(update);
+        } else {
+            if (isDecimal) {
+                element.textContent = end.toFixed(1);
+            } else {
+                element.textContent = end;
+            }
+        }
+    }
+    
+    requestAnimationFrame(update);
+}
+
+// Escape HTML to prevent XSS
+function escapeHtml(text) {
+    if (!text) return '';
+    const div = document.createElement('div');
+    div.textContent = String(text);
+    return div.innerHTML;
+}
+
+// Load insights on page load
+document.addEventListener('DOMContentLoaded', function() {
+    // Check if Chart.js is loaded
+    if (typeof Chart === 'undefined') {
+        console.error('Chart.js not loaded');
+        document.getElementById('loadingState').style.display = 'none';
+        document.getElementById('errorState').style.display = 'flex';
+        document.getElementById('errorText').textContent = 'Chart library failed to load. Please refresh the page.';
+        return;
+    }
+    
+    loadInsights();
+});
+</script>
+{% endblock %}

@@ -289,7 +289,7 @@
         border: none;
         box-shadow: var(--shadow-md);
         transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-        overflow: hidden;
+        overflow: visible; /* Allow dropdowns to show */
     }
     
     .card:hover {
@@ -356,14 +356,17 @@
         white-space: nowrap;
     }
     
-    /* Fix text overflow in pantry item names */
+    /* Fix text overflow in pantry item names - allow wrapping for full display */
     .pantry-item-card .fw-bold {
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
+        overflow: visible;
+        text-overflow: clip;
+        white-space: normal;
         max-width: 100%;
         display: block;
-        word-break: break-word; /* Fallback for very long words */
+        word-wrap: break-word;
+        overflow-wrap: break-word;
+        hyphens: auto;
+        line-height: 1.4;
     }
     
     /* Ensure card layout doesn't break with long names */
@@ -377,7 +380,7 @@
         flex: 1;
         display: flex;
         flex-direction: column;
-        overflow: hidden;
+        overflow: visible; /* Allow content to wrap and show fully */
     }
     
     /* Prevent delete button from overlapping text */
@@ -387,6 +390,8 @@
     
     .pantry-item-card .fw-bold {
         padding-right: 40px; /* Space for delete button */
+        word-wrap: break-word;
+        overflow-wrap: break-word;
     }
     
     /* Prevent card hover overflow */
@@ -861,6 +866,34 @@
         border-radius: 0.75rem;
         padding: 0.5rem;
         margin-top: 0.5rem;
+        z-index: 1050 !important;
+        overflow: visible !important;
+        max-height: none !important;
+    }
+    
+    /* Ensure dropdown is not clipped by parent containers */
+    .dropdown {
+        position: relative;
+        z-index: 1050;
+    }
+    
+    /* Fix dropdown visibility in card headers */
+    .card-header {
+        overflow: visible !important;
+        position: relative;
+        z-index: 1;
+    }
+    
+    .card-header .dropdown {
+        position: static;
+    }
+    
+    .card-header .dropdown-menu {
+        position: absolute;
+        will-change: transform;
+        top: 100% !important;
+        left: 0 !important;
+        transform: translate3d(0px, 8px, 0px) !important;
     }
     
     .dropdown-item {
@@ -1069,10 +1102,10 @@
         display: inline-block;
     }
     
-    /* Ensure cards don't overflow container */
+    /* Ensure cards don't overflow container - but allow dropdowns to show */
     .card {
         max-width: 100%;
-        overflow: hidden;
+        overflow: visible; /* Allow dropdowns to overflow */
     }
     
     /* Fix flex-grow text overflow */
@@ -1217,8 +1250,8 @@
             </div>
 
             <!-- Pantry Overview - Cleaner Design -->
-            <div class="card shadow-sm border-0" style="border-radius: 20px; overflow: visible; position: relative; z-index: 1;">
-                <div class="card-header border-0" style="background: linear-gradient(135deg, rgba(139, 92, 246, 0.1) 0%, rgba(59, 130, 246, 0.08) 100%); padding: 20px 24px; position: relative; z-index: 1; overflow: visible;">
+            <div class="card shadow-sm border-0" style="border-radius: 20px; overflow: visible !important; position: relative; z-index: 1;">
+                <div class="card-header border-0" style="background: linear-gradient(135deg, rgba(139, 92, 246, 0.1) 0%, rgba(59, 130, 246, 0.08) 100%); padding: 20px 24px; position: relative; z-index: 1; overflow: visible !important;">
                     <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
                         <h5 class="mb-0 fw-bold" style="color: #1e293b; font-size: 1.25rem;">
                             <i class="bi bi-basket-fill me-2" style="color: #8B5CF6;"></i>Your Pantry
@@ -1259,7 +1292,7 @@
                                 <button class="btn btn-sm btn-outline-primary dropdown-toggle" type="button" id="sortDropdown" data-bs-toggle="dropdown" aria-expanded="false" style="border-radius: 8px; border-color: #8B5CF6; color: #8B5CF6; font-weight: 600;">
                                     <i class="bi bi-grid-3x3-gap me-1"></i><span id="currentSortLabel">Category</span>
                                 </button>
-                                <ul class="dropdown-menu dropdown-menu-start" aria-labelledby="sortDropdown" style="border-radius: 12px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12); border: 1px solid rgba(139, 92, 246, 0.1);">
+                                <ul class="dropdown-menu dropdown-menu-start" aria-labelledby="sortDropdown" style="border-radius: 12px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12); border: 1px solid rgba(139, 92, 246, 0.1); z-index: 1050; overflow: visible; max-height: none;">
                                     <li><a class="dropdown-item" href="#" onclick="sortPantry('category'); updateSortLabel('Category'); return false;" style="padding: 10px 16px; font-weight: 600;"><i class="bi bi-grid-3x3-gap me-2" style="color: #8B5CF6;"></i>Category</a></li>
                                     <li><hr class="dropdown-divider" style="margin: 8px 0;"></li>
                                     <li><a class="dropdown-item" href="#" onclick="sortPantry('name'); updateSortLabel('Name (A-Z)'); return false;" style="padding: 10px 16px;"><i class="bi bi-sort-alpha-down me-2"></i>Name (A-Z)</a></li>
@@ -1305,7 +1338,7 @@
                                                     <i class="bi bi-box-seam" style="font-size: 1.25rem; color: #8B5CF6;"></i>
                                                 </div>
                                                 <div class="flex-grow-1" style="min-width: 0;">
-                                                    <h6 class="mb-0 fw-bold text-dark" style="font-size: 1.1rem; line-height: 1.3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="{{ item_name }}">
+                                                    <h6 class="mb-0 fw-bold text-dark" style="font-size: 1.1rem; line-height: 1.4; word-wrap: break-word; overflow-wrap: break-word; hyphens: auto;" title="{{ item_name }}">
                                                     {{ item_name }}
                                                     </h6>
                                             </div>
