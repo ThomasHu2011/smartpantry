@@ -3049,21 +3049,33 @@
     }
 
     function stopCamera() {
-        if (cameraStream) {
-            cameraStream.getTracks().forEach(track => {
-                track.stop();
-            });
-            cameraStream = null;
+        try {
+            if (cameraStream) {
+                cameraStream.getTracks().forEach(track => {
+                    try {
+                        track.stop();
+                    } catch (e) {
+                        console.warn('Error stopping camera track:', e);
+                    }
+                });
+                cameraStream = null;
+            }
+            if (cameraStreamVideo) {
+                try {
+                    cameraStreamVideo.srcObject = null;
+                } catch (e) {
+                    console.warn('Error clearing camera video source:', e);
+                }
+            }
+            // Hide camera status messages
+            if (cameraStatus) cameraStatus.style.display = 'none';
+            if (cameraError) cameraError.style.display = 'none';
+            if (cameraReadyIndicator) cameraReadyIndicator.style.display = 'none';
+            if (captureBtn) captureBtn.style.display = 'none';
+            if (testCameraBtn) testCameraBtn.style.display = 'none';
+        } catch (error) {
+            console.error('Error in stopCamera:', error);
         }
-        if (cameraStreamVideo) {
-            cameraStreamVideo.srcObject = null;
-        }
-        // Hide camera status messages
-        if (cameraStatus) cameraStatus.style.display = 'none';
-        if (cameraError) cameraError.style.display = 'none';
-        if (cameraReadyIndicator) cameraReadyIndicator.style.display = 'none';
-        if (captureBtn) captureBtn.style.display = 'none';
-        if (testCameraBtn) testCameraBtn.style.display = 'none';
     }
     
     // Clean up camera when modal is closed
@@ -4350,12 +4362,16 @@
     window.reloadPantryItems = reloadPantryItems;
     
     function showFeedback(message, type) {
-        // Try modal feedback first, then fallback to regular feedback
-        let feedback = document.getElementById('addItemModalFeedback');
-        if (!feedback) {
-            feedback = document.getElementById('addItemFeedback');
-        }
-        if (!feedback) return;
+        try {
+            // Try modal feedback first, then fallback to regular feedback
+            let feedback = document.getElementById('addItemModalFeedback');
+            if (!feedback) {
+                feedback = document.getElementById('addItemFeedback');
+            }
+            if (!feedback) {
+                console.warn('Feedback element not found');
+                return;
+            }
         
         feedback.className = `alert alert-${type} alert-dismissible fade show mt-3`;
         feedback.innerHTML = `
@@ -5450,20 +5466,48 @@
     
     // Update suggestions and progress after pantry reload
     // Wait for reloadPantryItems to be defined, then wrap it
+    let wrapReloadAttempts = 0;
+    const MAX_WRAP_ATTEMPTS = 50; // Max 5 seconds (50 * 100ms)
+    
     function wrapReloadPantryItems() {
-        if (typeof window.reloadPantryItems === 'function') {
-            const originalReloadPantryItems = window.reloadPantryItems;
-            window.reloadPantryItems = async function() {
-                await originalReloadPantryItems();
-                setTimeout(() => {
-                    updateSmartSuggestions();
-                    updateProgressIndicator();
-                    updateExpiringSoonBanner();
-                }, 300);
-            };
-        } else {
-            // If not defined yet, try again after a short delay
-            setTimeout(wrapReloadPantryItems, 100);
+        try {
+            if (typeof window.reloadPantryItems === 'function') {
+                const originalReloadPantryItems = window.reloadPantryItems;
+                window.reloadPantryItems = async function() {
+                    try {
+                        await originalReloadPantryItems();
+                        setTimeout(() => {
+                            try {
+                                if (typeof updateSmartSuggestions === 'function') {
+                                    updateSmartSuggestions();
+                                }
+                                if (typeof updateProgressIndicator === 'function') {
+                                    updateProgressIndicator();
+                                }
+                                if (typeof updateExpiringSoonBanner === 'function') {
+                                    updateExpiringSoonBanner();
+                                }
+                            } catch (error) {
+                                console.error('Error updating suggestions/progress:', error);
+                            }
+                        }, 300);
+                    } catch (error) {
+                        console.error('Error in wrapped reloadPantryItems:', error);
+                        throw error; // Re-throw to allow original error handling
+                    }
+                };
+                wrapReloadAttempts = 0; // Reset on success
+            } else {
+                wrapReloadAttempts++;
+                if (wrapReloadAttempts < MAX_WRAP_ATTEMPTS) {
+                    // If not defined yet, try again after a short delay
+                    setTimeout(wrapReloadPantryItems, 100);
+                } else {
+                    console.error('Failed to wrap reloadPantryItems after', MAX_WRAP_ATTEMPTS, 'attempts');
+                }
+            }
+        } catch (error) {
+            console.error('Error in wrapReloadPantryItems:', error);
         }
     }
     
