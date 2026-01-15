@@ -2117,14 +2117,14 @@
 </div>
 
 <!-- Add Item Modal -->
-<div class="modal fade" id="addItemModal" tabindex="-1" aria-labelledby="addItemModalLabel" aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="true" role="dialog" aria-modal="true" style="pointer-events: auto;">
-    <div class="modal-dialog modal-dialog-centered" style="pointer-events: auto; z-index: 9999; max-height: 90vh; margin: 1rem auto; max-width: 600px; width: 90%;">
-        <div class="modal-content" style="border-radius: 24px; border: none; pointer-events: auto; z-index: 10000; position: relative; max-height: 90vh; overflow-y: auto;">
-            <div class="modal-header border-0 pb-0" style="pointer-events: auto;">
+<div class="modal fade" id="addItemModal" tabindex="-1" aria-labelledby="addItemModalLabel" aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="true" role="dialog" aria-modal="true">
+    <div class="modal-dialog modal-dialog-centered" style="max-height: 90vh; margin: 1rem auto; max-width: 600px; width: 90%;">
+        <div class="modal-content" style="border-radius: 24px; border: none; position: relative; max-height: 90vh; overflow-y: auto;">
+            <div class="modal-header border-0 pb-0">
                 <h5 class="modal-title fw-bold" id="addItemModalLabel">
                     <i class="bi bi-plus-circle-fill me-2 text-primary"></i>Add Item to Pantry
                 </h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close" style="pointer-events: auto; cursor: pointer; z-index: 10;"></button>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body p-4">
                 <form action="/add" method="post" id="addItemModalForm" onsubmit="return handleAddItem(event);">
@@ -2174,7 +2174,7 @@
                 <h5 class="modal-title fw-bold" id="photoModalLabel">
                     <i class="bi bi-camera-fill me-2 text-success"></i>Add Items with Photo
                 </h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close" style="pointer-events: auto; cursor: pointer; z-index: 10;"></button>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body p-4">
                 <!-- Camera View (Hidden by default) -->
