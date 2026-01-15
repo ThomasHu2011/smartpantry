@@ -5435,12 +5435,26 @@
                             show = false;
                         }
                     } else if (filter === 'category') {
-                        // Category filter - show all items (grouping is handled by sort)
+                        // Category filter - trigger category sort when activated
+                        if (isActive && typeof sortPantry === 'function') {
+                            sortPantry('category');
+                            if (typeof updateSortLabel === 'function') {
+                                updateSortLabel('Category');
+                            }
+                        }
                         show = true;
                     } else if (filter === 'recent') {
-                        // Show items added in last 7 days (simplified - would need addedDate)
-                        // For now, show all items
-                        show = true;
+                        // Show items added in last 7 days
+                        // Check if item has a timestamp or was recently added
+                        const itemCard = item.querySelector('.pantry-item-card');
+                        if (itemCard) {
+                            // Try to find when item was added (check data attributes or creation time)
+                            // For now, show all items as "recent" since we don't track added date
+                            // In a real implementation, you'd check data-added-date attribute
+                            show = true;
+                        } else {
+                            show = true;
+                        }
                     }
                 }
                 // If filter is deactivated, show all items
