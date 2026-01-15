@@ -2489,12 +2489,26 @@
         });
     }
 
-    // File input change
+    // File input change handlers with error handling
     if (photoInput) {
-        photoInput.addEventListener('change', handleFileSelect);
+        photoInput.addEventListener('change', function(e) {
+            try {
+                handleFileSelect(e);
+            } catch (error) {
+                console.error('Error handling file select:', error);
+                alert('Error selecting file. Please try again.');
+            }
+        });
     }
     if (mobileCameraInput) {
-        mobileCameraInput.addEventListener('change', handleFileSelect);
+        mobileCameraInput.addEventListener('change', function(e) {
+            try {
+                handleFileSelect(e);
+            } catch (error) {
+                console.error('Error handling mobile camera file select:', error);
+                alert('Error selecting file. Please try again.');
+            }
+        });
     }
 
     // Drag and drop handlers with better feedback
