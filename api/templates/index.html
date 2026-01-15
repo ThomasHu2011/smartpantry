@@ -4100,7 +4100,8 @@
     // Track if form is currently submitting to prevent race conditions
     let isSubmitting = false;
     
-    function handleAddItem(event) {
+    // Make handleAddItem globally accessible
+    window.handleAddItem = function(event) {
         // Always prevent default form submission
         if (event) {
             event.preventDefault();
@@ -4334,7 +4335,10 @@
         }
         
         return false; // Prevent default form submission
-    }
+    };
+    
+    // Make reloadPantryItems globally accessible
+    window.reloadPantryItems = reloadPantryItems;
     
     function showFeedback(message, type) {
         // Try modal feedback first, then fallback to regular feedback
