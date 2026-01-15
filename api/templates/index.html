@@ -5167,43 +5167,69 @@
     document.querySelectorAll('.filter-chip').forEach(chip => {
         chip.addEventListener('click', function() {
             const filter = this.getAttribute('data-filter');
+            const wasActive = this.classList.contains('active');
             this.classList.toggle('active');
+            const isActive = this.classList.contains('active');
             
             // Apply filter
             const items = document.querySelectorAll('.pantry-item-wrapper');
             items.forEach(item => {
                 let show = true;
                 
-                if (filter === 'expiring-soon' && this.classList.contains('active')) {
-                    const expirationBadge = item.querySelector('.expiration-badge[data-exp-date]');
-                    if (expirationBadge) {
-                        const expDate = expirationBadge.getAttribute('data-exp-date');
-                        if (expDate && expDate !== '9999-12-31') {
-                            const daysDiff = getDaysUntilExpiration(expDate);
-                            show = daysDiff >= 0 && daysDiff <= 7;
+                // Only apply filter if it's active
+                if (isActive) {
+                    if (filter === 'expiring-soon') {
+                        const expirationBadge = item.querySelector('.expiration-badge[data-exp-date]');
+                        if (expirationBadge) {
+                            const expDate = expirationBadge.getAttribute('data-exp-date');
+                            if (expDate && expDate !== '9999-12-31') {
+                                const daysDiff = getDaysUntilExpiration(expDate);
+                                show = daysDiff >= 0 && daysDiff <= 7;
+                            } else {
+                                show = false;
+                            }
                         } else {
                             show = false;
                         }
-                    } else {
-                        show = false;
+                    } else if (filter === 'category') {
+                        // Category filter - show all items (grouping is handled by sort)
+                        show = true;
+                    } else if (filter === 'recent') {
+                        // Show items added in last 7 days (simplified - would need addedDate)
+                        // For now, show all items
+                        show = true;
                     }
-                } else if (filter === 'recent' && this.classList.contains('active')) {
-                    // Show items added in last 7 days (simplified - would need addedDate)
-                    show = true; // Placeholder
                 }
+                // If filter is deactivated, show all items
                 
                 item.style.display = show ? '' : 'none';
             });
             
             // Update active state styling
-            if (this.classList.contains('active')) {
+            if (isActive) {
                 this.style.background = 'linear-gradient(135deg, rgba(139, 92, 246, 0.2) 0%, rgba(59, 130, 246, 0.2) 100%)';
                 this.style.borderColor = '#8B5CF6';
                 this.style.color = '#6D28D9';
             } else {
-                this.style.background = '';
-                this.style.borderColor = '';
-                this.style.color = '';
+                // Reset to original styling
+                const filterType = this.getAttribute('data-filter');
+                if (filterType === 'expiring-soon') {
+                    this.style.background = 'rgba(245, 158, 11, 0.1)';
+                    this.style.borderColor = 'rgba(245, 158, 11, 0.3)';
+                    this.style.color = '#92400E';
+                } else if (filterType === 'category') {
+                    this.style.background = 'rgba(139, 92, 246, 0.1)';
+                    this.style.borderColor = 'rgba(139, 92, 246, 0.3)';
+                    this.style.color = '#6D28D9';
+                } else if (filterType === 'recent') {
+                    this.style.background = 'rgba(59, 130, 246, 0.1)';
+                    this.style.borderColor = 'rgba(59, 130, 246, 0.3)';
+                    this.style.color = '#1E40AF';
+                } else {
+                    this.style.background = '';
+                    this.style.borderColor = '';
+                    this.style.color = '';
+                }
             }
         });
     });
