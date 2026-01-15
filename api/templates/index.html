@@ -5534,10 +5534,50 @@
     
     // Initialize on page load
     document.addEventListener('DOMContentLoaded', function() {
-        setTimeout(() => {
-            updateSmartSuggestions();
-            updateProgressIndicator();
-        }, 500);
+        try {
+            console.log('DOM Content Loaded - Initializing SmartPantry...');
+            
+            // Ensure functions are available
+            if (typeof updateSmartSuggestions === 'function') {
+                setTimeout(() => {
+                    try {
+                        updateSmartSuggestions();
+                        if (typeof updateProgressIndicator === 'function') {
+                            updateProgressIndicator();
+                        }
+                        console.log('Smart suggestions and progress indicator updated');
+                    } catch (error) {
+                        console.error('Error updating suggestions/progress on load:', error);
+                    }
+                }, 500);
+            } else {
+                console.error('updateSmartSuggestions function not found!');
+            }
+            
+            // Verify critical functions exist
+            if (typeof window.handleAddItem !== 'function') {
+                console.error('handleAddItem is not accessible globally!');
+            }
+            if (typeof window.reloadPantryItems !== 'function') {
+                console.error('reloadPantryItems is not accessible globally!');
+            }
+            
+            // Force initial update
+            setTimeout(() => {
+                try {
+                    if (typeof updateSmartSuggestions === 'function') {
+                        updateSmartSuggestions();
+                    }
+                    if (typeof updateProgressIndicator === 'function') {
+                        updateProgressIndicator();
+                    }
+                } catch (error) {
+                    console.error('Error in delayed initialization:', error);
+                }
+            }, 1000);
+        } catch (error) {
+            console.error('Error in DOMContentLoaded handler:', error);
+        }
     });
     
     // Mobile sticky action bar - create after DOM is ready
