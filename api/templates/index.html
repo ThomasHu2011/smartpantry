@@ -2396,6 +2396,15 @@
 </div>
 
 <script>
+    // Global error handler to catch and log JavaScript errors
+    window.addEventListener('error', function(e) {
+        console.error('JavaScript Error:', e.message, 'at', e.filename, ':', e.lineno);
+        console.error('Stack:', e.error?.stack);
+    });
+    
+    // Ensure all critical functions are available
+    console.log('Initializing SmartPantry JavaScript...');
+    
     let selectedFile = null;
     let cameraStream = null;
 
