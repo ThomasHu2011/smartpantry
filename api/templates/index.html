@@ -45,6 +45,23 @@
         pointer-events: auto !important;
     }
     
+    /* Ensure backdrop doesn't block modal content clicks */
+    .modal.show ~ .modal-backdrop,
+    .modal.show + .modal-backdrop {
+        pointer-events: auto !important;
+    }
+    
+    /* Modal content must be above backdrop and clickable */
+    .modal.show .modal-dialog {
+        pointer-events: auto !important;
+        z-index: 1051 !important;
+    }
+    
+    .modal.show .modal-content {
+        pointer-events: auto !important;
+        z-index: 1052 !important;
+    }
+    
     .modal-backdrop.show {
         opacity: 1 !important;
         display: block !important;
