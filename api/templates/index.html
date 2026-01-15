@@ -832,8 +832,8 @@
     }
     
     .photo-modal-btn:active {
-        opacity: 0.8 !important;
-        transform: scale(0.98) !important;
+        opacity: 0.9 !important;
+        transform: none !important; /* Remove scale on click to prevent jump */
     }
     
     .photo-modal-btn:focus {
@@ -3928,6 +3928,7 @@
         setDefaultExpirationDate();
         updateExpirationBadges();
         updatePantryCardBackgrounds();
+        updateExpiringSoonBanner();
         setTimeout(() => {
             updateExpirationBadges();
             updatePantryCardBackgrounds();
@@ -5013,6 +5014,7 @@
         // Update expiration badges and card backgrounds on initial load
         updateExpirationBadges();
         updatePantryCardBackgrounds();
+        updateExpiringSoonBanner();
         
         // Restore sort type if one was saved
         const savedSortType = sessionStorage.getItem('pantrySortType');
