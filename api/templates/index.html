@@ -34,7 +34,7 @@
     
     /* Fix modal backdrop - proper isolation to prevent page blur */
     .modal-backdrop {
-        background-color: rgba(0, 0, 0, 0.4) !important; /* Darker for better contrast, no blur */
+        background-color: rgba(0, 0, 0, 0.5) !important; /* Darker for better contrast, no blur */
         /* REMOVED backdrop-filter blur to prevent page blur bug */
         z-index: 1040 !important;
         position: fixed !important;
@@ -42,7 +42,7 @@
         left: 0 !important;
         width: 100% !important;
         height: 100% !important;
-        pointer-events: auto !important; /* Allow backdrop clicks to close modal */
+        pointer-events: auto !important;
     }
     
     .modal-backdrop.show {
@@ -56,34 +56,28 @@
         padding-right: 0 !important;
     }
     
+    /* Modal container - must be above backdrop */
     .modal {
-        z-index: 1055 !important;
+        z-index: 1050 !important;
         pointer-events: none !important; /* Modal container doesn't capture clicks */
+        position: fixed !important;
+        top: 0 !important;
+        left: 0 !important;
+        width: 100% !important;
+        height: 100% !important;
+        display: none !important;
     }
     
     .modal.show {
         pointer-events: auto !important; /* When shown, allow clicks */
-        display: block !important;
-    }
-    
-    /* Ensure modal content is clickable and properly layered */
-    .modal-content {
-        pointer-events: auto !important;
-        z-index: 1056 !important;
-        position: relative;
-        background: white !important; /* Ensure modal content has solid background */
-        border-radius: 24px !important;
-    }
-    
-    /* Ensure all modal elements are clickable */
-    .modal.show .modal-content,
-    .modal.show .modal-content * {
-        pointer-events: auto !important;
+        display: flex !important; /* Use flex to center */
+        align-items: center !important;
+        justify-content: center !important;
     }
     
     /* Ensure modal dialog is above backdrop and responsive */
     .modal-dialog {
-        z-index: 1055 !important;
+        z-index: 1051 !important;
         position: relative;
         pointer-events: auto !important;
         margin: 1rem auto !important;
@@ -96,19 +90,47 @@
         align-items: center !important;
     }
     
-    /* Photo upload modal - smaller width with responsive breakpoints */
+    /* Ensure modal content is clickable and properly layered */
+    .modal-content {
+        pointer-events: auto !important;
+        z-index: 1052 !important;
+        position: relative;
+        background: white !important; /* Ensure modal content has solid background */
+        border-radius: 24px !important;
+    }
+    
+    /* Ensure all modal elements are clickable */
+    .modal.show .modal-content,
+    .modal.show .modal-content * {
+        pointer-events: auto !important;
+    }
+    
+    /* Photo upload modal - ensure it's on top */
     #photoModal {
-        z-index: 9999 !important;
+        z-index: 1050 !important;
+    }
+    
+    #photoModal.show {
+        z-index: 1050 !important;
     }
     
     #photoModal .modal-dialog {
         max-width: 600px !important;
         width: 90% !important;
-        z-index: 10000 !important;
+        z-index: 1051 !important;
     }
     
-    #photoModal .modal-backdrop {
-        z-index: 9998 !important;
+    /* Add Item Modal - ensure it's on top */
+    #addItemModal {
+        z-index: 1050 !important;
+    }
+    
+    #addItemModal.show {
+        z-index: 1050 !important;
+    }
+    
+    #addItemModal .modal-dialog {
+        z-index: 1051 !important;
     }
     
     /* Tablet breakpoint (768x1024) */
@@ -168,7 +190,7 @@
                 -webkit-overflow-scrolling: touch;
             }
             
-            .modal-dialog {
+    .modal-dialog {
                 margin: 1rem auto !important;
                 min-height: auto !important;
             }
@@ -235,26 +257,15 @@
         pointer-events: none !important;
     }
     
-    /* Ensure modal is always above header/navbar */
-    .modal {
-        z-index: 9999 !important;
-    }
-    
-    .modal-backdrop {
-        z-index: 9998 !important;
-    }
-    
-    .modal-dialog {
-        z-index: 9999 !important;
-    }
-    
-    .modal-content {
-        z-index: 10000 !important;
-    }
-    
     /* Ensure navbar/header stays below modal */
     .navbar {
-        z-index: 1000 !important;
+        z-index: 1030 !important;
+    }
+    
+    /* Ensure sticky elements stay below modals */
+    .sticky-action-bar,
+    .sticky-top {
+        z-index: 1020 !important;
     }
     
     /* Prevent any page content from being blurred when modal is open */
@@ -2156,9 +2167,9 @@
 </div>
 
 <!-- Photo Upload Modal -->
-<div class="modal fade" id="photoModal" tabindex="-1" aria-labelledby="photoModalLabel" aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="true" role="dialog" aria-modal="true" style="pointer-events: auto;">
-    <div class="modal-dialog modal-dialog-centered" style="pointer-events: auto; z-index: 9999; max-height: 90vh; margin: 1rem auto; max-width: 600px; width: 90%;">
-        <div class="modal-content" style="border-radius: 24px; border: none; pointer-events: auto; z-index: 10000; position: relative; max-height: 90vh; overflow-y: auto;">
+<div class="modal fade" id="photoModal" tabindex="-1" aria-labelledby="photoModalLabel" aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="true" role="dialog" aria-modal="true">
+    <div class="modal-dialog modal-dialog-centered" style="max-height: 90vh; margin: 1rem auto; max-width: 600px; width: 90%;">
+        <div class="modal-content" style="border-radius: 24px; border: none; position: relative; max-height: 90vh; overflow-y: auto;">
             <div class="modal-header border-0 pb-0" style="pointer-events: auto;">
                 <h5 class="modal-title fw-bold" id="photoModalLabel">
                     <i class="bi bi-camera-fill me-2 text-success"></i>Add Items with Photo
