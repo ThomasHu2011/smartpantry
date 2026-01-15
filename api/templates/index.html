@@ -302,6 +302,27 @@
         pointer-events: none !important;
     }
     
+    /* Force remove backdrop when no modals are showing */
+    body:not(.modal-open) .modal-backdrop {
+        display: none !important;
+    }
+    
+    /* Ensure modals are always visible and clickable when shown */
+    .modal.show {
+        display: flex !important;
+        z-index: 1050 !important;
+    }
+    
+    .modal.show .modal-dialog {
+        z-index: 1051 !important;
+        pointer-events: auto !important;
+    }
+    
+    .modal.show .modal-content {
+        z-index: 1052 !important;
+        pointer-events: auto !important;
+    }
+    
     /* Ensure navbar/header stays below modal */
     .navbar {
         z-index: 1030 !important;
