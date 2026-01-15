@@ -815,6 +815,7 @@
     /* Fix button blur/shift issues - prevent layout shifts */
     .photo-modal-btn {
         will-change: auto !important;
+        transform: none !important; /* Prevent blur/jump on click */
         transform: none !important;
         filter: none !important;
         backdrop-filter: none !important;
@@ -839,6 +840,20 @@
         outline: 2px solid rgba(59, 130, 246, 0.5);
         outline-offset: 2px;
         box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+    }
+    
+    /* Override global button transforms for photo modal - Remove blur/jump on click */
+    .photo-modal-btn:active,
+    .photo-modal-btn:focus,
+    .photo-modal-btn:hover {
+        transform: none !important;
+        filter: none !important;
+        will-change: auto !important;
+    }
+    
+    .photo-modal-btn {
+        transform: none !important;
+        filter: none !important;
     }
     
     /* Override global button transforms for photo modal */
@@ -1663,6 +1678,26 @@
                 </div>
             </div>
 
+            <!-- Expiring Soon Alert Banner -->
+            <div id="expiringSoonBanner" class="alert alert-warning border-0 mb-4 shadow-sm" style="display: none; border-radius: 16px; background: linear-gradient(135deg, rgba(245, 158, 11, 0.1) 0%, rgba(217, 119, 6, 0.08) 100%); border-left: 4px solid #F59E0B;">
+                <div class="d-flex align-items-center gap-3">
+                    <div style="width: 48px; height: 48px; background: linear-gradient(135deg, #F59E0B 0%, #D97706 100%); border-radius: 12px; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+                        <i class="bi bi-exclamation-triangle-fill text-white" style="font-size: 1.5rem;"></i>
+                    </div>
+                    <div class="flex-grow-1">
+                        <h6 class="mb-1 fw-bold" style="color: #92400E;">
+                            <i class="bi bi-clock me-2"></i>Expiring Soon
+                        </h6>
+                        <p class="mb-0 small" id="expiringSoonText" style="color: #78350F;">
+                            You have items expiring soon. Consider using them in recipes!
+                        </p>
+                    </div>
+                    <button type="button" class="btn btn-sm btn-outline-warning" id="filterExpiringBtn" style="border-color: #F59E0B; color: #92400E; font-weight: 600;">
+                        <i class="bi bi-filter me-1"></i>View
+                    </button>
+                </div>
+            </div>
+
             <!-- Pantry Overview - Cleaner Design -->
             <div class="card shadow-sm border-0" style="border-radius: 20px; overflow: visible !important; position: relative; z-index: 1;">
                 <div class="card-header border-0" style="background: linear-gradient(135deg, rgba(139, 92, 246, 0.1) 0%, rgba(59, 130, 246, 0.08) 100%); padding: 20px 24px; position: relative; z-index: 1; overflow: visible !important;">
@@ -2235,7 +2270,7 @@
                         <div id="uploadProgressFeedback" class="mb-3" style="display: none;">
                             <div class="d-flex align-items-center justify-content-center gap-2 p-3" style="background: linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(5, 150, 105, 0.08) 100%); border-radius: 12px; border-left: 4px solid #10B981;">
                                 <i class="bi bi-check-circle-fill" style="color: #10B981; font-size: 1.25rem;"></i>
-                                <span class="fw-semibold" style="color: #1e293b;" id="progressFeedbackText">Photo selected ✓</span>
+                                <span class="fw-semibold" style="color: #1e293b;" id="progressFeedbackText">Photo ready ✓</span>
                             </div>
                         </div>
                         
@@ -2243,19 +2278,27 @@
                         <div id="uploadFeedback" class="feedback-message" style="display: none;"></div>
                         
                         <!-- Preview with Remove Button -->
-                        <div class="position-relative d-inline-block mb-3">
-                        <img id="imagePreview" class="image-preview" alt="Preview">
-                            <button type="button" class="btn btn-danger btn-sm" id="removePreviewBtn" style="position: absolute; top: 8px; right: 8px; width: 36px; height: 36px; border-radius: 50%; padding: 0; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);" title="Remove photo">
-                                <i class="bi bi-x-lg"></i>
+                        <div class="position-relative d-inline-block mb-4">
+                            <img id="imagePreview" class="image-preview" alt="Preview" style="max-width: 100%; border-radius: 12px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);">
+                            <button type="button" class="btn btn-danger btn-sm" id="removePreviewBtn" style="position: absolute; top: 8px; right: 8px; width: 36px; height: 36px; border-radius: 50%; padding: 0; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);" title="Retake photo">
+                                <i class="bi bi-arrow-counterclockwise"></i>
                             </button>
                         </div>
                         
+                        <div class="alert alert-info border-0 mb-3" style="background: rgba(59, 130, 246, 0.08); border-left: 3px solid #3B82F6; border-radius: 10px;">
+                            <i class="bi bi-info-circle me-2"></i>
+                            <small style="color: #1e40af;">Review your photo. Click "Analyze & Add Items" to continue, or "Retake" to capture another photo.</small>
+                        </div>
+                        
                         <div class="mt-3 d-flex flex-wrap justify-content-center gap-2">
-                            <button type="button" class="btn btn-outline-secondary photo-modal-btn" id="cancelUploadBtn" style="border: 2px solid #6b7280; color: #6b7280; background: transparent; transition: all 0.2s ease; will-change: auto;">
+                            <button type="button" class="btn btn-outline-secondary photo-modal-btn" id="retakePhotoBtn" style="border: 2px solid #6b7280; color: #6b7280; background: transparent; transition: all 0.2s ease;">
+                                <i class="bi bi-arrow-counterclockwise me-2"></i>Retake
+                            </button>
+                            <button type="button" class="btn btn-outline-danger photo-modal-btn" id="cancelUploadBtn" style="border: 2px solid #ef4444; color: #ef4444; background: transparent; transition: all 0.2s ease;">
                                 <i class="bi bi-x-circle me-2"></i>Cancel
                             </button>
-                            <button type="button" class="btn btn-success btn-lg photo-modal-btn" id="uploadBtn" style="background: #10b981; border: 2px solid #10b981; color: white; transition: all 0.2s ease; will-change: auto;">
-                                <i class="bi bi-stars me-2"></i><span id="uploadBtnText">Analyze & Add Items</span>
+                            <button type="button" class="btn btn-success btn-lg photo-modal-btn" id="uploadBtn" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); border: none; color: white; transition: all 0.2s ease; box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);">
+                                <i class="bi bi-stars me-2"></i><span id="uploadBtnText">Confirm & Analyze</span>
                             </button>
                         </div>
                         <small class="text-muted d-block mt-2">AI will detect food items in your photo</small>
@@ -2481,30 +2524,40 @@
         reader.readAsDataURL(file);
     }
 
-    // Remove Preview Button
+    // Remove/Retake Preview Button
     const removePreviewBtn = document.getElementById('removePreviewBtn');
+    const retakePhotoBtn = document.getElementById('retakePhotoBtn');
+    
+    function resetPhotoPreview() {
+        selectedFile = null;
+        if (imagePreview) {
+            imagePreview.src = '';
+            imagePreview.style.display = 'none';
+        }
+        if (previewSection) {
+            previewSection.style.display = 'none';
+        }
+        if (uploadZone) {
+            uploadZone.style.display = 'block';
+            uploadZone.style.opacity = '1';
+        }
+        const progressFeedback = document.getElementById('uploadProgressFeedback');
+        if (progressFeedback) {
+            progressFeedback.style.display = 'none';
+        }
+        // Reset file inputs
+        if (photoInput) photoInput.value = '';
+        if (mobileCameraInput) mobileCameraInput.value = '';
+        // Stop camera if active
+        stopCamera();
+    }
+    
     if (removePreviewBtn) {
-        removePreviewBtn.addEventListener('click', () => {
-            selectedFile = null;
-            if (imagePreview) {
-                imagePreview.src = '';
-                imagePreview.style.display = 'none';
-            }
-            if (previewSection) {
-                previewSection.style.display = 'none';
-            }
-            if (uploadZone) {
-                uploadZone.style.display = 'block';
-                uploadZone.style.opacity = '1';
-            }
-            const progressFeedback = document.getElementById('uploadProgressFeedback');
-            if (progressFeedback) {
-                progressFeedback.style.display = 'none';
-            }
-            // Reset file inputs
-            if (photoInput) photoInput.value = '';
-            if (mobileCameraInput) mobileCameraInput.value = '';
-        });
+        removePreviewBtn.addEventListener('click', resetPhotoPreview);
+    }
+    
+    if (retakePhotoBtn) {
+        retakePhotoBtn.addEventListener('click', resetPhotoPreview);
     }
 
     // Helper function to show camera status
@@ -2546,7 +2599,7 @@
         if (testCameraBtn) testCameraBtn.style.display = 'none';
     }
     
-    // Function to initialize camera
+    // Function to initialize camera - Single-frame capture (no live video)
     async function initializeCamera() {
         // Prevent multiple clicks
         if (openCameraBtn && openCameraBtn.disabled) {
@@ -2568,34 +2621,18 @@
         // Show status
         showCameraStatus('🎥 Requesting camera permission...');
         
-        // Show camera view
-        if (uploadZone) {
-            uploadZone.style.opacity = '0';
-            setTimeout(() => {
-                uploadZone.style.display = 'none';
-                uploadZone.style.opacity = '1';
-            }, 150);
-        }
-        if (cameraView) {
-            cameraView.style.display = 'block';
-            cameraView.style.opacity = '0';
-            setTimeout(() => {
-                cameraView.style.opacity = '1';
-            }, 150);
-        }
-        
         // Disable button while requesting camera
         if (openCameraBtn) {
             openCameraBtn.disabled = true;
         }
 
         try {
-            showCameraStatus('🎥 Camera initializing...');
+            showCameraStatus('📸 Capturing photo...');
             
-            // Request camera with constraints
+            // Request camera with constraints - Single frame capture (no live stream)
             cameraStream = await navigator.mediaDevices.getUserMedia({ 
                 video: { 
-                    facingMode: { ideal: 'environment' },
+                    facingMode: { ideal: 'environment' },  // Back camera by default
                     width: { ideal: 1280 },
                     height: { ideal: 720 }
                 } 
@@ -2616,11 +2653,64 @@
                     }
                 });
                 
-                showCameraStatus('📸 Ready to take photo');
-                // Small delay to show "Ready" message
-                setTimeout(() => {
-                    showCameraReady();
-                }, 500);
+                // Capture immediately (single-frame capture, no live preview)
+                await new Promise(resolve => setTimeout(resolve, 300)); // Small delay for stabilization
+                
+                // Capture single frame
+                const canvas = document.createElement('canvas');
+                canvas.width = cameraStreamVideo.videoWidth;
+                canvas.height = cameraStreamVideo.videoHeight;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(cameraStreamVideo, 0, 0);
+                
+                // Stop camera immediately after capture
+                stopCamera();
+                
+                // Convert to blob
+                canvas.toBlob((blob) => {
+                    if (!blob) {
+                        showCameraError('Capture Failed', 'Could not capture photo. Please try again.');
+                        return;
+                    }
+                    
+                    selectedFile = new File([blob], 'camera-capture.jpg', { type: 'image/jpeg' });
+                    
+                    // Show preview immediately
+                    if (imagePreview) {
+                        imagePreview.src = canvas.toDataURL('image/jpeg');
+                        imagePreview.style.display = 'block';
+                        imagePreview.style.opacity = '0';
+                        imagePreview.style.transition = 'opacity 0.3s ease';
+                        setTimeout(() => {
+                            imagePreview.style.opacity = '1';
+                        }, 50);
+                    }
+                    
+                    // Hide camera view and show preview section
+                    if (cameraView) {
+                        cameraView.style.display = 'none';
+                    }
+                    if (uploadZone) {
+                        uploadZone.style.display = 'none';
+                    }
+                    if (previewSection) {
+                        previewSection.style.display = 'block';
+                        previewSection.style.opacity = '0';
+                        setTimeout(() => {
+                            previewSection.style.opacity = '1';
+                        }, 150);
+                    }
+                    
+                    // Update progress feedback
+                    const progressFeedback = document.getElementById('uploadProgressFeedback');
+                    const progressFeedbackText = document.getElementById('progressFeedbackText');
+                    if (progressFeedback && progressFeedbackText) {
+                        progressFeedback.style.display = 'block';
+                        progressFeedbackText.textContent = 'Photo captured ✓ Ready to analyze';
+                    }
+                }, 'image/jpeg', 0.92);
+                
+                return true;
             }
             
             return true;
