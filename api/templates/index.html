@@ -4071,6 +4071,20 @@
                                 if (modalInstance) {
                                     setTimeout(() => {
                                         modalInstance.hide();
+                                        // Clean up backdrop after modal closes
+                                        setTimeout(() => {
+                                            const backdrops = document.querySelectorAll('.modal-backdrop');
+                                            backdrops.forEach(backdrop => {
+                                                if (!document.querySelector('.modal.show')) {
+                                                    backdrop.remove();
+                                                }
+                                            });
+                                            if (document.querySelectorAll('.modal.show').length === 0) {
+                                                document.body.classList.remove('modal-open');
+                                                document.body.style.overflow = '';
+                                                document.body.style.paddingRight = '';
+                                            }
+                                        }, 300);
                                     }, 1500); // Close after showing success message
                                 }
                             }
