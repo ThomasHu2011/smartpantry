@@ -1867,10 +1867,12 @@
                         {% set quantity = (item.get('quantity', '1') if item|is_dict else '1')|string|trim %}
                         {% set quantity = quantity if quantity else '1' %}
                         {% set item_id = (item.get('id', '') if item|is_dict else '')|string|trim %}
+                        {% set added_date = (item.get('addedDate', '') if item|is_dict else '')|string|trim %}
                         <div class="col-12 col-md-6 col-lg-4 pantry-item-wrapper" 
                              data-item-name="{{ item_name|lower|default('unnamed') }}"
                              data-item-id="{{ item_id }}"
                              data-expiration-date="{% if exp_date and exp_date|length >= 10 %}{{ exp_date[:10] }}{% elif exp_date %}{{ exp_date|trim }}{% else %}9999-12-31{% endif %}"
+                             data-added-date="{% if added_date %}{{ added_date }}{% else %}{{ 'now'|date('%Y-%m-%d') }}{% endif %}"
                              style="position: relative; z-index: 10;">
                             <div class="pantry-item-card card border-0 bg-white h-100" 
                                  style="border-radius: 20px; transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); border: 1px solid #e2e8f0; cursor: pointer; overflow: hidden; position: relative;"
