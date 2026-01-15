@@ -2861,6 +2861,9 @@ def api_delete_item(item_id):
                 mobile_pantry = pantry_list
             else:
                 web_pantry = pantry_list
+                # Update session for anonymous web users
+                session['web_pantry'] = pantry_list
+                session.modified = True
             item_name = item_to_delete.get('name', item_id) if isinstance(item_to_delete, dict) else item_to_delete
             return jsonify({
                 'success': True,

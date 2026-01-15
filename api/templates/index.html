@@ -4452,6 +4452,7 @@
                 setTimeout(() => {
                     updateExpirationBadges();
                     updatePantryCardBackgrounds();
+                    updateExpiringSoonBanner();
                 }, 100);
             }
             
@@ -5035,7 +5036,62 @@
         }
     });
     
-    // Smart Suggestions Banner
+    // Update Expiring Soon Banner
+    function updateExpiringSoonBanner() {
+        const banner = document.getElementById('expiringSoonBanner');
+        const bannerText = document.getElementById('expiringSoonText');
+        const filterBtn = document.getElementById('filterExpiringBtn');
+        if (!banner || !bannerText) return;
+        
+        const items = document.querySelectorAll('.pantry-item-wrapper');
+        if (items.length === 0) {
+            banner.style.display = 'none';
+            return;
+        }
+        
+        // Count expiring items (within 5 days)
+        let expiringCount = 0;
+        let expiringItems = [];
+        items.forEach(item => {
+            const expirationBadge = item.querySelector('.expiration-badge[data-exp-date]');
+            if (expirationBadge) {
+                const expDate = expirationBadge.getAttribute('data-exp-date');
+                if (expDate && expDate !== '9999-12-31') {
+                    const daysDiff = getDaysUntilExpiration(expDate);
+                    if (daysDiff >= 0 && daysDiff <= 5) {
+                        expiringCount++;
+                        const itemName = item.querySelector('.fw-bold')?.textContent?.trim() || 'Item';
+                        expiringItems.push({ name: itemName, days: daysDiff });
+                    }
+                }
+            }
+        });
+        
+        if (expiringCount > 0) {
+            banner.style.display = 'block';
+            bannerText.innerHTML = `<strong>⚠️ ${expiringCount} item${expiringCount > 1 ? 's' : ''} expire in the next 5 days.</strong> ${expiringItems.slice(0, 3).map(item => item.name).join(', ')}${expiringCount > 3 ? '...' : ''}`;
+            if (filterBtn) {
+                // Remove existing listeners and add new one
+                const newFilterBtn = filterBtn.cloneNode(true);
+                filterBtn.parentNode.replaceChild(newFilterBtn, filterBtn);
+                newFilterBtn.addEventListener('click', () => {
+                    // Trigger expiring soon filter
+                    const expiringFilter = document.querySelector('.filter-chip[data-filter="expiring-soon"]');
+                    if (expiringFilter) {
+                        if (!expiringFilter.classList.contains('active')) {
+                            expiringFilter.click();
+                        }
+                        // Scroll to items
+                        document.getElementById('pantryItemsContainer')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    }
+                });
+            }
+        } else {
+            banner.style.display = 'none';
+        }
+    }
+    
+    // Smart Suggestions Banner (legacy - kept for compatibility)
     function updateSmartSuggestions() {
         const banner = document.getElementById('smartSuggestionsBanner');
         const suggestionText = document.getElementById('suggestionText');
@@ -5180,6 +5236,7 @@
                 setTimeout(() => {
                     updateSmartSuggestions();
                     updateProgressIndicator();
+                    updateExpiringSoonBanner();
                 }, 300);
             };
         } else {
