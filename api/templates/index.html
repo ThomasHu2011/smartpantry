@@ -4373,7 +4373,8 @@
     }
     
     // Reload pantry items without refreshing the page
-    async function reloadPantryItems() {
+    // Make reloadPantryItems globally accessible
+    window.reloadPantryItems = async function reloadPantryItems() {
         // Store scroll position before reload
         const scrollPosition = window.pageYOffset || document.documentElement.scrollTop;
         
