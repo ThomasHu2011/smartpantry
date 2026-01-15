@@ -1826,14 +1826,60 @@ def upload_photo():
     import base64
     img_b64 = base64.b64encode(img_bytes).decode('utf-8')
     
-    prompt = """Analyze this photo and identify all food items with their quantities, expiration dates (if visible on packaging), and categories. 
-For each food item, detect:
-1. The quantity (e.g., "2 bottles", "three cans", "1 loaf", "5 slices")
-2. The food item name (generic name only, no brand names)
-3. Expiration date (if visible on packaging/labels - format: YYYY-MM-DD, or null if not visible)
-4. Category/tag (choose one: "dairy", "canned goods", "produce", "meat", "beverages", "frozen", "bakery", "snacks", "condiments", "grains", "other")
+    prompt = """You are an expert food recognition system. Analyze this photo carefully and identify ALL visible food items with maximum accuracy.
 
-Return the results in this exact JSON format:
+CRITICAL INSTRUCTIONS:
+1. **Item Detection**: Look for ALL food items in the image, including:
+   - Items that are partially visible or in the background
+   - Items that are stacked, overlapping, or grouped together
+   - Items visible in containers, bags, or packaging
+   - Multiple units of the same item (count them separately if clearly visible)
+
+2. **Item Name**: 
+   - Use generic, common food names (e.g., "milk", "bread", "chicken", "tomatoes")
+   - Remove brand names (e.g., "Coca-Cola" → "cola", "Kellogg's Cereal" → "cereal")
+   - Use singular form for countable items (e.g., "apple" not "apples")
+   - Be specific when possible (e.g., "whole milk" vs "milk", "white bread" vs "bread")
+   - If uncertain, use the most common name
+
+3. **Quantity Detection**:
+   - Count visible individual items (e.g., "3 apples", "2 bottles")
+   - Read quantity labels on packaging (e.g., "12 oz", "500g", "1 lb")
+   - For packages, count packages, not contents (e.g., "2 boxes of pasta" not "2 pasta")
+   - If multiple identical items are visible, count them (e.g., "5 cans of soup")
+   - If quantity is unclear, estimate based on visible items or use "1"
+   - Format as: "X unit" (e.g., "2 bottles", "1 package", "3 cans", "5 pieces")
+
+4. **Expiration Date**:
+   - Carefully read ALL text on packaging, labels, and stickers
+   - Look for: "EXP", "EXPIRES", "USE BY", "BEST BY", "SELL BY", dates in various formats
+   - Parse dates in formats like: MM/DD/YYYY, DD/MM/YYYY, YYYY-MM-DD, Month DD YYYY
+   - Convert to YYYY-MM-DD format (e.g., "01/15/2024" → "2024-01-15")
+   - If multiple dates found, use the expiration/use-by date (not manufacture date)
+   - If date is partially visible or unclear, set to null
+   - If no date is visible, set to null
+
+5. **Category Classification**:
+   - Choose the MOST SPECIFIC category that fits:
+     * "dairy": milk, cheese, yogurt, butter, cream
+     * "canned goods": canned vegetables, soups, beans, tuna
+     * "produce": fresh fruits, vegetables, herbs
+     * "meat": beef, chicken, pork, fish, seafood, deli meats
+     * "beverages": drinks, juices, sodas, water, coffee, tea
+     * "frozen": frozen foods, ice cream, frozen vegetables
+     * "bakery": bread, pastries, bagels, muffins
+     * "snacks": chips, crackers, cookies, nuts, candy
+     * "condiments": sauces, dressings, spices, oils, vinegar
+     * "grains": rice, pasta, cereal, flour, oats
+     * "other": anything that doesn't fit above categories
+
+6. **Accuracy Requirements**:
+   - Only include items you can clearly identify as food
+   - If an item is too blurry or unclear, skip it rather than guessing
+   - For ambiguous items, use the most likely identification
+   - Double-check expiration dates - only include if clearly readable
+
+Return the results in this EXACT JSON format:
 {
   "items": [
     {"name": "milk", "quantity": "2 bottles", "expirationDate": "2024-01-15", "category": "dairy"},
@@ -1842,12 +1888,7 @@ Return the results in this exact JSON format:
   ]
 }
 
-Guidelines:
-- If expiration date is visible on packaging/labels, include it in YYYY-MM-DD format
-- If expiration date is not visible or unclear, set expirationDate to null
-- Categories should be one of: dairy, canned goods, produce, meat, beverages, frozen, bakery, snacks, condiments, grains, other
-- If you cannot determine a quantity, use "1" as the default
-- Return ONLY valid JSON, no other text."""
+IMPORTANT: Return ONLY valid JSON, no explanations, no markdown, no code blocks. Just the raw JSON object."""
     
     try:
         if not client:
