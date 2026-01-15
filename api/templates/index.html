@@ -2288,10 +2288,19 @@
                         <!-- Loading/Feedback Message -->
                         <div id="uploadFeedback" class="feedback-message" style="display: none;"></div>
                         
-                        <!-- Preview with Remove Button -->
-                        <div class="position-relative d-inline-block mb-4">
-                            <img id="imagePreview" class="image-preview" alt="Preview" style="max-width: 100%; border-radius: 12px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);">
-                            <button type="button" class="btn btn-danger btn-sm" id="removePreviewBtn" style="position: absolute; top: 8px; right: 8px; width: 36px; height: 36px; border-radius: 50%; padding: 0; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);" title="Retake photo">
+                        <!-- Preview with Remove Button - Fixed height to prevent layout shift -->
+                        <div class="position-relative d-inline-block mb-4" style="min-height: 300px; width: 100%; display: flex; align-items: center; justify-content: center;">
+                            <div style="position: relative; max-width: 100%; width: 100%;">
+                                <img id="imagePreview" class="image-preview" alt="Preview" style="max-width: 100%; max-height: 400px; width: auto; height: auto; border-radius: 12px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1); display: none; margin: 0 auto;">
+                                <!-- Placeholder to prevent layout shift -->
+                                <div id="imagePreviewPlaceholder" style="width: 100%; height: 300px; background: linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(5, 150, 105, 0.05) 100%); border-radius: 12px; display: flex; align-items: center; justify-content: center; border: 2px dashed rgba(16, 185, 129, 0.3);">
+                                    <div class="text-center">
+                                        <i class="bi bi-image text-muted" style="font-size: 3rem; opacity: 0.3;"></i>
+                                        <p class="text-muted small mt-2 mb-0">Photo preview will appear here</p>
+                                    </div>
+                                </div>
+                            </div>
+                            <button type="button" class="btn btn-danger btn-sm" id="removePreviewBtn" style="position: absolute; top: 8px; right: 8px; width: 36px; height: 36px; border-radius: 50%; padding: 0; display: none; align-items: center; justify-content: center; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2); z-index: 10;" title="Retake photo">
                                 <i class="bi bi-arrow-counterclockwise"></i>
                             </button>
                         </div>
@@ -2623,18 +2632,48 @@
                 'Camera Not Supported',
                 'Camera access requires HTTPS or localhost.\n\nTo use camera:\n1. Access via https:// (requires SSL certificate)\n2. Access via http://localhost:5050 or http://127.0.0.1:5050\n\nFor now, please use "Browse Files" to upload a photo instead.'
             );
+            // Re-enable button
+            if (openCameraBtn) {
+                openCameraBtn.disabled = false;
+            }
             return false;
         }
         
         // Stop any existing stream first
         stopCamera();
         
-        // Show status
+        // Show camera view immediately with loading state
+        if (uploadZone) {
+            uploadZone.style.opacity = '0';
+            setTimeout(() => {
+                uploadZone.style.display = 'none';
+                uploadZone.style.opacity = '1';
+            }, 150);
+        }
+        if (cameraView) {
+            cameraView.style.display = 'block';
+            cameraView.style.opacity = '0';
+            setTimeout(() => {
+                cameraView.style.opacity = '1';
+            }, 150);
+        }
+        
+        // Show status immediately
         showCameraStatus('🎥 Requesting camera permission...');
         
         // Disable button while requesting camera
         if (openCameraBtn) {
             openCameraBtn.disabled = true;
+            const originalText = openCameraBtn.innerHTML;
+            openCameraBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Opening...';
+            
+            // Re-enable button after timeout (safety)
+            setTimeout(() => {
+                if (openCameraBtn && openCameraBtn.disabled) {
+                    openCameraBtn.disabled = false;
+                    openCameraBtn.innerHTML = originalText;
+                }
+            }, 10000);
         }
 
         try {
@@ -2688,10 +2727,23 @@
                     
                     // Show preview immediately
                     if (imagePreview) {
+                        const placeholder = document.getElementById('imagePreviewPlaceholder');
                         imagePreview.src = canvas.toDataURL('image/jpeg');
                         imagePreview.style.display = 'block';
                         imagePreview.style.opacity = '0';
                         imagePreview.style.transition = 'opacity 0.3s ease';
+                        
+                        // Hide placeholder and show image
+                        if (placeholder) {
+                            placeholder.style.display = 'none';
+                        }
+                        
+                        // Show remove button
+                        const removeBtn = document.getElementById('removePreviewBtn');
+                        if (removeBtn) {
+                            removeBtn.style.display = 'flex';
+                        }
+                        
                         setTimeout(() => {
                             imagePreview.style.opacity = '1';
                         }, 50);
@@ -2734,7 +2786,7 @@
             
             if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
                 errorTitle = 'Permission Denied';
-                errorMessage = 'Please allow camera permission and try again.\n\nTip: Check your browser settings and ensure camera access is allowed for this site.';
+                errorMessage = 'Camera permission was denied.\n\nPlease:\n1. Click the camera icon in your browser\'s address bar\n2. Allow camera access\n3. Refresh the page and try again\n\nOr use "Browse Files" to upload a photo instead.';
             } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
                 errorTitle = 'No Camera Found';
                 errorMessage = 'No camera detected on this device.\n\nPlease connect a camera or use "Browse Files" to upload a photo instead.';
@@ -2746,6 +2798,7 @@
                 errorMessage = 'Camera settings are not supported.\n\nTrying with default settings...';
                 // Retry with simpler constraints
                 try {
+                    showCameraStatus('🔄 Retrying with default settings...');
                     cameraStream = await navigator.mediaDevices.getUserMedia({ video: true });
                     if (cameraStreamVideo && cameraStream) {
                         cameraStreamVideo.srcObject = cameraStream;
@@ -2761,6 +2814,11 @@
                         setTimeout(() => {
                             showCameraReady();
                         }, 500);
+                        // Re-enable button on success
+                        if (openCameraBtn) {
+                            openCameraBtn.disabled = false;
+                            openCameraBtn.innerHTML = '<i class="bi bi-camera-video me-2"></i>Live Camera';
+                        }
                         return true;
                     }
                 } catch (retryErr) {
@@ -2771,11 +2829,23 @@
             }
             
             showCameraError(errorTitle, errorMessage);
-            return false;
-        } finally {
-            // Always re-enable button
+            
+            // Re-enable button on error
             if (openCameraBtn) {
                 openCameraBtn.disabled = false;
+                openCameraBtn.innerHTML = '<i class="bi bi-camera-video me-2"></i>Live Camera';
+            }
+            
+            return false;
+        } finally {
+            // Re-enable button if still disabled (safety net)
+            if (openCameraBtn && openCameraBtn.disabled) {
+                setTimeout(() => {
+                    if (openCameraBtn) {
+                        openCameraBtn.disabled = false;
+                        openCameraBtn.innerHTML = '<i class="bi bi-camera-video me-2"></i>Live Camera';
+                    }
+                }, 100);
             }
         }
     }
@@ -2956,18 +3026,32 @@
             const formData = new FormData();
             formData.append('photo', selectedFile);
 
-            // Set loading state
+            // Set loading state - Clear visual feedback
             uploadBtn.disabled = true;
             uploadBtn.classList.add('loading');
+            uploadBtn.style.opacity = '0.7';
+            uploadBtn.style.cursor = 'not-allowed';
             const originalText = uploadBtnText.textContent;
-            uploadBtnText.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Analyzing...';
+            uploadBtnText.innerHTML = '<span class="spinner-border spinner-border-sm me-2" style="width: 1rem; height: 1rem; border-width: 0.15em;"></span>Analyzing...';
             
-            // Show loading feedback
+            // Show prominent loading feedback
             const uploadFeedback = document.getElementById('uploadFeedback');
             if (uploadFeedback) {
                 uploadFeedback.className = 'feedback-message loading-feedback';
-                uploadFeedback.innerHTML = '<span class="spinner-border spinner-border-sm"></span>Analyzing photo with AI...';
+                uploadFeedback.innerHTML = '<div class="d-flex align-items-center gap-2"><span class="spinner-border spinner-border-sm text-primary" style="width: 1.25rem; height: 1.25rem;"></span><span class="fw-semibold">Analyzing photo with AI...</span></div>';
                 uploadFeedback.style.display = 'flex';
+                uploadFeedback.style.background = 'linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, rgba(37, 99, 235, 0.08) 100%)';
+                uploadFeedback.style.borderLeft = '4px solid #3B82F6';
+                uploadFeedback.style.padding = '1rem';
+                uploadFeedback.style.borderRadius = '12px';
+            }
+            
+            // Also update progress feedback
+            const progressFeedback = document.getElementById('uploadProgressFeedback');
+            const progressFeedbackText = document.getElementById('progressFeedbackText');
+            if (progressFeedback && progressFeedbackText) {
+                progressFeedback.style.display = 'block';
+                progressFeedbackText.innerHTML = '<span class="spinner-border spinner-border-sm me-2" style="width: 0.875rem; height: 0.875rem;"></span>Analyzing with AI...';
             }
 
             try {
@@ -4089,6 +4173,13 @@
                                 }
                             }
                         }
+                        // Optimistic UI update - show item count immediately
+                        const statsCountElement = document.getElementById('pantryStatsCount');
+                        if (statsCountElement) {
+                            const currentCount = parseInt(statsCountElement.textContent) || 0;
+                            statsCountElement.textContent = currentCount + 1; // Optimistic update
+                        }
+                        
                         // Update pantry items without reloading page
                         // Add small delay to ensure server has finished saving
                         setTimeout(async () => {
