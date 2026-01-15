@@ -161,9 +161,37 @@
     #addItemModal .modal-header {
         background: linear-gradient(135deg, #8B5CF6 0%, #3B82F6 100%) !important;
         color: white !important;
-        border-radius: 24px 24px 0 0 !important;
-        padding: 1.25rem 1.5rem !important;
+        border-radius: 16px 16px 0 0 !important;
+        padding: 1.5rem 1.75rem !important;
         border-bottom: none !important;
+    }
+    
+    /* Photo Modal Header Styling */
+    #photoModal .modal-header {
+        background: linear-gradient(135deg, #10B981 0%, #059669 100%) !important;
+        color: white !important;
+        border-radius: 16px 16px 0 0 !important;
+        padding: 1.5rem 1.75rem !important;
+        border-bottom: none !important;
+    }
+    
+    #photoModal .modal-header .modal-title {
+        color: white !important;
+        font-weight: 600 !important;
+        font-size: 1.25rem !important;
+    }
+    
+    #photoModal .modal-header .modal-title i {
+        color: white !important;
+    }
+    
+    #photoModal .modal-header .btn-close {
+        filter: invert(1) grayscale(100%) brightness(200%) !important;
+        opacity: 0.9 !important;
+    }
+    
+    #photoModal .modal-header .btn-close:hover {
+        opacity: 1 !important;
     }
     
     #addItemModal .modal-header .modal-title {
@@ -2199,34 +2227,45 @@
 <!-- Add Item Modal -->
 <div class="modal fade" id="addItemModal" tabindex="-1" aria-labelledby="addItemModalLabel" aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="true" role="dialog" aria-modal="true">
     <div class="modal-dialog modal-dialog-centered" style="max-height: 90vh;">
-        <div class="modal-content" style="border-radius: 24px; border: none; position: relative; max-height: 90vh; overflow-y: auto;">
-            <div class="modal-header border-0 pb-0">
+        <div class="modal-content" style="border-radius: 16px; border: none; position: relative; max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 50px rgba(0, 0, 0, 0.25);">
+            <div class="modal-header border-0">
                 <h5 class="modal-title fw-bold" id="addItemModalLabel">
                     <i class="bi bi-plus-circle-fill me-2"></i>Add Item to Pantry
                 </h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
-            <div class="modal-body p-4">
+            <div class="modal-body p-4" style="background: #f8f9fa;">
                 <form action="/add" method="post" id="addItemModalForm" onsubmit="return handleAddItem(event);">
-                    <div class="mb-3">
-                        <label class="form-label fw-semibold mb-2" style="color: #1e293b;">Item Name</label>
+                    <div class="mb-4">
+                        <label class="form-label fw-semibold mb-2" style="color: #1e293b; font-size: 0.95rem;">
+                            <i class="bi bi-box-seam me-2" style="color: #8B5CF6;"></i>Item Name <span class="text-danger">*</span>
+                        </label>
                         <input type="text" name="item" id="addItemModalInput" class="form-control form-control-lg" 
                                placeholder="e.g., Milk, Bread, Eggs" required autocomplete="off"
-                               style="border-radius: 12px; border: 2px solid #e2e8f0; padding: 14px 16px; font-size: 1rem;">
+                               style="border-radius: 12px; border: 2px solid #e2e8f0; padding: 14px 16px; font-size: 1rem; transition: all 0.2s ease;"
+                               onfocus="this.style.borderColor='#8B5CF6'; this.style.boxShadow='0 0 0 3px rgba(139, 92, 246, 0.1)';"
+                               onblur="this.style.borderColor='#e2e8f0'; this.style.boxShadow='none';">
                     </div>
-                    <div class="row g-3 mb-3">
+                    <div class="row g-3 mb-4">
                         <div class="col-6">
-                            <label class="form-label fw-semibold mb-2" style="color: #1e293b;">Quantity</label>
-                            <input type="text" name="quantity" id="addItemModalQuantity" class="form-control" 
-                                   placeholder="1" value="1" autocomplete="off"
-                                   style="border-radius: 10px; border: 2px solid #e2e8f0; padding: 12px;">
+                            <label class="form-label fw-semibold mb-2" style="color: #1e293b; font-size: 0.95rem;">
+                                <i class="bi bi-123 me-2" style="color: #8B5CF6;"></i>Quantity
+                            </label>
+                            <input type="number" name="quantity" id="addItemModalQuantity" class="form-control" 
+                                   placeholder="1" value="1" min="1" autocomplete="off"
+                                   style="border-radius: 12px; border: 2px solid #e2e8f0; padding: 12px 14px; transition: all 0.2s ease;"
+                                   onfocus="this.style.borderColor='#8B5CF6'; this.style.boxShadow='0 0 0 3px rgba(139, 92, 246, 0.1)';"
+                                   onblur="this.style.borderColor='#e2e8f0'; this.style.boxShadow='none';">
                         </div>
                         <div class="col-6">
-                            <label class="form-label fw-semibold mb-2" style="color: #1e293b;">
-                                Expires <span class="text-muted" style="font-weight: normal; font-size: 0.9rem;">(optional)</span>
+                            <label class="form-label fw-semibold mb-2" style="color: #1e293b; font-size: 0.95rem;">
+                                <i class="bi bi-calendar-event me-2" style="color: #8B5CF6;"></i>Expires
+                                <span class="text-muted" style="font-weight: normal; font-size: 0.85rem;">(optional)</span>
                             </label>
                             <input type="date" name="expiration_date" id="addItemModalExpiration" class="form-control"
-                                   style="border-radius: 10px; border: 2px solid #e2e8f0; padding: 12px;"
+                                   style="border-radius: 12px; border: 2px solid #e2e8f0; padding: 12px 14px; transition: all 0.2s ease;"
+                                   onfocus="this.style.borderColor='#8B5CF6'; this.style.boxShadow='0 0 0 3px rgba(139, 92, 246, 0.1)';"
+                                   onblur="this.style.borderColor='#e2e8f0'; this.style.boxShadow='none';"
                                    value="">
                         </div>
                     </div>
@@ -2249,14 +2288,14 @@
 <!-- Photo Upload Modal -->
 <div class="modal fade" id="photoModal" tabindex="-1" aria-labelledby="photoModalLabel" aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="true" role="dialog" aria-modal="true">
     <div class="modal-dialog modal-dialog-centered" style="max-height: 90vh;">
-        <div class="modal-content" style="border-radius: 24px; border: none; position: relative; max-height: 90vh; overflow-y: auto;">
-            <div class="modal-header border-0 pb-0" style="pointer-events: auto;">
+        <div class="modal-content" style="border-radius: 16px; border: none; position: relative; max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 50px rgba(0, 0, 0, 0.25);">
+            <div class="modal-header border-0" style="pointer-events: auto;">
                 <h5 class="modal-title fw-bold" id="photoModalLabel">
-                    <i class="bi bi-camera-fill me-2 text-success"></i>Add Items with Photo
+                    <i class="bi bi-camera-fill me-2"></i>Add Items with Photo
                 </h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
-            <div class="modal-body p-4">
+            <div class="modal-body p-4" style="background: #f8f9fa;">
                 <!-- Camera View (Hidden by default) -->
                 <div id="cameraView" class="camera-preview mb-3" style="display: none;">
                     <!-- Camera Status Messages -->
