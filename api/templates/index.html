@@ -5447,14 +5447,21 @@
                         show = true;
                     } else if (filter === 'recent') {
                         // Show items added in last 7 days
-                        // Check if item has a timestamp or was recently added
-                        const itemCard = item.querySelector('.pantry-item-card');
-                        if (itemCard) {
-                            // Try to find when item was added (check data attributes or creation time)
-                            // For now, show all items as "recent" since we don't track added date
-                            // In a real implementation, you'd check data-added-date attribute
-                            show = true;
+                        const addedDateAttr = item.getAttribute('data-added-date');
+                        if (addedDateAttr && addedDateAttr !== '') {
+                            try {
+                                const addedDate = new Date(addedDateAttr);
+                                const today = new Date();
+                                today.setHours(0, 0, 0, 0);
+                                addedDate.setHours(0, 0, 0, 0);
+                                const daysDiff = Math.floor((today - addedDate) / (1000 * 60 * 60 * 24));
+                                show = daysDiff >= 0 && daysDiff <= 7;
+                            } catch (e) {
+                                // If date parsing fails, show item
+                                show = true;
+                            }
                         } else {
+                            // If no added date, show all items
                             show = true;
                         }
                     }
