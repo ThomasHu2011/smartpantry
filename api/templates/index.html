@@ -97,9 +97,18 @@
     }
     
     /* Photo upload modal - smaller width with responsive breakpoints */
+    #photoModal {
+        z-index: 9999 !important;
+    }
+    
     #photoModal .modal-dialog {
         max-width: 600px !important;
         width: 90% !important;
+        z-index: 10000 !important;
+    }
+    
+    #photoModal .modal-backdrop {
+        z-index: 9998 !important;
     }
     
     /* Tablet breakpoint (768x1024) */
@@ -886,6 +895,7 @@
         display: flex;
         align-items: center;
         justify-content: center;
+        z-index: 10;
     }
     
     .camera-preview video {
@@ -894,6 +904,61 @@
         display: block;
         max-height: 500px;
         object-fit: contain;
+        z-index: 5;
+    }
+    
+    /* Camera status messages */
+    .camera-status-message {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(255, 255, 255, 0.95);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 20;
+        border-radius: 16px;
+    }
+    
+    .camera-error-message {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(255, 255, 255, 0.98);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 20;
+        border-radius: 16px;
+        padding: 2rem;
+    }
+    
+    .camera-ready-indicator {
+        position: absolute;
+        top: 10px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: rgba(16, 185, 129, 0.9);
+        color: white;
+        padding: 8px 16px;
+        border-radius: 20px;
+        z-index: 15;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+        font-size: 0.875rem;
+    }
+    
+    .camera-tips {
+        position: absolute;
+        bottom: 60px;
+        left: 10px;
+        right: 10px;
+        z-index: 15;
+        background: rgba(139, 92, 246, 0.1);
+        backdrop-filter: blur(4px);
     }
     
     /* Preview section styling */
@@ -2068,12 +2133,53 @@
             <div class="modal-body p-4">
                 <!-- Camera View (Hidden by default) -->
                 <div id="cameraView" class="camera-preview mb-3" style="display: none;">
-                    <video id="cameraStream" autoplay playsinline></video>
+                    <!-- Camera Status Messages -->
+                    <div id="cameraStatus" class="camera-status-message" style="display: none;">
+                        <div class="d-flex align-items-center justify-content-center gap-2 p-3">
+                            <div class="spinner-border spinner-border-sm text-primary" role="status" id="cameraStatusSpinner">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                            <span id="cameraStatusText" class="fw-semibold">🎥 Camera initializing...</span>
+                        </div>
+                    </div>
+                    
+                    <!-- Camera Error Message -->
+                    <div id="cameraError" class="camera-error-message" style="display: none;">
+                        <div class="p-3 text-center">
+                            <i class="bi bi-exclamation-triangle-fill text-warning" style="font-size: 2rem;"></i>
+                            <h6 class="mt-2 mb-2 fw-bold" id="cameraErrorTitle">Camera Error</h6>
+                            <p class="mb-2 small text-muted" id="cameraErrorMessage">Could not access camera.</p>
+                            <button type="button" class="btn btn-sm btn-primary" id="retryCameraBtn">
+                                <i class="bi bi-arrow-clockwise me-1"></i>Retry
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <!-- Camera Video Stream -->
+                    <video id="cameraStream" autoplay playsinline style="display: none;"></video>
+                    
+                    <!-- Camera Ready Indicator -->
+                    <div id="cameraReadyIndicator" class="camera-ready-indicator" style="display: none;">
+                        <div class="d-flex align-items-center justify-content-center gap-2 p-2">
+                            <i class="bi bi-check-circle-fill text-success"></i>
+                            <span class="fw-semibold small">📸 Ready to take photo</span>
+                        </div>
+                    </div>
+                    
                     <div class="camera-controls">
                         <button type="button" class="btn btn-light btn-sm me-2" id="closeCameraBtn">
                             <i class="bi bi-x-lg"></i> Close
                         </button>
-                        <button type="button" class="capture-btn" id="captureBtn" title="Capture Photo"></button>
+                        <button type="button" class="capture-btn" id="captureBtn" title="Capture Photo" style="display: none;"></button>
+                        <button type="button" class="btn btn-sm btn-outline-primary" id="testCameraBtn" style="display: none;">
+                            <i class="bi bi-camera-video me-1"></i>Test Camera
+                        </button>
+                    </div>
+                    
+                    <!-- Camera Tips -->
+                    <div class="camera-tips mt-2 p-2" style="background: rgba(139, 92, 246, 0.05); border-radius: 8px; font-size: 0.75rem; color: #64748b;">
+                        <i class="bi bi-lightbulb me-1"></i>
+                        <strong>Tips:</strong> Ensure good lighting • Close other apps using the camera (Zoom, Meet, Discord)
                     </div>
                 </div>
 
@@ -2366,7 +2472,7 @@
         };
         reader.readAsDataURL(file);
     }
-    
+
     // Remove Preview Button
     const removePreviewBtn = document.getElementById('removePreviewBtn');
     if (removePreviewBtn) {
@@ -2393,66 +2499,196 @@
         });
     }
 
+    // Helper function to show camera status
+    function showCameraStatus(message) {
+        if (cameraStatus && cameraStatusText) {
+            cameraStatus.style.display = 'flex';
+            cameraStatusText.textContent = message;
+        }
+        if (cameraError) cameraError.style.display = 'none';
+        if (cameraReadyIndicator) cameraReadyIndicator.style.display = 'none';
+        if (cameraStreamVideo) cameraStreamVideo.style.display = 'none';
+        if (captureBtn) captureBtn.style.display = 'none';
+        if (testCameraBtn) testCameraBtn.style.display = 'none';
+    }
+    
+    // Helper function to show camera error
+    function showCameraError(title, message) {
+        if (cameraError && cameraErrorTitle && cameraErrorMessage) {
+            cameraError.style.display = 'flex';
+            cameraErrorTitle.textContent = title;
+            cameraErrorMessage.textContent = message;
+        }
+        if (cameraStatus) cameraStatus.style.display = 'none';
+        if (cameraReadyIndicator) cameraReadyIndicator.style.display = 'none';
+        if (cameraStreamVideo) cameraStreamVideo.style.display = 'none';
+        if (captureBtn) captureBtn.style.display = 'none';
+        if (testCameraBtn) testCameraBtn.style.display = 'inline-block';
+    }
+    
+    // Helper function to show camera ready
+    function showCameraReady() {
+        if (cameraReadyIndicator) cameraReadyIndicator.style.display = 'block';
+        if (cameraStatus) cameraStatus.style.display = 'none';
+        if (cameraError) cameraError.style.display = 'none';
+        if (cameraStreamVideo) {
+            cameraStreamVideo.style.display = 'block';
+        }
+        if (captureBtn) captureBtn.style.display = 'block';
+        if (testCameraBtn) testCameraBtn.style.display = 'none';
+    }
+    
+    // Function to initialize camera
+    async function initializeCamera() {
+        // Prevent multiple clicks
+        if (openCameraBtn && openCameraBtn.disabled) {
+            return false;
+        }
+        
+        // Check if getUserMedia is supported
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            showCameraError(
+                'Camera Not Supported',
+                'Camera access requires HTTPS or localhost.\n\nTo use camera:\n1. Access via https:// (requires SSL certificate)\n2. Access via http://localhost:5050 or http://127.0.0.1:5050\n\nFor now, please use "Browse Files" to upload a photo instead.'
+            );
+            return false;
+        }
+        
+        // Stop any existing stream first
+        stopCamera();
+        
+        // Show status
+        showCameraStatus('🎥 Requesting camera permission...');
+        
+        // Show camera view
+        if (uploadZone) {
+            uploadZone.style.opacity = '0';
+            setTimeout(() => {
+                uploadZone.style.display = 'none';
+                uploadZone.style.opacity = '1';
+            }, 150);
+        }
+        if (cameraView) {
+            cameraView.style.display = 'block';
+            cameraView.style.opacity = '0';
+            setTimeout(() => {
+                cameraView.style.opacity = '1';
+            }, 150);
+        }
+        
+        // Disable button while requesting camera
+        if (openCameraBtn) {
+            openCameraBtn.disabled = true;
+        }
+
+        try {
+            showCameraStatus('🎥 Camera initializing...');
+            
+            // Request camera with constraints
+            cameraStream = await navigator.mediaDevices.getUserMedia({ 
+                video: { 
+                    facingMode: { ideal: 'environment' },
+                    width: { ideal: 1280 },
+                    height: { ideal: 720 }
+                } 
+            });
+            
+            if (cameraStreamVideo && cameraStream) {
+                cameraStreamVideo.srcObject = cameraStream;
+                
+                // Wait for video to be ready
+                await new Promise((resolve, reject) => {
+                    if (cameraStreamVideo.readyState >= 2) {
+                        resolve();
+                    } else {
+                        cameraStreamVideo.onloadedmetadata = () => resolve();
+                        cameraStreamVideo.onerror = () => reject(new Error('Video failed to load'));
+                        // Timeout after 5 seconds
+                        setTimeout(() => reject(new Error('Camera initialization timeout')), 5000);
+                    }
+                });
+                
+                showCameraStatus('📸 Ready to take photo');
+                // Small delay to show "Ready" message
+                setTimeout(() => {
+                    showCameraReady();
+                }, 500);
+            }
+            
+            return true;
+        } catch (err) {
+            // Stop any partial stream
+            stopCamera();
+            
+            let errorTitle = 'Camera Error';
+            let errorMessage = 'Could not access camera.';
+            
+            if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+                errorTitle = 'Permission Denied';
+                errorMessage = 'Please allow camera permission and try again.\n\nTip: Check your browser settings and ensure camera access is allowed for this site.';
+            } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
+                errorTitle = 'No Camera Found';
+                errorMessage = 'No camera detected on this device.\n\nPlease connect a camera or use "Browse Files" to upload a photo instead.';
+            } else if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {
+                errorTitle = 'Camera In Use';
+                errorMessage = 'Camera is being used by another application (Zoom, Meet, Discord, etc.).\n\nPlease close other apps using the camera and try again.';
+            } else if (err.name === 'OverconstrainedError' || err.name === 'ConstraintNotSatisfiedError') {
+                errorTitle = 'Camera Configuration Error';
+                errorMessage = 'Camera settings are not supported.\n\nTrying with default settings...';
+                // Retry with simpler constraints
+                try {
+                    cameraStream = await navigator.mediaDevices.getUserMedia({ video: true });
+                    if (cameraStreamVideo && cameraStream) {
+                        cameraStreamVideo.srcObject = cameraStream;
+                        await new Promise((resolve) => {
+                            if (cameraStreamVideo.readyState >= 2) {
+                                resolve();
+            } else {
+                                cameraStreamVideo.onloadedmetadata = () => resolve();
+                                setTimeout(() => resolve(), 3000);
+                            }
+                        });
+                        showCameraStatus('📸 Ready to take photo');
+                        setTimeout(() => {
+                            showCameraReady();
+                        }, 500);
+                        return true;
+                    }
+                } catch (retryErr) {
+                    errorMessage = 'Could not access camera. Please use "Browse Files" to upload a photo instead.';
+                }
+            } else {
+                errorMessage = `Could not access camera: ${err.message}\n\nPlease use "Browse Files" to upload a photo instead.`;
+            }
+            
+            showCameraError(errorTitle, errorMessage);
+            return false;
+        } finally {
+            // Always re-enable button
+            if (openCameraBtn) {
+                openCameraBtn.disabled = false;
+            }
+        }
+    }
+    
     // Camera Functions
     if (openCameraBtn) {
         openCameraBtn.addEventListener('click', async () => {
-            // Prevent multiple clicks
-            if (openCameraBtn.disabled) {
-                return;
-            }
-            
-        // Check if getUserMedia is supported
-        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-            alert('Camera access requires HTTPS or localhost.\n\nTo use camera:\n1. Access via https:// (requires SSL certificate)\n2. Access via http://localhost:5050 or http://127.0.0.1:5050\n\nFor now, please use "Browse Files" to upload a photo instead.');
-            return;
-        }
-
-            // Disable button while requesting camera
-            openCameraBtn.disabled = true;
-            const originalText = openCameraBtn.textContent;
-            openCameraBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Opening Camera...';
-
-        try {
-            cameraStream = await navigator.mediaDevices.getUserMedia({ 
-                video: { facingMode: 'environment' } 
-            });
-            if (cameraStreamVideo) cameraStreamVideo.srcObject = cameraStream;
-            
-            // Smooth transition between upload zone and camera view
-            if (uploadZone) {
-                uploadZone.style.opacity = '0';
-                setTimeout(() => {
-                    uploadZone.style.display = 'none';
-                    uploadZone.style.opacity = '1';
-                }, 150);
-            }
-            if (cameraView) {
-                cameraView.style.display = 'block';
-                cameraView.style.opacity = '0';
-                setTimeout(() => {
-                    cameraView.style.opacity = '1';
-                }, 150);
-            }
-        } catch (err) {
-                // Stop any partial stream
-                if (cameraStream) {
-                    stopCamera();
-                }
-                
-                let errorMessage = 'Could not access camera.';
-            if (err.name === 'NotAllowedError') {
-                    errorMessage = 'Camera permission denied. Please allow camera access and try again.';
-            } else if (err.name === 'NotFoundError') {
-                    errorMessage = 'No camera found on this device.';
-            } else {
-                    errorMessage = 'Could not access camera: ' + err.message + '\n\nPlease use "Browse Files" to upload a photo instead.';
-            }
-                alert(errorMessage);
-            } finally {
-                // Always re-enable button
-                openCameraBtn.disabled = false;
-                openCameraBtn.textContent = originalText;
-        }
+            await initializeCamera();
+        });
+    }
+    
+    // Retry camera button
+    if (retryCameraBtn) {
+        retryCameraBtn.addEventListener('click', async () => {
+            await initializeCamera();
+        });
+    }
+    
+    // Test camera button
+    if (testCameraBtn) {
+        testCameraBtn.addEventListener('click', async () => {
+            await initializeCamera();
         });
     }
 
@@ -2486,46 +2722,101 @@
 
     if (captureBtn && cameraStreamVideo) {
         captureBtn.addEventListener('click', () => {
+            // Check if video is ready
+            if (!cameraStreamVideo.videoWidth || !cameraStreamVideo.videoHeight) {
+                alert('Camera is not ready yet. Please wait a moment and try again.');
+                return;
+            }
+            
+            // Show capture feedback
+            showCameraStatus('📸 Capturing photo...');
+            
+            try {
         const canvas = document.createElement('canvas');
         canvas.width = cameraStreamVideo.videoWidth;
         canvas.height = cameraStreamVideo.videoHeight;
-        canvas.getContext('2d').drawImage(cameraStreamVideo, 0, 0);
+                const ctx = canvas.getContext('2d');
         
+                // Draw video frame to canvas
+                ctx.drawImage(cameraStreamVideo, 0, 0);
+                
+                // Convert to blob
         canvas.toBlob((blob) => {
+                    if (!blob) {
+                        showCameraError('Capture Failed', 'Could not capture photo. Please try again.');
+                        return;
+                    }
+                    
             selectedFile = new File([blob], 'camera-capture.jpg', { type: 'image/jpeg' });
-            if (imagePreview) {
-                imagePreview.src = canvas.toDataURL('image/jpeg');
-                imagePreview.style.opacity = '0';
-                setTimeout(() => {
-                    imagePreview.style.opacity = '1';
-                }, 50);
-            }
+                    
+                    // Show preview
+                    if (imagePreview) {
+                        imagePreview.src = canvas.toDataURL('image/jpeg');
+                        imagePreview.style.display = 'block';
+                        imagePreview.style.opacity = '0';
+                        imagePreview.style.transition = 'opacity 0.3s ease';
+                        setTimeout(() => {
+                            imagePreview.style.opacity = '1';
+                        }, 50);
+                    }
+                    
+                    // Update progress feedback
+                    const progressFeedback = document.getElementById('uploadProgressFeedback');
+                    const progressFeedbackText = document.getElementById('progressFeedbackText');
+                    if (progressFeedback && progressFeedbackText) {
+                        progressFeedback.style.display = 'block';
+                        progressFeedbackText.textContent = 'Photo captured ✓ Ready to analyze';
+                    }
+                    
+                    // Stop camera
             stopCamera();
-            
-            // Smooth transition between camera view and preview
-            if (cameraView) {
-                cameraView.style.opacity = '0';
-                setTimeout(() => {
-                    cameraView.style.display = 'none';
-                    cameraView.style.opacity = '1';
-                }, 150);
+                    
+                    // Smooth transition between camera view and preview
+                    if (cameraView) {
+                        cameraView.style.opacity = '0';
+                        setTimeout(() => {
+                            cameraView.style.display = 'none';
+                            cameraView.style.opacity = '1';
+                        }, 150);
+                    }
+                    if (previewSection) {
+                        previewSection.style.display = 'block';
+                        previewSection.style.opacity = '0';
+                        setTimeout(() => {
+                            previewSection.style.opacity = '1';
+                        }, 150);
+                    }
+                }, 'image/jpeg', 0.92); // Quality: 0.92 (high quality)
+            } catch (err) {
+                console.error('Capture error:', err);
+                showCameraError('Capture Failed', 'Could not capture photo. Please try again.');
             }
-            if (previewSection) {
-                previewSection.style.display = 'block';
-                previewSection.style.opacity = '0';
-                setTimeout(() => {
-                    previewSection.style.opacity = '1';
-                }, 150);
-            }
-        }, 'image/jpeg');
         });
     }
 
     function stopCamera() {
         if (cameraStream) {
-            cameraStream.getTracks().forEach(track => track.stop());
+            cameraStream.getTracks().forEach(track => {
+                track.stop();
+            });
             cameraStream = null;
         }
+        if (cameraStreamVideo) {
+            cameraStreamVideo.srcObject = null;
+        }
+        // Hide camera status messages
+        if (cameraStatus) cameraStatus.style.display = 'none';
+        if (cameraError) cameraError.style.display = 'none';
+        if (cameraReadyIndicator) cameraReadyIndicator.style.display = 'none';
+        if (captureBtn) captureBtn.style.display = 'none';
+        if (testCameraBtn) testCameraBtn.style.display = 'none';
+    }
+    
+    // Clean up camera when modal is closed
+    if (photoModal) {
+        photoModal.addEventListener('hidden.bs.modal', () => {
+            stopCamera();
+        });
     }
 
     // Cancel upload
