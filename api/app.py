@@ -739,6 +739,172 @@ def normalize_expiration_date(date_str):
     except (ValueError, TypeError, AttributeError):
         return None
 
+def normalize_item_name(name):
+    """Normalize item names to improve accuracy and consistency"""
+    if not name:
+        return None
+    
+    name = name.strip().lower()
+    
+    # Common corrections for better accuracy
+    corrections = {
+        'milk carton': 'milk',
+        'chicken meat': 'chicken',
+        'tomatoes': 'tomato',
+        'apples': 'apple',
+        'potatoes': 'potato',
+        'oranges': 'orange',
+        'bananas': 'banana',
+        'eggs': 'egg',
+        'bread loaf': 'bread',
+        'chicken breast': 'chicken',
+        'pasta box': 'pasta',
+        'cereal box': 'cereal',
+        'soup can': 'soup',
+        'juice bottle': 'juice',
+        'water bottle': 'water',
+        'yogurt container': 'yogurt',
+        'cheese package': 'cheese',
+        'butter package': 'butter',
+    }
+    
+    # Apply corrections
+    for wrong, correct in corrections.items():
+        if wrong in name:
+            name = name.replace(wrong, correct)
+    
+    # Remove common prefixes/suffixes
+    prefixes_to_remove = ['a ', 'an ', 'the ', 'some ', 'pack of ', 'box of ', 'bottle of ', 'can of ', 'package of ', 'container of ']
+    for prefix in prefixes_to_remove:
+        if name.startswith(prefix):
+            name = name[len(prefix):]
+    
+    # Remove trailing common words
+    suffixes_to_remove = [' container', ' package', ' box', ' bottle', ' can', ' carton', ' bag']
+    for suffix in suffixes_to_remove:
+        if name.endswith(suffix):
+            name = name[:-len(suffix)]
+    
+    # Capitalize first letter of each word
+    if name:
+        return ' '.join(word.capitalize() for word in name.split())
+    return None
+
+def validate_category(item_name, category):
+    """Auto-correct category based on item name if category seems wrong"""
+    if not item_name:
+        return category
+    
+    name_lower = item_name.lower()
+    
+    # Category mapping based on keywords
+    category_keywords = {
+        'dairy': ['milk', 'cheese', 'yogurt', 'butter', 'cream', 'sour cream', 'cottage cheese', 'milk product'],
+        'produce': ['apple', 'banana', 'orange', 'tomato', 'lettuce', 'carrot', 'onion', 'potato', 'vegetable', 'fruit', 'pepper', 'cucumber', 'broccoli', 'spinach'],
+        'meat': ['chicken', 'beef', 'pork', 'fish', 'turkey', 'bacon', 'sausage', 'ham', 'steak', 'ground beef', 'salmon', 'tuna'],
+        'beverages': ['juice', 'soda', 'water', 'coffee', 'tea', 'beer', 'wine', 'cola', 'drink'],
+        'bakery': ['bread', 'bagel', 'muffin', 'croissant', 'roll', 'bun', 'pastry'],
+        'canned goods': ['can', 'canned', 'soup', 'tuna', 'beans', 'corn'],
+        'snacks': ['chip', 'cracker', 'cookie', 'nut', 'popcorn', 'pretzel', 'candy'],
+        'condiments': ['sauce', 'ketchup', 'mustard', 'mayo', 'mayonnaise', 'dressing', 'spice', 'oil', 'vinegar', 'salt', 'pepper'],
+        'grains': ['rice', 'pasta', 'cereal', 'flour', 'oat', 'quinoa', 'barley'],
+        'frozen': ['frozen', 'ice cream']
+    }
+    
+    # Check if category matches item name
+    for correct_cat, keywords in category_keywords.items():
+        if any(keyword in name_lower for keyword in keywords):
+            return correct_cat
+    
+    return category  # Return original if no match
+
+def parse_quantity(quantity_str):
+    """Parse and normalize quantity strings"""
+    if not quantity_str:
+        return "1"
+    
+    quantity_str = str(quantity_str).strip().lower()
+    
+    # Extract number from strings like "2 bottles", "three cans"
+    import re
+    numbers = re.findall(r'\d+', quantity_str)
+    if numbers:
+        num = int(numbers[0])
+        # Extract unit
+        unit_match = re.search(r'(bottle|can|package|box|loaf|piece|slice|cup|pound|lb|oz|gram|g|kg|container|item)', quantity_str)
+        unit = unit_match.group(0) if unit_match else "item"
+        # Pluralize unit if needed
+        if num > 1 and not unit.endswith('s'):
+            if unit in ['box', 'box']:
+                unit = 'boxes'
+            elif unit == 'bottle':
+                unit = 'bottles'
+            elif unit == 'can':
+                unit = 'cans'
+            elif unit == 'loaf':
+                unit = 'loaves'
+            elif unit == 'piece':
+                unit = 'pieces'
+        return f"{num} {unit}"
+    
+    # Handle word numbers
+    word_numbers = {'one': 1, 'two': 2, 'three': 3, 'four': 4, 'five': 5, 'six': 6, 'seven': 7, 'eight': 8, 'nine': 9, 'ten': 10}
+    for word, num in word_numbers.items():
+        if word in quantity_str:
+            # Extract unit if present
+            unit_match = re.search(r'(bottle|can|package|box|loaf|piece)', quantity_str)
+            unit = unit_match.group(0) if unit_match else "item"
+            if num > 1 and not unit.endswith('s'):
+                if unit == 'bottle':
+                    unit = 'bottles'
+                elif unit == 'can':
+                    unit = 'cans'
+            return f"{num} {unit}"
+    
+    return quantity_str if quantity_str else "1"
+
+def parse_api_response_with_retry(food_response, max_retries=2):
+    """Parse API response with better error handling and JSON extraction"""
+    import json
+    import re
+    
+    for attempt in range(max_retries):
+        try:
+            # Try direct JSON parse
+            food_data = json.loads(food_response)
+            return food_data.get('items', [])
+        except json.JSONDecodeError:
+            # Try to extract JSON from markdown code blocks
+            json_match = re.search(r'```(?:json)?\s*(\{.*?"items".*?\})\s*```', food_response, re.DOTALL | re.IGNORECASE)
+            if json_match:
+                try:
+                    food_data = json.loads(json_match.group(1))
+                    return food_data.get('items', [])
+                except:
+                    pass
+            
+            # Try to extract just the JSON object
+            json_match = re.search(r'\{[^{}]*"items"[^{}]*\[.*?\]\s*\}', food_response, re.DOTALL)
+            if json_match:
+                try:
+                    food_data = json.loads(json_match.group(0))
+                    return food_data.get('items', [])
+                except:
+                    pass
+            
+            # Try to fix common JSON errors
+            if attempt == 0:
+                # Replace common issues
+                food_response = food_response.replace('None', 'null').replace("'", '"')
+                # Remove any text before first {
+                first_brace = food_response.find('{')
+                if first_brace > 0:
+                    food_response = food_response[first_brace:]
+                continue
+    
+    # Final fallback: return empty list
+    return []
+
 def normalize_pantry_item(item):
     """Normalize a pantry item to ensure consistent format"""
     if item is None:
@@ -1908,44 +2074,49 @@ IMPORTANT: Return ONLY valid JSON, no explanations, no markdown, no code blocks.
         )
         food_response = response.choices[0].message.content
         
-        # Parse JSON response
-        import json
-        try:
-            food_data = json.loads(food_response)
-            detected_items_data = food_data.get('items', [])
+        # Parse JSON response with improved error handling
+        detected_items_data = parse_api_response_with_retry(food_response)
+        
+        # Normalize and validate all items
+        pantry_items = []
+        for item in detected_items_data:
+            raw_name = item.get('name', '').strip()
+            raw_quantity = item.get('quantity', '1')
+            expiration_date = item.get('expirationDate')
+            raw_category = item.get('category', 'other')
             
-            # Convert to list of PantryItem objects
-            pantry_items = []
-            for item in detected_items_data:
-                name = item.get('name', '').strip()
-                quantity = item.get('quantity', '1').strip()
-                expiration_date = item.get('expirationDate')
-                category = item.get('category', 'other')
-                if name:
-                    # Normalize expiration date if provided
-                    normalized_exp_date = None
-                    if expiration_date:
-                        normalized_exp_date = normalize_expiration_date(str(expiration_date))
-                    pantry_items.append({
-                        'id': str(uuid.uuid4()),
-                        'name': name,
-                        'quantity': quantity,
-                        'expirationDate': normalized_exp_date,
-                        'category': category,  # Store category for insights
-                        'addedDate': datetime.now().isoformat()
-                    })
-        except json.JSONDecodeError:
-            # Fallback: try to parse as comma-separated list (old format)
-            detected_items = [f.strip() for f in food_response.split(",") if f.strip()]
-            pantry_items = []
-            for item in detected_items:
-                pantry_items.append({
-                    'id': str(uuid.uuid4()),
-                    'name': item,
-                    'quantity': '1',
-                    'expirationDate': None,
-                    'addedDate': datetime.now().isoformat()
-                })
+            # Normalize and validate
+            normalized_name = normalize_item_name(raw_name)
+            if not normalized_name or len(normalized_name) < 2:
+                continue  # Skip invalid items
+            
+            normalized_quantity = parse_quantity(raw_quantity)
+            validated_category = validate_category(normalized_name, raw_category)
+            
+            # Normalize expiration date
+            normalized_exp_date = None
+            if expiration_date:
+                normalized_exp_date = normalize_expiration_date(str(expiration_date))
+            
+            pantry_items.append({
+                'id': str(uuid.uuid4()),
+                'name': normalized_name,
+                'quantity': normalized_quantity,
+                'expirationDate': normalized_exp_date,
+                'category': validated_category,
+                'addedDate': datetime.now().isoformat()
+            })
+        
+        # Remove duplicates (case-insensitive)
+        seen_names = set()
+        unique_items = []
+        for item in pantry_items:
+            name_lower = item['name'].lower()
+            if name_lower not in seen_names:
+                seen_names.add(name_lower)
+                unique_items.append(item)
+        
+        pantry_items = unique_items
         
         # Add to appropriate pantry based on user authentication
         if 'user_id' in session:
@@ -3682,44 +3853,49 @@ IMPORTANT: Return ONLY valid JSON, no explanations, no markdown, no code blocks.
         )
         food_response = response.choices[0].message.content
         
-        # Parse JSON response
-        import json
-        try:
-            food_data = json.loads(food_response)
-            detected_items = food_data.get('items', [])
+        # Parse JSON response with improved error handling
+        detected_items_data = parse_api_response_with_retry(food_response)
+        
+        # Normalize and validate all items
+        pantry_items = []
+        for item in detected_items_data:
+            raw_name = item.get('name', '').strip()
+            raw_quantity = item.get('quantity', '1')
+            expiration_date = item.get('expirationDate')
+            raw_category = item.get('category', 'other')
             
-            # Convert to list of PantryItem objects
-            pantry_items = []
-            for item in detected_items:
-                name = item.get('name', '').strip()
-                quantity = item.get('quantity', '1').strip()
-                expiration_date = item.get('expirationDate')
-                category = item.get('category', 'other')
-                if name:
-                    # Normalize expiration date if provided
-                    normalized_exp_date = None
-                    if expiration_date:
-                        normalized_exp_date = normalize_expiration_date(str(expiration_date))
-                    pantry_items.append({
-                        'id': str(uuid.uuid4()),
-                        'name': name,
-                        'quantity': quantity,
-                        'expirationDate': normalized_exp_date,
-                        'category': category,  # Store category for insights
-                        'addedDate': datetime.now().isoformat()
-                    })
-        except json.JSONDecodeError:
-            # Fallback: try to parse as comma-separated list (old format)
-            detected_items = [f.strip() for f in food_response.split(",") if f.strip()]
-            pantry_items = []
-            for item in detected_items:
-                pantry_items.append({
-                    'id': str(uuid.uuid4()),
-                    'name': item,
-                    'quantity': '1',
-                    'expirationDate': None,
-                    'addedDate': datetime.now().isoformat()
-                })
+            # Normalize and validate
+            normalized_name = normalize_item_name(raw_name)
+            if not normalized_name or len(normalized_name) < 2:
+                continue  # Skip invalid items
+            
+            normalized_quantity = parse_quantity(raw_quantity)
+            validated_category = validate_category(normalized_name, raw_category)
+            
+            # Normalize expiration date
+            normalized_exp_date = None
+            if expiration_date:
+                normalized_exp_date = normalize_expiration_date(str(expiration_date))
+            
+            pantry_items.append({
+                'id': str(uuid.uuid4()),
+                'name': normalized_name,
+                'quantity': normalized_quantity,
+                'expirationDate': normalized_exp_date,
+                'category': validated_category,
+                'addedDate': datetime.now().isoformat()
+            })
+        
+        # Remove duplicates (case-insensitive)
+        seen_names = set()
+        unique_items = []
+        for item in pantry_items:
+            name_lower = item['name'].lower()
+            if name_lower not in seen_names:
+                seen_names.add(name_lower)
+                unique_items.append(item)
+        
+        pantry_items = unique_items
         
         # Add to appropriate pantry based on client type and user authentication
         client_type = request.headers.get('X-Client-Type', 'web')
