@@ -253,10 +253,12 @@ def load_ml_models():
                 classifier_loaded = False
                 classifier_error = None
                 
+                _food_classifier_local = None
+                
                 def load_classifier():
-                    nonlocal classifier_loaded, classifier_error, _food_classifier
+                    nonlocal classifier_loaded, classifier_error, _food_classifier_local
                     try:
-                        _food_classifier = pipeline(
+                        _food_classifier_local = pipeline(
                             "image-classification",
                             model="nateraw/food-image-classification",
                             device=-1  # CPU only for serverless
@@ -276,7 +278,8 @@ def load_ml_models():
                 elif classifier_error:
                     print(f"⚠️  Warning: food classifier not available: {classifier_error}")
                     _food_classifier = None
-                elif classifier_loaded:
+                elif classifier_loaded and _food_classifier_local:
+                    _food_classifier = _food_classifier_local
                     print("✅ Food classifier loaded")
                 else:
                     _food_classifier = None
@@ -292,10 +295,12 @@ def load_ml_models():
                 ocr_loaded = False
                 ocr_error = None
                 
+                _ocr_reader_local = None
+                
                 def load_ocr():
-                    nonlocal ocr_loaded, ocr_error, _ocr_reader
+                    nonlocal ocr_loaded, ocr_error, _ocr_reader_local
                     try:
-                        _ocr_reader = easyocr.Reader(['en'], gpu=False)
+                        _ocr_reader_local = easyocr.Reader(['en'], gpu=False)
                         ocr_loaded = True
                     except Exception as e:
                         ocr_error = e
@@ -311,7 +316,8 @@ def load_ml_models():
                 elif ocr_error:
                     print(f"⚠️  Warning: OCR not available: {ocr_error}")
                     _ocr_reader = None
-                elif ocr_loaded:
+                elif ocr_loaded and _ocr_reader_local:
+                    _ocr_reader = _ocr_reader_local
                     print("✅ OCR reader loaded")
                 else:
                     _ocr_reader = None
@@ -329,13 +335,15 @@ def load_ml_models():
                     detector_loaded = False
                     detector_error = None
                     
+                    _object_detector_local = None
+                    
                     def load_detector():
-                        nonlocal detector_loaded, detector_error, _object_detector
+                        nonlocal detector_loaded, detector_error, _object_detector_local
                         try:
                             processor = AutoImageProcessor.from_pretrained("facebook/detr-resnet-50")
                             model = AutoModelForObjectDetection.from_pretrained("facebook/detr-resnet-50")
                             model.eval()
-                            _object_detector = {"processor": processor, "model": model, "torch": torch}
+                            _object_detector_local = {"processor": processor, "model": model, "torch": torch}
                             detector_loaded = True
                         except Exception as e:
                             detector_error = e
@@ -351,7 +359,8 @@ def load_ml_models():
                     elif detector_error:
                         print(f"⚠️  Warning: object detector not available: {detector_error}")
                         _object_detector = None
-                    elif detector_loaded:
+                    elif detector_loaded and _object_detector_local:
+                        _object_detector = _object_detector_local
                         print("✅ Object detector loaded")
                     else:
                         _object_detector = None
