@@ -34,61 +34,30 @@
     
     /* Fix modal backdrop - proper isolation to prevent page blur */
     .modal-backdrop {
-        background-color: rgba(0, 0, 0, 0.5) !important; /* Darker for better contrast, no blur */
-        /* REMOVED backdrop-filter blur to prevent page blur bug */
-        z-index: 9998 !important;
+        background-color: rgba(0, 0, 0, 0.5) !important;
+        z-index: 1040 !important; /* Bootstrap default */
         position: fixed !important;
         top: 0 !important;
         left: 0 !important;
         width: 100% !important;
         height: 100% !important;
         inset: 0 !important;
-        pointer-events: auto !important;
-    }
-    
-    /* Ensure backdrop doesn't block modal content clicks */
-    .modal.show ~ .modal-backdrop,
-    .modal.show + .modal-backdrop {
-        pointer-events: auto !important;
-    }
-    
-    /* Modal content must be above backdrop and clickable */
-    .modal.show .modal-dialog {
-        pointer-events: auto !important;
-        z-index: 1051 !important;
-    }
-    
-    .modal.show .modal-content {
-        pointer-events: auto !important;
-        z-index: 1052 !important;
-    }
-    
-    .modal-backdrop.show {
-        opacity: 1 !important;
-        display: block !important;
-    }
-    
-    /* Prevent body scroll when modal is open */
-    body.modal-open {
-        overflow: hidden !important;
-        padding-right: 0 !important;
     }
     
     /* Modal container - must be above backdrop */
     .modal {
-        z-index: 9999 !important;
-        pointer-events: none !important; /* Modal container doesn't capture clicks */
+        z-index: 1050 !important; /* Bootstrap default */
         position: fixed !important;
         top: 0 !important;
         left: 0 !important;
         width: 100% !important;
         height: 100% !important;
         display: none !important;
-        inset: 0 !important;
+        overflow-x: hidden !important;
+        overflow-y: auto !important;
     }
     
     .modal.show {
-        pointer-events: auto !important; /* When shown, allow clicks */
         display: flex !important; /* Use flex to center */
         align-items: center !important;
         justify-content: center !important;
@@ -96,12 +65,12 @@
     
     /* Ensure modal dialog is above backdrop and responsive */
     .modal-dialog {
-        z-index: 10000 !important;
+        z-index: 1051 !important;
         position: relative;
-        pointer-events: auto !important;
         margin: 1rem auto !important;
         max-width: 720px !important;
         width: 90% !important;
+        pointer-events: none !important; /* Dialog container doesn't capture clicks */
     }
     
     .modal-dialog-centered {
@@ -113,48 +82,67 @@
     
     /* Ensure modal content is clickable and properly layered */
     .modal-content {
-        pointer-events: auto !important;
-        z-index: 10001 !important;
+        z-index: 1052 !important;
         position: relative;
-        background: white !important; /* Ensure modal content has solid background */
+        background: white !important;
         border-radius: 16px !important;
         box-shadow: 0 20px 50px rgba(0, 0, 0, 0.25) !important;
+        pointer-events: auto !important; /* Content captures clicks */
     }
     
-    /* Ensure all modal elements are clickable */
+    /* Ensure all interactive elements in modal are clickable */
     .modal.show .modal-content,
     .modal.show .modal-content * {
         pointer-events: auto !important;
     }
     
+    /* Prevent body scroll when modal is open */
+    body.modal-open {
+        overflow: hidden !important;
+        padding-right: 0 !important;
+    }
+    
+    .modal-backdrop.show {
+        opacity: 1 !important;
+        display: block !important;
+    }
+    
     /* Photo upload modal - ensure it's on top */
     #photoModal {
-        z-index: 9999 !important;
+        z-index: 1050 !important;
     }
     
     #photoModal.show {
-        z-index: 9999 !important;
+        z-index: 1050 !important;
     }
     
     #photoModal .modal-dialog {
         max-width: 720px !important;
         width: 90% !important;
-        z-index: 10000 !important;
+        z-index: 1051 !important;
+    }
+    
+    #photoModal .modal-content {
+        z-index: 1052 !important;
     }
     
     /* Add Item Modal - ensure it's on top */
     #addItemModal {
-        z-index: 9999 !important;
+        z-index: 1050 !important;
     }
     
     #addItemModal.show {
-        z-index: 9999 !important;
+        z-index: 1050 !important;
     }
     
     #addItemModal .modal-dialog {
         max-width: 720px !important;
         width: 90% !important;
-        z-index: 10000 !important;
+        z-index: 1051 !important;
+    }
+    
+    #addItemModal .modal-content {
+        z-index: 1052 !important;
     }
     
     /* Add Item Modal Header Styling */
@@ -345,21 +333,21 @@
     /* Ensure modals are always visible and clickable when shown */
     .modal.show {
         display: flex !important;
-        z-index: 9999 !important;
+        z-index: 1050 !important;
         align-items: center !important;
         justify-content: center !important;
     }
     
     .modal.show .modal-dialog {
-        z-index: 10000 !important;
-        pointer-events: auto !important;
+        z-index: 1051 !important;
+        pointer-events: none !important; /* Dialog container doesn't capture clicks */
         max-width: 720px !important;
         width: 90% !important;
     }
     
     .modal.show .modal-content {
-        z-index: 10001 !important;
-        pointer-events: auto !important;
+        z-index: 1052 !important;
+        pointer-events: auto !important; /* Content captures clicks */
         box-shadow: 0 20px 50px rgba(0, 0, 0, 0.25) !important;
     }
     
@@ -4311,26 +4299,21 @@
                         if (isModal) {
                             const addItemModal = document.getElementById('addItemModal');
                             if (addItemModal && typeof bootstrap !== 'undefined' && bootstrap.Modal) {
-                                const modalInstance = bootstrap.Modal.getInstance(addItemModal);
-                                if (modalInstance) {
+                                const modalInstance = bootstrap.Modal.getInstance(addItemModal) || new bootstrap.Modal(addItemModal);
+                                setTimeout(() => {
+                                    modalInstance.hide();
+                                    // Clean up backdrop after modal closes
                                     setTimeout(() => {
-                                        modalInstance.hide();
-                                        // Clean up backdrop after modal closes
-                                        setTimeout(() => {
-                                            const backdrops = document.querySelectorAll('.modal-backdrop');
-                                            backdrops.forEach(backdrop => {
-                                                if (!document.querySelector('.modal.show')) {
-                                                    backdrop.remove();
-                                                }
-                                            });
-                                            if (document.querySelectorAll('.modal.show').length === 0) {
-                                                document.body.classList.remove('modal-open');
-                                                document.body.style.overflow = '';
-                                                document.body.style.paddingRight = '';
-                                            }
-                                        }, 300);
-                                    }, 1500); // Close after showing success message
-                                }
+                                        cleanupStuckBackdrops();
+                                    }, 300);
+                                }, 1500); // Close after showing success message
+                            } else {
+                                // Fallback: manually hide modal
+                                addItemModal.classList.remove('show');
+                                addItemModal.style.display = 'none';
+                                addItemModal.setAttribute('aria-hidden', 'true');
+                                addItemModal.removeAttribute('aria-modal');
+                                cleanupStuckBackdrops();
                             }
                         }
                         // Optimistic UI update - show item count immediately
@@ -5616,10 +5599,48 @@
         wrapReloadPantryItems();
     }
     
+    // Cleanup stuck backdrops function
+    function cleanupStuckBackdrops() {
+        const openModals = document.querySelectorAll('.modal.show');
+        if (openModals.length === 0) {
+            // No modals open, remove all backdrops
+            const backdrops = document.querySelectorAll('.modal-backdrop');
+            backdrops.forEach(backdrop => backdrop.remove());
+            document.body.classList.remove('modal-open');
+            document.body.style.overflow = '';
+            document.body.style.paddingRight = '';
+        }
+    }
+    
     // Initialize on page load
     document.addEventListener('DOMContentLoaded', function() {
         try {
             console.log('DOM Content Loaded - Initializing SmartPantry...');
+            
+            // Clean up any stuck backdrops on page load
+            cleanupStuckBackdrops();
+            
+            // Set up modal event listeners to ensure proper cleanup
+            const addItemModal = document.getElementById('addItemModal');
+            if (addItemModal && typeof bootstrap !== 'undefined' && bootstrap.Modal) {
+                addItemModal.addEventListener('shown.bs.modal', function() {
+                    // Ensure modal content is clickable when shown
+                    const modalContent = addItemModal.querySelector('.modal-content');
+                    if (modalContent) {
+                        modalContent.style.pointerEvents = 'auto';
+                        // Ensure all interactive elements are clickable
+                        const interactiveElements = modalContent.querySelectorAll('input, button, select, textarea, a');
+                        interactiveElements.forEach(el => {
+                            el.style.pointerEvents = 'auto';
+                        });
+                    }
+                });
+                
+                addItemModal.addEventListener('hidden.bs.modal', function() {
+                    // Clean up backdrop when modal is hidden
+                    cleanupStuckBackdrops();
+                });
+            }
             
             // Ensure functions are available
             if (typeof updateSmartSuggestions === 'function') {
@@ -5659,6 +5680,9 @@
                     console.error('Error in delayed initialization:', error);
                 }
             }, 1000);
+            
+            // Periodic cleanup check (every 2 seconds)
+            setInterval(cleanupStuckBackdrops, 2000);
         } catch (error) {
             console.error('Error in DOMContentLoaded handler:', error);
         }
