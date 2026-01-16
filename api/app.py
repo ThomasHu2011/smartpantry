@@ -2378,16 +2378,25 @@ Format as JSON:
         # Add timeout and error handling for API calls
         try:
             response = client.chat.completions.create(
-            model="gpt-4o",
-            messages=[
-                {"role": "system", "content": "You are a nutritionist and chef. Create recipes that use at least 50% pantry ingredients and provide accurate nutrition information."},
-                {"role": "user", "content": prompt}
-            ],
-            max_tokens=1000
-        )
+                model="gpt-4o",
+                messages=[
+                    {"role": "system", "content": "You are a nutritionist and chef. Create recipes that use at least 50% pantry ingredients and provide accurate nutrition information."},
+                    {"role": "user", "content": prompt}
+                ],
+                max_tokens=1000,
+                timeout=60.0  # 60 second timeout
+            )
+        except Exception as api_error:
+            error_type = type(api_error).__name__
+            error_msg = str(api_error)
+            if VERBOSE_LOGGING:
+                print(f"OpenAI API error in nutrition route ({error_type}): {error_msg}")
+            raise ValueError(f"Error generating nutrition info: {error_msg[:100]}")
         
         import json
-        recipe_text = response.choices[0].message.content
+        recipe_text = safe_get_response_content(response)
+        if not recipe_text:
+            raise ValueError("Empty response from OpenAI API")
         
         # Clean the response text
         cleaned_text = recipe_text.strip()
