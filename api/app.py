@@ -224,53 +224,151 @@ _ocr_reader = None
 _object_detector = None
 
 def load_ml_models():
-    """Load ML models lazily for serverless-friendly photo analysis."""
+    """Load ML models lazily for serverless-friendly photo analysis.
+    Includes comprehensive error handling and timeout protection."""
     global _ml_models_loaded, _food_classifier, _ocr_reader, _object_detector
+    
     if _ml_models_loaded:
         return True
-    try:
-        print("🔄 Loading ML models for photo analysis...")
-        # Food classification (lightweight)
+    
+    # Prevent concurrent loading attempts
+    import threading
+    if not hasattr(load_ml_models, '_loading_lock'):
+        load_ml_models._loading_lock = threading.Lock()
+    
+    with load_ml_models._loading_lock:
+        # Double-check after acquiring lock
+        if _ml_models_loaded:
+            return True
+        
         try:
-            from transformers import pipeline
-            _food_classifier = pipeline(
-                "image-classification",
-                model="nateraw/food-image-classification",
-                device=-1  # CPU only for serverless
-            )
-            print("✅ Food classifier loaded")
-        except Exception as e:
-            print(f"⚠️  Warning: food classifier not available: {e}")
-            _food_classifier = None
-
-        # OCR for expiration dates
-        try:
-            import easyocr
-            _ocr_reader = easyocr.Reader(['en'], gpu=False)
-            print("✅ OCR reader loaded")
-        except Exception as e:
-            print(f"⚠️  Warning: OCR not available: {e}")
-            _ocr_reader = None
-
-        # Object detection (general model with food label mapping)
-        if ML_VISION_MODE == "hybrid":
+            print("🔄 Loading ML models for photo analysis...")
+            
+            # Food classification (lightweight) with timeout
             try:
-                from transformers import AutoImageProcessor, AutoModelForObjectDetection
-                import torch
-                processor = AutoImageProcessor.from_pretrained("facebook/detr-resnet-50")
-                model = AutoModelForObjectDetection.from_pretrained("facebook/detr-resnet-50")
-                model.eval()
-                _object_detector = {"processor": processor, "model": model, "torch": torch}
-                print("✅ Object detector loaded")
+                from transformers import pipeline
+                import signal
+                import threading
+                
+                classifier_loaded = False
+                classifier_error = None
+                
+                def load_classifier():
+                    nonlocal classifier_loaded, classifier_error, _food_classifier
+                    try:
+                        _food_classifier = pipeline(
+                            "image-classification",
+                            model="nateraw/food-image-classification",
+                            device=-1  # CPU only for serverless
+                        )
+                        classifier_loaded = True
+                    except Exception as e:
+                        classifier_error = e
+                
+                thread = threading.Thread(target=load_classifier)
+                thread.daemon = True
+                thread.start()
+                thread.join(timeout=120)  # 2 minute timeout
+                
+                if thread.is_alive():
+                    print("⚠️  Warning: Food classifier loading timed out")
+                    _food_classifier = None
+                elif classifier_error:
+                    print(f"⚠️  Warning: food classifier not available: {classifier_error}")
+                    _food_classifier = None
+                elif classifier_loaded:
+                    print("✅ Food classifier loaded")
+                else:
+                    _food_classifier = None
             except Exception as e:
-                print(f"⚠️  Warning: object detector not available: {e}")
-                _object_detector = None
+                print(f"⚠️  Warning: food classifier loading failed: {e}")
+                _food_classifier = None
 
-        _ml_models_loaded = True
-        return True
-    except Exception as e:
-        print(f"⚠️  ERROR: Failed to load ML models: {e}")
-        return False
+            # OCR for expiration dates with timeout
+            try:
+                import easyocr
+                import threading
+                
+                ocr_loaded = False
+                ocr_error = None
+                
+                def load_ocr():
+                    nonlocal ocr_loaded, ocr_error, _ocr_reader
+                    try:
+                        _ocr_reader = easyocr.Reader(['en'], gpu=False)
+                        ocr_loaded = True
+                    except Exception as e:
+                        ocr_error = e
+                
+                thread = threading.Thread(target=load_ocr)
+                thread.daemon = True
+                thread.start()
+                thread.join(timeout=180)  # 3 minute timeout (OCR takes longer)
+                
+                if thread.is_alive():
+                    print("⚠️  Warning: OCR reader loading timed out")
+                    _ocr_reader = None
+                elif ocr_error:
+                    print(f"⚠️  Warning: OCR not available: {ocr_error}")
+                    _ocr_reader = None
+                elif ocr_loaded:
+                    print("✅ OCR reader loaded")
+                else:
+                    _ocr_reader = None
+            except Exception as e:
+                print(f"⚠️  Warning: OCR loading failed: {e}")
+                _ocr_reader = None
+
+            # Object detection (general model with food label mapping) with timeout
+            if ML_VISION_MODE == "hybrid":
+                try:
+                    from transformers import AutoImageProcessor, AutoModelForObjectDetection
+                    import torch
+                    import threading
+                    
+                    detector_loaded = False
+                    detector_error = None
+                    
+                    def load_detector():
+                        nonlocal detector_loaded, detector_error, _object_detector
+                        try:
+                            processor = AutoImageProcessor.from_pretrained("facebook/detr-resnet-50")
+                            model = AutoModelForObjectDetection.from_pretrained("facebook/detr-resnet-50")
+                            model.eval()
+                            _object_detector = {"processor": processor, "model": model, "torch": torch}
+                            detector_loaded = True
+                        except Exception as e:
+                            detector_error = e
+                    
+                    thread = threading.Thread(target=load_detector)
+                    thread.daemon = True
+                    thread.start()
+                    thread.join(timeout=180)  # 3 minute timeout
+                    
+                    if thread.is_alive():
+                        print("⚠️  Warning: Object detector loading timed out")
+                        _object_detector = None
+                    elif detector_error:
+                        print(f"⚠️  Warning: object detector not available: {detector_error}")
+                        _object_detector = None
+                    elif detector_loaded:
+                        print("✅ Object detector loaded")
+                    else:
+                        _object_detector = None
+                except Exception as e:
+                    print(f"⚠️  Warning: object detector loading failed: {e}")
+                    _object_detector = None
+
+            # Mark as loaded even if some models failed (partial loading is OK)
+            _ml_models_loaded = True
+            return True
+        except Exception as e:
+            print(f"⚠️  ERROR: Failed to load ML models: {e}")
+            import traceback
+            traceback.print_exc()
+            # Still mark as loaded to prevent retry loops
+            _ml_models_loaded = True
+            return False
 
 def preprocess_image_for_ml(img_bytes):
     """Enhanced preprocessing: resize + enhance + sharpen for better accuracy."""
@@ -332,10 +430,36 @@ def extract_expiration_dates(img, ocr_reader):
         return []
 
 def detect_food_items_with_ml(img_bytes):
-    """Improved hybrid ML: classification-first approach with better accuracy."""
-    if not _ml_models_loaded:
-        load_ml_models()
-    img = preprocess_image_for_ml(img_bytes)
+    """Improved hybrid ML: classification-first approach with better accuracy.
+    Includes comprehensive error handling for extreme scenarios."""
+    # Validate input
+    if not img_bytes:
+        if VERBOSE_LOGGING:
+            print("Warning: Empty image bytes in detect_food_items_with_ml")
+        return []
+    
+    if not isinstance(img_bytes, (bytes, bytearray)):
+        if VERBOSE_LOGGING:
+            print(f"Warning: Invalid image bytes type: {type(img_bytes)}")
+        return []
+    
+    # Try to load models if not loaded
+    try:
+        if not _ml_models_loaded:
+            load_ml_models()
+    except Exception as e:
+        if VERBOSE_LOGGING:
+            print(f"Warning: Failed to load ML models: {e}")
+        return []  # Return empty list if models can't be loaded
+    
+    # Preprocess image with error handling
+    try:
+        img = preprocess_image_for_ml(img_bytes)
+    except Exception as e:
+        if VERBOSE_LOGGING:
+            print(f"Warning: Image preprocessing failed: {e}")
+        return []
+    
     items = []
     item_confidence = {}  # Track confidence scores for deduplication
 
@@ -347,51 +471,171 @@ def detect_food_items_with_ml(img_bytes):
     # Enhanced for rare/uncommon foods - check more predictions with lower threshold
     if _food_classifier:
         try:
-            preds = _food_classifier(img)
+            # Add timeout protection for classification (prevent hanging)
+            import signal
+            import threading
+            
+            preds = None
+            classification_error = None
+            
+            def run_classification():
+                nonlocal preds, classification_error
+                try:
+                    preds = _food_classifier(img)
+                except Exception as e:
+                    classification_error = e
+            
+            # Run classification in a thread with timeout
+            thread = threading.Thread(target=run_classification)
+            thread.daemon = True
+            thread.start()
+            thread.join(timeout=30)  # 30 second timeout
+            
+            if thread.is_alive():
+                if VERBOSE_LOGGING:
+                    print("Warning: Classification timed out after 30 seconds")
+                preds = []
+            elif classification_error:
+                raise classification_error
+            
+            if not preds:
+                if VERBOSE_LOGGING:
+                    print("Warning: Classification returned no predictions")
+                preds = []
+            
             # Check top 20 predictions (increased from 10) to catch rare foods
             # Use lower threshold for rare items
             for pred in preds[:20]:  # Increased from 10 to catch rare foods
-                score = pred.get("score", 0)
-                # Lower threshold to 0.15 (from 0.2) to catch rare/uncommon foods
-                if score < 0.15:
-                    continue
-                label = pred.get("label", "")
-                name = normalize_item_name(label)
-                if not name or len(name) < 2:
-                    continue
-                
-                # Skip non-food items (but be more lenient for fridge/pantry items)
-                # Fridge items are often in containers, so we need to be careful
-                non_food_keywords = ["table", "plate", "fork", "knife", "spoon", "cup"]
-                # Don't filter out container words for fridge items - they might be food
-                if any(kw in label.lower() for kw in non_food_keywords):
-                    # Only skip if confidence is low - high confidence might be actual food
-                    if score < 0.35:  # Lowered from 0.4 to catch more rare items
+                try:
+                    if not isinstance(pred, dict):
                         continue
-                
-                key = name.lower().strip()
-                # Keep highest confidence version of each item
-                if key not in item_confidence or score > item_confidence[key]:
-                    items.append({
-                        "name": name,
-                        "quantity": "1",
-                        "expirationDate": exp_date,
-                        "category": validate_category(name, "other"),
-                        "confidence": float(score)  # Include confidence score
-                    })
-                    item_confidence[key] = score
+                    score = pred.get("score", 0)
+                    # Validate score is a number
+                    try:
+                        score = float(score)
+                    except (ValueError, TypeError):
+                        continue
+                    
+                    # Lower threshold to 0.15 (from 0.2) to catch rare/uncommon foods
+                    if score < 0.15:
+                        continue
+                    
+                    label = pred.get("label", "")
+                    if not label or not isinstance(label, str):
+                        continue
+                    
+                    name = normalize_item_name(label)
+                    if not name or len(name) < 2:
+                        continue
+                    
+                    # Skip non-food items (but be more lenient for fridge/pantry items)
+                    # Fridge items are often in containers, so we need to be careful
+                    non_food_keywords = ["table", "plate", "fork", "knife", "spoon", "cup"]
+                    # Don't filter out container words for fridge items - they might be food
+                    if any(kw in label.lower() for kw in non_food_keywords):
+                        # Only skip if confidence is low - high confidence might be actual food
+                        if score < 0.35:  # Lowered from 0.4 to catch more rare items
+                            continue
+                    
+                    key = name.lower().strip()
+                    # Keep highest confidence version of each item
+                    if key not in item_confidence or score > item_confidence[key]:
+                        items.append({
+                            "name": name,
+                            "quantity": "1",
+                            "expirationDate": exp_date,
+                            "category": validate_category(name, "other"),
+                            "confidence": float(score)  # Include confidence score
+                        })
+                        item_confidence[key] = score
+                except Exception as pred_error:
+                    if VERBOSE_LOGGING:
+                        print(f"Warning: Error processing prediction: {pred_error}")
+                    continue
         except Exception as e:
             if VERBOSE_LOGGING:
                 print(f"Classification error: {e}")
+            # Continue with other methods even if classification fails
     
     # ENHANCED: Use OCR to identify rare foods from packaging labels
     if _ocr_reader and not items:  # Only if no items found yet (rare food scenario)
         try:
             import re
             import numpy as np
-            ocr_results = _ocr_reader.readtext(np.array(img))
+            
+            # Validate image before OCR
+            if img is None:
+                if VERBOSE_LOGGING:
+                    print("Warning: Image is None, skipping OCR")
+                return items
+            
+            # Convert to numpy array with error handling
+            try:
+                img_array = np.array(img)
+                if img_array.size == 0:
+                    if VERBOSE_LOGGING:
+                        print("Warning: Empty image array, skipping OCR")
+                    return items
+            except Exception as e:
+                if VERBOSE_LOGGING:
+                    print(f"Warning: Failed to convert image to numpy array: {e}")
+                return items
+            
+            # Run OCR with timeout protection
+            ocr_results = []
+            try:
+                # Limit OCR processing time
+                import signal
+                import threading
+                
+                ocr_error = None
+                
+                def run_ocr():
+                    nonlocal ocr_results, ocr_error
+                    try:
+                        ocr_results = _ocr_reader.readtext(img_array)
+                    except Exception as e:
+                        ocr_error = e
+                
+                thread = threading.Thread(target=run_ocr)
+                thread.daemon = True
+                thread.start()
+                thread.join(timeout=20)  # 20 second timeout for OCR
+                
+                if thread.is_alive():
+                    if VERBOSE_LOGGING:
+                        print("Warning: OCR timed out after 20 seconds")
+                    return items
+                elif ocr_error:
+                    raise ocr_error
+                
+                if not ocr_results:
+                    return items
+            except Exception as ocr_err:
+                if VERBOSE_LOGGING:
+                    print(f"Warning: OCR processing failed: {ocr_err}")
+                return items
+            
             food_keywords = []
-            for (bbox, text, conf) in ocr_results:
+            for ocr_item in ocr_results:
+                try:
+                    # Handle different OCR result formats
+                    if isinstance(ocr_item, tuple) and len(ocr_item) >= 3:
+                        bbox, text, conf = ocr_item[0], ocr_item[1], ocr_item[2]
+                    elif isinstance(ocr_item, dict):
+                        bbox = ocr_item.get('bbox', [])
+                        text = ocr_item.get('text', '')
+                        conf = ocr_item.get('conf', 0)
+                    else:
+                        continue
+                    
+                    # Validate confidence
+                    try:
+                        conf = float(conf)
+                    except (ValueError, TypeError):
+                        continue
+                    
+                    if conf > 0.3:  # OCR confidence threshold
                 if conf > 0.3:  # OCR confidence threshold
                     text_lower = text.lower().strip()
                     # Look for food-related keywords in OCR text
@@ -439,15 +683,45 @@ def detect_food_items_with_ml(img_bytes):
     # SECONDARY: Object detection for items missed by classification
     if _object_detector and ML_VISION_MODE == "hybrid":
         try:
-            processor = _object_detector["processor"]
-            model = _object_detector["model"]
-            torch = _object_detector["torch"]
-            inputs = processor(images=img, return_tensors="pt")
-            with torch.no_grad():
-                outputs = model(**inputs)
-            target_sizes = torch.tensor([img.size[::-1]])
-            # Lower detection threshold from 0.7 to 0.5 to catch more items
-            results = processor.post_process_object_detection(outputs, target_sizes=target_sizes, threshold=0.5)[0]
+            processor = _object_detector.get("processor")
+            model = _object_detector.get("model")
+            torch_module = _object_detector.get("torch")
+            
+            if not all([processor, model, torch_module]):
+                if VERBOSE_LOGGING:
+                    print("Warning: Object detector components missing")
+                return items
+            
+            # Validate image before processing
+            if img is None:
+                return items
+            
+            try:
+                inputs = processor(images=img, return_tensors="pt")
+            except Exception as proc_error:
+                if VERBOSE_LOGGING:
+                    print(f"Warning: Failed to process image for object detection: {proc_error}")
+                return items
+            
+            try:
+                with torch_module.no_grad():
+                    outputs = model(**inputs)
+            except Exception as model_error:
+                if VERBOSE_LOGGING:
+                    print(f"Warning: Object detection model failed: {model_error}")
+                return items
+            
+            try:
+                target_sizes = torch_module.tensor([img.size[::-1]])
+                # Lower detection threshold from 0.7 to 0.5 to catch more items
+                results = processor.post_process_object_detection(outputs, target_sizes=target_sizes, threshold=0.5)
+                if not results or len(results) == 0:
+                    return items
+                results = results[0]
+            except Exception as post_error:
+                if VERBOSE_LOGGING:
+                    print(f"Warning: Failed to post-process detection results: {post_error}")
+                return items
             
             # Expanded food mapping for common pantry items
             coco_food_map = {
@@ -459,51 +733,120 @@ def detect_food_items_with_ml(img_bytes):
                 "bananas": "banana", "apples": "apple", "oranges": "orange",
             }
             
-            for score, label, box in zip(results["scores"], results["labels"], results["boxes"]):
-                if float(score) < 0.5:  # Lower threshold
-                    continue
-                label_name = model.config.id2label.get(int(label), "")
-                mapped_name = coco_food_map.get(label_name)
-                if not mapped_name:
-                    continue
-                
-                x0, y0, x1, y1 = [int(v) for v in box.tolist()]
-                # Ensure valid crop coordinates
-                if x1 <= x0 or y1 <= y0:
-                    continue
-                crop = img.crop((x0, y0, x1, y1))
-                
-                # Re-classify crop for more specific name (enhanced for rare foods)
-                if _food_classifier:
+            # Safely extract results
+            scores = results.get("scores", [])
+            labels = results.get("labels", [])
+            boxes = results.get("boxes", [])
+            
+            if not all([scores, labels, boxes]):
+                return items
+            
+            # Limit number of detections to prevent memory issues
+            max_detections = 50
+            for idx, (score, label, box) in enumerate(zip(scores[:max_detections], labels[:max_detections], boxes[:max_detections])):
+                try:
+                    # Validate score
                     try:
-                        crop_preds = _food_classifier(crop)
-                        if crop_preds:
-                            # Check top 3 predictions for rare foods
-                            for crop_pred in crop_preds[:3]:
-                                crop_score = crop_pred.get("score", 0)
-                                if crop_score > 0.2:  # Lower threshold for rare foods
-                                    crop_name = normalize_item_name(crop_pred.get("label", ""))
-                                    if crop_name and crop_name.lower() != mapped_name.lower():
-                                        # Use the crop classification if it's more specific
-                                        mapped_name = crop_name
-                                        break
-                    except Exception:
-                        pass
-                
-                key = mapped_name.lower().strip()
-                # Only add if not already found by classification
-                if key and key not in item_confidence:
-                    items.append({
-                        "name": mapped_name,
-                        "quantity": "1",
-                        "expirationDate": exp_date,
-                        "category": validate_category(mapped_name, "other"),
-                        "confidence": float(score)  # Include confidence score
-                    })
-                    item_confidence[key] = float(score)
+                        score_float = float(score)
+                    except (ValueError, TypeError):
+                        continue
+                    
+                    if score_float < 0.5:  # Lower threshold
+                        continue
+                    
+                    # Get label name safely
+                    try:
+                        label_int = int(label)
+                        label_name = model.config.id2label.get(label_int, "")
+                    except (ValueError, TypeError, AttributeError):
+                        continue
+                    
+                    mapped_name = coco_food_map.get(label_name)
+                    if not mapped_name:
+                        continue
+                    
+                    # Validate and extract box coordinates
+                    try:
+                        box_list = box.tolist() if hasattr(box, 'tolist') else list(box)
+                        if len(box_list) < 4:
+                            continue
+                        x0, y0, x1, y1 = [int(float(v)) for v in box_list[:4]]
+                    except (ValueError, TypeError, IndexError):
+                        continue
+                    
+                    # Ensure valid crop coordinates
+                    if x1 <= x0 or y1 <= y0:
+                        continue
+                    
+                    # Ensure coordinates are within image bounds
+                    if x0 < 0 or y0 < 0 or x1 > img.size[0] or y1 > img.size[1]:
+                        # Clamp to image bounds
+                        x0 = max(0, min(x0, img.size[0] - 1))
+                        y0 = max(0, min(y0, img.size[1] - 1))
+                        x1 = max(x0 + 1, min(x1, img.size[0]))
+                        y1 = max(y0 + 1, min(y1, img.size[1]))
+                    
+                    try:
+                        crop = img.crop((x0, y0, x1, y1))
+                        if crop.size[0] == 0 or crop.size[1] == 0:
+                            continue
+                    except Exception as crop_error:
+                        if VERBOSE_LOGGING:
+                            print(f"Warning: Failed to crop image: {crop_error}")
+                        continue
+                    
+                    # Re-classify crop for more specific name (enhanced for rare foods)
+                    if _food_classifier:
+                        try:
+                            crop_preds = _food_classifier(crop)
+                            if crop_preds:
+                                # Check top 3 predictions for rare foods
+                                for crop_pred in crop_preds[:3]:
+                                    try:
+                                        if not isinstance(crop_pred, dict):
+                                            continue
+                                        crop_score = crop_pred.get("score", 0)
+                                        try:
+                                            crop_score = float(crop_score)
+                                        except (ValueError, TypeError):
+                                            continue
+                                        
+                                        if crop_score > 0.2:  # Lower threshold for rare foods
+                                            crop_label = crop_pred.get("label", "")
+                                            if crop_label:
+                                                crop_name = normalize_item_name(crop_label)
+                                                if crop_name and crop_name.lower() != mapped_name.lower():
+                                                    # Use the crop classification if it's more specific
+                                                    mapped_name = crop_name
+                                                    break
+                                    except Exception as pred_error:
+                                        if VERBOSE_LOGGING:
+                                            print(f"Warning: Error processing crop prediction: {pred_error}")
+                                        continue
+                        except Exception as classifier_error:
+                            if VERBOSE_LOGGING:
+                                print(f"Warning: Crop classification failed: {classifier_error}")
+                            # Continue with original mapped_name
+                    
+                    key = mapped_name.lower().strip()
+                    # Only add if not already found by classification
+                    if key and key not in item_confidence:
+                        items.append({
+                            "name": mapped_name,
+                            "quantity": "1",
+                            "expirationDate": exp_date,
+                            "category": validate_category(mapped_name, "other"),
+                            "confidence": float(score_float)  # Include confidence score
+                        })
+                        item_confidence[key] = float(score_float)
+                except Exception as det_error:
+                    if VERBOSE_LOGGING:
+                        print(f"Warning: Error processing detection {idx}: {det_error}")
+                    continue
         except Exception as e:
             if VERBOSE_LOGGING:
                 print(f"Object detection error: {e}")
+            # Continue even if object detection fails
 
     # De-duplicate by name (keep highest confidence)
     unique = {}
