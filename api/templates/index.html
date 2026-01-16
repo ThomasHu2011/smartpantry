@@ -42,6 +42,7 @@
         width: 100% !important;
         height: 100% !important;
         inset: 0 !important;
+        pointer-events: auto !important; /* Allow backdrop clicks to close modal */
     }
     
     /* Modal container - must be above backdrop */
@@ -70,7 +71,7 @@
         margin: 1rem auto !important;
         max-width: 720px !important;
         width: 90% !important;
-        pointer-events: none !important; /* Dialog container doesn't capture clicks */
+        pointer-events: auto !important; /* Allow clicks on dialog */
     }
     
     .modal-dialog-centered {
@@ -2213,7 +2214,7 @@
 </div>
 
 <!-- Add Item Modal -->
-<div class="modal fade" id="addItemModal" tabindex="-1" aria-labelledby="addItemModalLabel" aria-hidden="true" data-bs-backdrop="true" data-bs-keyboard="true" role="dialog" aria-modal="true">
+<div class="modal" id="addItemModal" tabindex="-1" aria-labelledby="addItemModalLabel" aria-hidden="true" data-bs-backdrop="true" data-bs-keyboard="true" role="dialog" aria-modal="true">
     <div class="modal-dialog modal-dialog-centered" style="max-height: 90vh;">
         <div class="modal-content" style="border-radius: 16px; border: none; position: relative; max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 50px rgba(0, 0, 0, 0.25);">
             <div class="modal-header border-0">
@@ -2279,7 +2280,7 @@
 </div>
 
 <!-- Photo Upload Modal -->
-<div class="modal fade" id="photoModal" tabindex="-1" aria-labelledby="photoModalLabel" aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="true" role="dialog" aria-modal="true">
+<div class="modal" id="photoModal" tabindex="-1" aria-labelledby="photoModalLabel" aria-hidden="true" data-bs-backdrop="true" data-bs-keyboard="true" role="dialog" aria-modal="true">
     <div class="modal-dialog modal-dialog-centered" style="max-height: 90vh;">
         <div class="modal-content" style="border-radius: 16px; border: none; position: relative; max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 50px rgba(0, 0, 0, 0.25);">
             <div class="modal-header border-0" style="pointer-events: auto;">
