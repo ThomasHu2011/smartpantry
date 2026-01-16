@@ -3587,14 +3587,18 @@
     if (photoModal) {
         // Handle modal shown
         photoModal.addEventListener('show.bs.modal', () => {
-            // Prevent body scroll when modal opens
-            const scrollY = window.scrollY;
+            // Prevent body scroll when modal opens (simplified - no position locking)
             document.body.style.overflow = 'hidden';
-            document.body.style.position = 'fixed';
-            document.body.style.top = `-${scrollY}px`;
-            document.body.style.width = '100%';
             document.body.classList.add('modal-open');
-            document.body.classList.add('modal-open-no-animations');
+            
+            // Ensure backdrop doesn't block clicks
+            setTimeout(() => {
+                const backdrop = document.querySelector('.modal-backdrop');
+                if (backdrop) {
+                    backdrop.style.pointerEvents = 'auto';
+                    backdrop.style.zIndex = '1040';
+                }
+            }, 10);
             
             // Ensure modal content and all children are clickable
             const modalContent = photoModal.querySelector('.modal-content');
