@@ -3206,36 +3206,40 @@
                     method: 'POST',
                     body: formData,
                     credentials: 'same-origin',
-                    // Don't set Content-Type header - browser will set it automatically with boundary for FormData
+                    headers: {
+                        'X-Requested-With': 'XMLHttpRequest'  // Request JSON response
+                    }
                 });
 
                 if (response.ok) {
-                    // Show success message in modal
-                    const uploadFeedback = document.getElementById('uploadFeedback');
-                    if (uploadFeedback) {
-                        uploadFeedback.className = 'feedback-message success';
-                        uploadFeedback.innerHTML = '<i class="bi bi-check-circle-fill me-2"></i>Photo analyzed! Items added to pantry.';
-                        uploadFeedback.style.display = 'flex';
+                    const contentType = response.headers.get('content-type');
+                    if (contentType && contentType.includes('application/json')) {
+                        // JSON response with confidence scores
+                        const data = await response.json();
+                        if (data.success) {
+                            // Show results with confidence
+                            showPhotoAnalysisResults(data);
+                        } else {
+                            showFeedback(data.error || 'Photo analysis failed', 'danger');
+                            resetPhotoUploadState();
+                        }
+                    } else {
+                        // HTML redirect response (fallback)
+                        const uploadFeedback = document.getElementById('uploadFeedback');
+                        if (uploadFeedback) {
+                            uploadFeedback.className = 'feedback-message success';
+                            uploadFeedback.innerHTML = '<i class="bi bi-check-circle-fill me-2"></i>Photo analyzed! Items added to pantry.';
+                            uploadFeedback.style.display = 'flex';
+                        }
+                        
+                        setTimeout(() => {
+                            closePhotoModal();
+                            resetPhotoUploadState();
+                            setTimeout(async () => {
+                                await reloadPantryItems();
+                            }, 300);
+                        }, 1500);
                     }
-                    
-                    // Show success message on main page
-                    const feedback = document.getElementById('addItemFeedback');
-                    if (feedback) {
-                        showFeedback('Photo analyzed! Items added to pantry.', 'success');
-                    }
-                    
-                    // Close modal after short delay to show success message
-                    setTimeout(() => {
-                    closePhotoModal();
-                    
-                    // Reset upload state
-                    resetPhotoUploadState();
-                    
-                    // Update pantry items after a short delay
-                    setTimeout(async () => {
-                        await reloadPantryItems();
-                    }, 300);
-                    }, 1500);
                 } else {
                     // Handle error response
                     let errorMessage = 'Upload failed. Please try again.';

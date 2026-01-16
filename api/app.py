@@ -285,14 +285,17 @@ def preprocess_image_for_ml(img_bytes):
         ratio = max_size / max(img.size)
         new_size = (int(img.size[0] * ratio), int(img.size[1] * ratio))
         img = img.resize(new_size, Image.Resampling.LANCZOS)
-    # Enhanced preprocessing for better recognition
-    # Sharpen to improve edge detection
-    img = img.filter(ImageFilter.SHARPEN)
-    # Increase contrast to make items stand out
-    img = ImageEnhance.Contrast(img).enhance(1.3)  # Increased from 1.2
-    # Slight brightness adjustment
-    img = ImageEnhance.Brightness(img).enhance(1.05)
-    return img
+        # Enhanced preprocessing optimized for fridge/pantry photos
+        # Fridge photos often have poor lighting, so we enhance more aggressively
+        # Sharpen to improve edge detection and text recognition
+        img = img.filter(ImageFilter.SHARPEN)
+        # Increase contrast more for fridge photos (items against white/glass backgrounds)
+        img = ImageEnhance.Contrast(img).enhance(1.4)  # Increased from 1.3 for fridge visibility
+        # Brightness adjustment for dark fridge interiors
+        img = ImageEnhance.Brightness(img).enhance(1.1)  # Increased from 1.05
+        # Slight saturation boost to help identify colorful food items
+        img = ImageEnhance.Color(img).enhance(1.1)
+        return img
 
 def extract_expiration_dates(img, ocr_reader):
     """Extract expiration dates using OCR."""
@@ -354,8 +357,10 @@ def detect_food_items_with_ml(img_bytes):
                 if not name or len(name) < 2:
                     continue
                 
-                # Skip non-food items
-                non_food_keywords = ["table", "plate", "bowl", "container", "package", "box", "bag", "bottle", "can", "carton"]
+                # Skip non-food items (but be more lenient for fridge/pantry items)
+                # Fridge items are often in containers, so we need to be careful
+                non_food_keywords = ["table", "plate", "fork", "knife", "spoon", "cup"]
+                # Don't filter out container words for fridge items - they might be food
                 if any(kw in label.lower() for kw in non_food_keywords):
                     # Only skip if confidence is low - high confidence might be actual food
                     if score < 0.4:
@@ -368,7 +373,8 @@ def detect_food_items_with_ml(img_bytes):
                         "name": name,
                         "quantity": "1",
                         "expirationDate": exp_date,
-                        "category": validate_category(name, "other")
+                        "category": validate_category(name, "other"),
+                        "confidence": float(score)  # Include confidence score
                     })
                     item_confidence[key] = score
         except Exception as e:
@@ -433,7 +439,8 @@ def detect_food_items_with_ml(img_bytes):
                         "name": mapped_name,
                         "quantity": "1",
                         "expirationDate": exp_date,
-                        "category": validate_category(mapped_name, "other")
+                        "category": validate_category(mapped_name, "other"),
+                        "confidence": float(score)  # Include confidence score
                     })
                     item_confidence[key] = float(score)
         except Exception as e:
@@ -446,9 +453,17 @@ def detect_food_items_with_ml(img_bytes):
         key = item.get("name", "").lower().strip()
         if key and key not in unique:
             unique[key] = item
+        elif key in unique:
+            # Keep item with higher confidence
+            existing_conf = unique[key].get("confidence", 0)
+            new_conf = item.get("confidence", 0)
+            if new_conf > existing_conf:
+                unique[key] = item
     
-    # Sort by confidence (if available) and return
-    return list(unique.values())
+    # Sort by confidence (highest first) and return
+    result = list(unique.values())
+    result.sort(key=lambda x: x.get("confidence", 0), reverse=True)
+    return result
 
 
 # Separate pantry lists for different clients (for non-authenticated users)
@@ -2565,8 +2580,85 @@ Return ONLY valid JSON (no markdown, no code blocks, no explanations):
                 except:
                     pass
         
-        item_names = [item['name'] for item in pantry_items]
-        flash(f"Successfully analyzed photo! Added {len(pantry_items)} items: {', '.join(item_names)}", "success")
+        # Separate high-confidence and low-confidence items
+        HIGH_CONFIDENCE_THRESHOLD = 0.7  # Auto-add items with 70%+ confidence
+        high_conf_items = [item for item in pantry_items if item.get('confidence', 0) >= HIGH_CONFIDENCE_THRESHOLD]
+        low_conf_items = [item for item in pantry_items if item.get('confidence', 0) < HIGH_CONFIDENCE_THRESHOLD]
+        
+        # Auto-add high-confidence items
+        auto_added = []
+        if high_conf_items:
+            auto_added = high_conf_items.copy()
+            # Add high-confidence items to pantry
+            if 'user_id' in session and session.get('user_id'):
+                try:
+                    user_id = session['user_id']
+                    user_pantry = get_user_pantry(user_id)
+                    if not isinstance(user_pantry, list):
+                        user_pantry = []
+                    pantry_list = []
+                    for item in user_pantry:
+                        if isinstance(item, dict):
+                            pantry_list.append(item)
+                    existing_names = {item.get('name', '').strip().lower() for item in pantry_list if isinstance(item, dict) and item.get('name')}
+                    for item in auto_added:
+                        item_name = item.get('name', '').strip().lower()
+                        if item_name and item_name not in existing_names:
+                            pantry_list.append(item)
+                            existing_names.add(item_name)
+                    update_user_pantry(user_id, pantry_list)
+                except Exception as e:
+                    if VERBOSE_LOGGING:
+                        print(f"Error auto-adding high-confidence items: {e}")
+            else:
+                # Anonymous user - add to session
+                try:
+                    session.permanent = True
+                    if 'web_pantry' not in session:
+                        session['web_pantry'] = []
+                    web_pantry = session.get('web_pantry', [])
+                    if not isinstance(web_pantry, list):
+                        web_pantry = []
+                    pantry_list = []
+                    for item in web_pantry:
+                        if isinstance(item, dict):
+                            pantry_list.append(item)
+                    existing_names = {item.get('name', '').strip().lower() for item in pantry_list if isinstance(item, dict) and item.get('name')}
+                    for item in auto_added:
+                        item_name = item.get('name', '').strip().lower()
+                        if item_name and item_name not in existing_names:
+                            pantry_list.append(item)
+                            existing_names.add(item_name)
+                    session['web_pantry'] = pantry_list
+                    session.modified = True
+                except Exception as e:
+                    if VERBOSE_LOGGING:
+                        print(f"Error auto-adding to anonymous pantry: {e}")
+        
+        # Store low-confidence items in session for user confirmation
+        if low_conf_items:
+            session['pending_items'] = low_conf_items
+            session.modified = True
+        
+        # Return JSON response with items and confidence for AJAX requests
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest' or request.headers.get('Content-Type', '').startswith('application/json'):
+            return jsonify({
+                'success': True,
+                'auto_added': len(auto_added),
+                'needs_confirmation': len(low_conf_items),
+                'items': pantry_items,  # All items with confidence
+                'high_confidence': [{'name': item['name'], 'confidence': item.get('confidence', 0)} for item in auto_added],
+                'low_confidence': [{'name': item['name'], 'confidence': item.get('confidence', 0), 'quantity': item.get('quantity', '1'), 'category': item.get('category', 'other')} for item in low_conf_items],
+                'message': f"Found {len(pantry_items)} items. {len(auto_added)} added automatically, {len(low_conf_items)} need confirmation."
+            })
+        
+        # Flash message for regular form submission
+        if auto_added:
+            auto_names = [item['name'] for item in auto_added]
+            flash(f"✅ Auto-added {len(auto_added)} high-confidence items: {', '.join(auto_names[:5])}", "success")
+        if low_conf_items:
+            low_names = [item['name'] for item in low_conf_items]
+            flash(f"⚠️ {len(low_conf_items)} items need confirmation: {', '.join(low_names[:5])}. Please review and confirm.", "warning")
         
     except ValueError as e:
         # Specific error for missing API key
