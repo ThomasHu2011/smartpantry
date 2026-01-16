@@ -645,8 +645,7 @@ def detect_food_items_with_ml(img_bytes):
                         continue
                     
                     if conf > 0.3:  # OCR confidence threshold
-                if conf > 0.3:  # OCR confidence threshold
-                    text_lower = text.lower().strip()
+                        text_lower = text.lower().strip()
                     # Look for food-related keywords in OCR text
                     # Common food words that might indicate rare items
                     food_indicators = [
