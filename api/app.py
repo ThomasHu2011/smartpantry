@@ -344,13 +344,16 @@ def detect_food_items_with_ml(img_bytes):
     exp_date = expiration_dates[0] if expiration_dates else None
 
     # PRIMARY: Food classification on full image (most accurate for pantry items)
+    # Enhanced for rare/uncommon foods - check more predictions with lower threshold
     if _food_classifier:
         try:
             preds = _food_classifier(img)
-            # Lower threshold to catch more items, but prioritize high-confidence ones
-            for pred in preds[:10]:  # Check top 10 predictions
+            # Check top 20 predictions (increased from 10) to catch rare foods
+            # Use lower threshold for rare items
+            for pred in preds[:20]:  # Increased from 10 to catch rare foods
                 score = pred.get("score", 0)
-                if score < 0.2:  # Lower threshold from 0.3 to 0.2
+                # Lower threshold to 0.15 (from 0.2) to catch rare/uncommon foods
+                if score < 0.15:
                     continue
                 label = pred.get("label", "")
                 name = normalize_item_name(label)
@@ -363,7 +366,7 @@ def detect_food_items_with_ml(img_bytes):
                 # Don't filter out container words for fridge items - they might be food
                 if any(kw in label.lower() for kw in non_food_keywords):
                     # Only skip if confidence is low - high confidence might be actual food
-                    if score < 0.4:
+                    if score < 0.35:  # Lowered from 0.4 to catch more rare items
                         continue
                 
                 key = name.lower().strip()
@@ -380,6 +383,57 @@ def detect_food_items_with_ml(img_bytes):
         except Exception as e:
             if VERBOSE_LOGGING:
                 print(f"Classification error: {e}")
+    
+    # ENHANCED: Use OCR to identify rare foods from packaging labels
+    if _ocr_reader and not items:  # Only if no items found yet (rare food scenario)
+        try:
+            import re
+            ocr_results = _ocr_reader.readtext(np.array(img))
+            food_keywords = []
+            for (bbox, text, conf) in ocr_results:
+                if conf > 0.3:  # OCR confidence threshold
+                    text_lower = text.lower().strip()
+                    # Look for food-related keywords in OCR text
+                    # Common food words that might indicate rare items
+                    food_indicators = [
+                        'organic', 'artisan', 'gourmet', 'specialty', 'imported',
+                        'gluten-free', 'vegan', 'keto', 'paleo', 'halal', 'kosher',
+                        'spice', 'herb', 'seasoning', 'sauce', 'dressing', 'marinade',
+                        'paste', 'concentrate', 'extract', 'syrup', 'preserve', 'jam',
+                        'chutney', 'relish', 'pickle', 'fermented', 'kimchi', 'miso',
+                        'tahini', 'hummus', 'pesto', 'salsa', 'guacamole', 'tzatziki'
+                    ]
+                    # Check if text contains food indicators
+                    for indicator in food_indicators:
+                        if indicator in text_lower:
+                            # Extract potential food name from surrounding text
+                            words = text_lower.split()
+                            for i, word in enumerate(words):
+                                if indicator in word or any(food_word in word for food_word in ['sauce', 'spice', 'herb', 'oil', 'vinegar']):
+                                    # Try to get the food name (word before or after indicator)
+                                    if i > 0:
+                                        potential_name = words[i-1] + ' ' + words[i]
+                                    elif i < len(words) - 1:
+                                        potential_name = words[i] + ' ' + words[i+1]
+                                    else:
+                                        potential_name = words[i]
+                                    # Clean up the name
+                                    potential_name = re.sub(r'[^a-z\s]', '', potential_name).strip()
+                                    if len(potential_name) > 2:
+                                        normalized = normalize_item_name(potential_name)
+                                        if normalized and normalized.lower() not in item_confidence:
+                                            items.append({
+                                                "name": normalized,
+                                                "quantity": "1",
+                                                "expirationDate": exp_date,
+                                                "category": validate_category(normalized, "other"),
+                                                "confidence": float(conf * 0.6)  # OCR-based confidence (lower weight)
+                                            })
+                                            item_confidence[normalized.lower()] = float(conf * 0.6)
+                            break
+        except Exception as e:
+            if VERBOSE_LOGGING:
+                print(f"OCR-based rare food detection error: {e}")
 
     # SECONDARY: Object detection for items missed by classification
     if _object_detector and ML_VISION_MODE == "hybrid":
@@ -418,17 +472,20 @@ def detect_food_items_with_ml(img_bytes):
                     continue
                 crop = img.crop((x0, y0, x1, y1))
                 
-                # Re-classify crop for more specific name
+                # Re-classify crop for more specific name (enhanced for rare foods)
                 if _food_classifier:
                     try:
                         crop_preds = _food_classifier(crop)
                         if crop_preds:
-                            best = crop_preds[0]
-                            crop_score = best.get("score", 0)
-                            if crop_score > 0.25:  # Lower threshold
-                                crop_name = normalize_item_name(best.get("label", ""))
-                                if crop_name:
-                                    mapped_name = crop_name
+                            # Check top 3 predictions for rare foods
+                            for crop_pred in crop_preds[:3]:
+                                crop_score = crop_pred.get("score", 0)
+                                if crop_score > 0.2:  # Lower threshold for rare foods
+                                    crop_name = normalize_item_name(crop_pred.get("label", ""))
+                                    if crop_name and crop_name.lower() != mapped_name.lower():
+                                        # Use the crop classification if it's more specific
+                                        mapped_name = crop_name
+                                        break
                     except Exception:
                         pass
                 
@@ -992,54 +1049,94 @@ def normalize_expiration_date(date_str):
         return None
 
 def normalize_item_name(name):
-    """Normalize item names to improve accuracy and consistency"""
+    """Normalize item names to improve accuracy and consistency, preserving rare food names"""
     if not name:
         return None
     
-    name = name.strip().lower()
+    original_name = name.strip()
+    name = original_name.lower()
     
-    # Common corrections for better accuracy
-    corrections = {
-        'milk carton': 'milk',
-        'chicken meat': 'chicken',
-        'tomatoes': 'tomato',
-        'apples': 'apple',
-        'potatoes': 'potato',
-        'oranges': 'orange',
-        'bananas': 'banana',
-        'eggs': 'egg',
-        'bread loaf': 'bread',
-        'chicken breast': 'chicken',
-        'pasta box': 'pasta',
-        'cereal box': 'cereal',
-        'soup can': 'soup',
-        'juice bottle': 'juice',
-        'water bottle': 'water',
-        'yogurt container': 'yogurt',
-        'cheese package': 'cheese',
-        'butter package': 'butter',
-    }
+    # Preserve rare/uncommon food names - don't over-normalize them
+    rare_food_indicators = [
+        'tahini', 'kimchi', 'miso', 'pesto', 'hummus', 'tzatziki', 'harissa', 'gochujang',
+        'sriracha', 'wasabi', 'mirin', 'ponzu', 'tamarind', 'curry', 'coconut', 'soy',
+        'fish sauce', 'oyster sauce', 'hoisin', 'black bean', 'chili oil', 'sesame oil',
+        'truffle oil', 'balsamic', 'rice vinegar', 'apple cider', 'maple syrup', 'agave',
+        'molasses', 'vanilla extract', 'almond extract', 'cocoa powder', 'matcha',
+        'spirulina', 'nutritional yeast', 'tempeh', 'tofu', 'seitan', 'jackfruit',
+        'quinoa', 'farro', 'bulgur', 'couscous', 'polenta', 'grits', 'chia', 'flax',
+        'hemp', 'pumpkin seed', 'sunflower seed', 'almond butter', 'cashew butter',
+        'marmalade', 'chutney', 'relish', 'pickle', 'olive', 'caper', 'anchovy',
+        'sardine', 'macadamia', 'pistachio', 'pine nut', 'lentil', 'chickpea',
+        'black bean', 'edamame', 'avocado oil', 'walnut oil', 'white wine vinegar',
+        'tapenade', 'bruschetta', 'guacamole', 'kombucha', 'kefir', 'sauerkraut'
+    ]
     
-    # Apply corrections
-    for wrong, correct in corrections.items():
-        if wrong in name:
-            name = name.replace(wrong, correct)
+    # Check if this might be a rare food - preserve it more carefully
+    is_rare_food = any(indicator in name for indicator in rare_food_indicators)
     
-    # Remove common prefixes/suffixes
-    prefixes_to_remove = ['a ', 'an ', 'the ', 'some ', 'pack of ', 'box of ', 'bottle of ', 'can of ', 'package of ', 'container of ']
-    for prefix in prefixes_to_remove:
-        if name.startswith(prefix):
-            name = name[len(prefix):]
+    # Common corrections for better accuracy (but skip for rare foods)
+    if not is_rare_food:
+        corrections = {
+            'milk carton': 'milk',
+            'chicken meat': 'chicken',
+            'tomatoes': 'tomato',
+            'apples': 'apple',
+            'potatoes': 'potato',
+            'oranges': 'orange',
+            'bananas': 'banana',
+            'eggs': 'egg',
+            'bread loaf': 'bread',
+            'chicken breast': 'chicken',
+            'pasta box': 'pasta',
+            'cereal box': 'cereal',
+            'soup can': 'soup',
+            'juice bottle': 'juice',
+            'water bottle': 'water',
+            'yogurt container': 'yogurt',
+            'cheese package': 'cheese',
+            'butter package': 'butter',
+        }
+        
+        # Apply corrections
+        for wrong, correct in corrections.items():
+            if wrong in name:
+                name = name.replace(wrong, correct)
     
-    # Remove trailing common words
-    suffixes_to_remove = [' container', ' package', ' box', ' bottle', ' can', ' carton', ' bag']
-    for suffix in suffixes_to_remove:
-        if name.endswith(suffix):
-            name = name[:-len(suffix)]
+    # Remove common prefixes/suffixes (but be gentler with rare foods)
+    if not is_rare_food:
+        prefixes_to_remove = ['a ', 'an ', 'the ', 'some ', 'pack of ', 'box of ', 'bottle of ', 'can of ', 'package of ', 'container of ']
+        for prefix in prefixes_to_remove:
+            if name.startswith(prefix):
+                name = name[len(prefix):]
+        
+        # Remove trailing common words
+        suffixes_to_remove = [' container', ' package', ' box', ' bottle', ' can', ' carton', ' bag']
+        for suffix in suffixes_to_remove:
+            if name.endswith(suffix):
+                name = name[:-len(suffix)]
+    else:
+        # For rare foods, only remove obvious packaging words
+        rare_prefixes = ['a ', 'an ', 'the ', 'some ']
+        for prefix in rare_prefixes:
+            if name.startswith(prefix):
+                name = name[len(prefix):]
+        
+        rare_suffixes = [' container', ' package', ' box', ' bottle', ' can', ' carton']
+        for suffix in rare_suffixes:
+            if name.endswith(suffix) and len(name) > len(suffix) + 3:  # Only if name is long enough
+                name = name[:-len(suffix)]
     
-    # Capitalize first letter of each word
+    # Capitalize first letter of each word, preserving rare food names
     if name:
-        return ' '.join(word.capitalize() for word in name.split())
+        # For rare foods, preserve original capitalization style if it looks intentional
+        if is_rare_food and any(c.isupper() for c in original_name[1:]):
+            # Mixed case might be intentional (e.g., "Sriracha", "Gochujang")
+            words = name.split()
+            # Capitalize each word but preserve common patterns
+            return ' '.join(word.capitalize() for word in words)
+        else:
+            return ' '.join(word.capitalize() for word in name.split())
     return None
 
 def validate_category(item_name, category):
