@@ -1992,69 +1992,59 @@ def upload_photo():
     import base64
     img_b64 = base64.b64encode(img_bytes).decode('utf-8')
     
-    prompt = """You are an expert food recognition system. Analyze this photo carefully and identify ALL visible food items with maximum accuracy.
+    prompt = """Identify ALL food items in this image with maximum accuracy.
 
-CRITICAL INSTRUCTIONS:
-1. **Item Detection**: Look for ALL food items in the image, including:
-   - Items that are partially visible or in the background
-   - Items that are stacked, overlapping, or grouped together
-   - Items visible in containers, bags, or packaging
-   - Multiple units of the same item (count them separately if clearly visible)
+EXAMPLES OF ACCURATE RECOGNITION:
+✅ "chicken" (not "chicken meat" or "poultry")
+✅ "whole milk" (not "milk carton" or "dairy product")
+✅ "tomato" (singular, not "tomatoes")
+✅ "orange juice" (not "OJ" or "citrus drink")
+✅ "pasta" (generic, not "Barilla pasta")
+✅ "bread" (not "bread loaf" or "baked goods")
 
-2. **Item Name**: 
-   - Use generic, common food names (e.g., "milk", "bread", "chicken", "tomatoes")
-   - Remove brand names (e.g., "Coca-Cola" → "cola", "Kellogg's Cereal" → "cereal")
-   - Use singular form for countable items (e.g., "apple" not "apples")
-   - Be specific when possible (e.g., "whole milk" vs "milk", "white bread" vs "bread")
+CRITICAL RULES:
+1. **Item Names**: 
+   - Use generic, common food names (e.g., "milk", "bread", "chicken", "tomato")
+   - Remove brand names completely (e.g., "Coca-Cola" → "cola", "Kellogg's" → "cereal")
+   - Use singular form (apple, not apples; tomato, not tomatoes)
+   - Be specific when helpful: "whole milk" > "milk", "white bread" > "bread"
    - If uncertain, use the most common name
 
-3. **Quantity Detection**:
-   - Count visible individual items (e.g., "3 apples", "2 bottles")
-   - Read quantity labels on packaging (e.g., "12 oz", "500g", "1 lb")
-   - For packages, count packages, not contents (e.g., "2 boxes of pasta" not "2 pasta")
-   - If multiple identical items are visible, count them (e.g., "5 cans of soup")
-   - If quantity is unclear, estimate based on visible items or use "1"
-   - Format as: "X unit" (e.g., "2 bottles", "1 package", "3 cans", "5 pieces")
+2. **Quantity Detection**:
+   - Count visible individual items: "3 apples", "2 bottles", "5 cans"
+   - Read quantity labels on packaging: "12 oz", "500g", "1 lb"
+   - Count packages, not contents: "2 boxes of pasta" not "2 pasta"
+   - Format: "X unit" (e.g., "2 bottles", "1 package", "3 cans", "5 pieces")
+   - If unclear, use "1"
 
-4. **Expiration Date**:
-   - Carefully read ALL text on packaging, labels, and stickers
-   - Look for: "EXP", "EXPIRES", "USE BY", "BEST BY", "SELL BY", dates in various formats
-   - Parse dates in formats like: MM/DD/YYYY, DD/MM/YYYY, YYYY-MM-DD, Month DD YYYY
+3. **Expiration Date**:
+   - Read ALL text on packaging, labels, stickers carefully
+   - Look for: EXP, EXPIRES, USE BY, BEST BY, SELL BY
+   - Parse formats: MM/DD/YYYY, DD/MM/YYYY, YYYY-MM-DD, Month DD YYYY
    - Convert to YYYY-MM-DD format (e.g., "01/15/2024" → "2024-01-15")
-   - If multiple dates found, use the expiration/use-by date (not manufacture date)
-   - If date is partially visible or unclear, set to null
-   - If no date is visible, set to null
+   - Use expiration/use-by date (not manufacture date)
+   - If unclear or not visible, set to null
 
-5. **Category Classification**:
-   - Choose the MOST SPECIFIC category that fits:
-     * "dairy": milk, cheese, yogurt, butter, cream
-     * "canned goods": canned vegetables, soups, beans, tuna
-     * "produce": fresh fruits, vegetables, herbs
-     * "meat": beef, chicken, pork, fish, seafood, deli meats
-     * "beverages": drinks, juices, sodas, water, coffee, tea
-     * "frozen": frozen foods, ice cream, frozen vegetables
-     * "bakery": bread, pastries, bagels, muffins
-     * "snacks": chips, crackers, cookies, nuts, candy
-     * "condiments": sauces, dressings, spices, oils, vinegar
-     * "grains": rice, pasta, cereal, flour, oats
-     * "other": anything that doesn't fit above categories
+4. **Category** (choose most specific):
+   - dairy: milk, cheese, yogurt, butter, cream
+   - produce: fruits, vegetables, herbs
+   - meat: beef, chicken, pork, fish, seafood, deli meats
+   - beverages: drinks, juices, sodas, water, coffee, tea
+   - bakery: bread, pastries, bagels, muffins
+   - canned goods: canned vegetables, soups, beans, tuna
+   - snacks: chips, crackers, cookies, nuts, candy
+   - condiments: sauces, dressings, spices, oils, vinegar
+   - grains: rice, pasta, cereal, flour, oats
+   - frozen: frozen foods, ice cream, frozen vegetables
+   - other: anything else
 
-6. **Accuracy Requirements**:
+5. **Accuracy**:
    - Only include items you can clearly identify as food
-   - If an item is too blurry or unclear, skip it rather than guessing
-   - For ambiguous items, use the most likely identification
-   - Double-check expiration dates - only include if clearly readable
+   - Skip blurry or unclear items
+   - Double-check expiration dates before including
 
-Return the results in this EXACT JSON format:
-{
-  "items": [
-    {"name": "milk", "quantity": "2 bottles", "expirationDate": "2024-01-15", "category": "dairy"},
-    {"name": "soup", "quantity": "3 cans", "expirationDate": null, "category": "canned goods"},
-    {"name": "bread", "quantity": "1 loaf", "expirationDate": "2024-01-10", "category": "bakery"}
-  ]
-}
-
-IMPORTANT: Return ONLY valid JSON, no explanations, no markdown, no code blocks. Just the raw JSON object."""
+Return JSON only (no explanations, no markdown):
+{"items": [{"name": "...", "quantity": "...", "expirationDate": "YYYY-MM-DD or null", "category": "..."}]}"""
     
     try:
         if not client:
