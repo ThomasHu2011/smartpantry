@@ -45,7 +45,7 @@
         pointer-events: auto !important; /* Allow backdrop clicks to close modal */
     }
     
-    /* Modal container - must be above backdrop */
+    /* Modal container - must be above backdrop - NO ANIMATIONS */
     .modal {
         z-index: 1050 !important; /* Bootstrap default */
         position: fixed !important;
@@ -56,12 +56,24 @@
         display: none !important;
         overflow-x: hidden !important;
         overflow-y: auto !important;
+        transition: none !important; /* Disable all transitions */
+        opacity: 1 !important; /* Always visible when shown */
+    }
+    
+    .modal.fade {
+        transition: none !important; /* Disable fade transition */
+        opacity: 1 !important;
     }
     
     .modal.show {
         display: flex !important; /* Use flex to center */
         align-items: center !important;
         justify-content: center !important;
+        opacity: 1 !important; /* Instant show - no fade */
+    }
+    
+    .modal.fade.show {
+        opacity: 1 !important; /* Instant show even with fade class */
     }
     
     /* Ensure modal dialog is above backdrop and responsive */
@@ -103,9 +115,38 @@
         padding-right: 0 !important;
     }
     
+    .modal-backdrop {
+        transition: none !important; /* Disable backdrop transitions */
+        opacity: 1 !important; /* Always visible when shown */
+    }
+    
+    .modal-backdrop.fade {
+        transition: none !important; /* Disable fade transition */
+        opacity: 1 !important;
+    }
+    
     .modal-backdrop.show {
         opacity: 1 !important;
         display: block !important;
+    }
+    
+    .modal-backdrop.fade.show {
+        opacity: 1 !important; /* Instant show even with fade class */
+    }
+    
+    /* Disable modal dialog transitions */
+    .modal-dialog {
+        transition: none !important;
+        transform: none !important;
+    }
+    
+    .modal.fade .modal-dialog {
+        transition: none !important;
+        transform: none !important;
+    }
+    
+    .modal.show .modal-dialog {
+        transform: none !important; /* No slide/fade animations */
     }
     
     /* Photo upload modal - ensure it's on top */
