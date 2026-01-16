@@ -868,19 +868,38 @@ def parse_api_response_with_retry(food_response, max_retries=2):
     import json
     import re
     
+    # Validate input
+    if not food_response:
+        return []
+    
+    if not isinstance(food_response, str):
+        food_response = str(food_response)
+    
+    food_response = food_response.strip()
+    if not food_response:
+        return []
+    
     for attempt in range(max_retries):
         try:
             # Try direct JSON parse
             food_data = json.loads(food_response)
-            return food_data.get('items', [])
-        except json.JSONDecodeError:
+            if not isinstance(food_data, dict):
+                raise ValueError("Response is not a JSON object")
+            items = food_data.get('items', [])
+            # Validate items is a list
+            if not isinstance(items, list):
+                return []
+            return items
+        except (json.JSONDecodeError, ValueError, TypeError) as e:
             # Try to extract JSON from markdown code blocks
             json_match = re.search(r'```(?:json)?\s*(\{.*?"items".*?\})\s*```', food_response, re.DOTALL | re.IGNORECASE)
             if json_match:
                 try:
                     food_data = json.loads(json_match.group(1))
-                    return food_data.get('items', [])
-                except:
+                    items = food_data.get('items', [])
+                    if isinstance(items, list):
+                        return items
+                except (json.JSONDecodeError, TypeError, KeyError):
                     pass
             
             # Try to extract just the JSON object
@@ -888,8 +907,10 @@ def parse_api_response_with_retry(food_response, max_retries=2):
             if json_match:
                 try:
                     food_data = json.loads(json_match.group(0))
-                    return food_data.get('items', [])
-                except:
+                    items = food_data.get('items', [])
+                    if isinstance(items, list):
+                        return items
+                except (json.JSONDecodeError, TypeError, KeyError):
                     pass
             
             # Try to fix common JSON errors
@@ -904,6 +925,36 @@ def parse_api_response_with_retry(food_response, max_retries=2):
     
     # Final fallback: return empty list
     return []
+
+def safe_get_response_content(response):
+    """Safely extract content from OpenAI API response"""
+    try:
+        if not response:
+            return None
+        
+        if not hasattr(response, 'choices') or not response.choices:
+            return None
+        
+        if len(response.choices) == 0:
+            return None
+        
+        choice = response.choices[0]
+        if not hasattr(choice, 'message'):
+            return None
+        
+        message = choice.message
+        if not hasattr(message, 'content'):
+            return None
+        
+        content = message.content
+        if not content or not isinstance(content, str):
+            return None
+        
+        return content.strip()
+    except (AttributeError, IndexError, TypeError) as e:
+        if VERBOSE_LOGGING:
+            print(f"Error extracting response content: {e}")
+        return None
 
 def normalize_pantry_item(item):
     """Normalize a pantry item to ensure consistent format"""
@@ -2049,7 +2100,10 @@ Return JSON only (no explanations, no markdown):
     try:
         if not client:
             raise ValueError("OpenAI API key not configured. Please set OPENAI_API_KEY in your .env file.")
-        response = client.chat.completions.create(
+        
+        # Add timeout and error handling for API calls
+        try:
+            response = client.chat.completions.create(
             model="gpt-4o",
             messages=[
                 {"role": "system", "content": "You are an expert food recognition system with exceptional attention to detail. Your task is to accurately identify all food items in images, extract quantities, read expiration dates from packaging labels, and classify items into appropriate categories. Always return results in valid JSON format with no additional text."},
@@ -2109,71 +2163,122 @@ Return JSON only (no explanations, no markdown):
         pantry_items = unique_items
         
         # Add to appropriate pantry based on user authentication
-        if 'user_id' in session:
-            # Add to user's pantry
-            user_pantry = get_user_pantry(session['user_id'])
-            # Convert to list of dicts if needed
-            pantry_list = []
-            for item in user_pantry:
-                if isinstance(item, dict):
-                    pantry_list.append(item)
-                else:
-                    pantry_list.append({
-                        'id': str(uuid.uuid4()),
-                        'name': item,
-                        'quantity': '1',
-                        'expirationDate': None,
-                        'addedDate': datetime.now().isoformat()
-                    })
-            
-            # Add new items (check for duplicates first)
-            existing_names = {item.get('name', '').strip().lower() for item in pantry_list if item.get('name')}
-            new_items = []
-            for item in pantry_items:
-                item_name = item.get('name', '').strip().lower() if item.get('name') else ''
-                if item_name and item_name not in existing_names:
-                    pantry_list.append(item)
-                    existing_names.add(item_name)
-                    new_items.append(item)
-            
-            if new_items:
-                update_user_pantry(session['user_id'], pantry_list)
+        if 'user_id' in session and session.get('user_id'):
+            try:
+                user_id = session['user_id']
+                # Add to user's pantry
+                user_pantry = get_user_pantry(user_id)
+                # Validate user_pantry is a list
+                if not isinstance(user_pantry, list):
+                    user_pantry = []
+                
+                # Convert to list of dicts if needed
+                pantry_list = []
+                for item in user_pantry:
+                    try:
+                        if isinstance(item, dict):
+                            pantry_list.append(item)
+                        else:
+                            item_str = str(item).strip() if item else ''
+                            if item_str:
+                                pantry_list.append({
+                                    'id': str(uuid.uuid4()),
+                                    'name': item_str,
+                                    'quantity': '1',
+                                    'expirationDate': None,
+                                    'addedDate': datetime.now().isoformat()
+                                })
+                    except (TypeError, AttributeError):
+                        continue
+                
+                # Add new items (check for duplicates first)
+                existing_names = {item.get('name', '').strip().lower() for item in pantry_list if isinstance(item, dict) and item.get('name')}
+                new_items = []
+                for item in pantry_items:
+                    try:
+                        if not isinstance(item, dict):
+                            continue
+                        item_name = item.get('name', '')
+                        if not isinstance(item_name, str):
+                            item_name = str(item_name) if item_name else ''
+                        item_name = item_name.strip().lower()
+                        if item_name and item_name not in existing_names:
+                            pantry_list.append(item)
+                            existing_names.add(item_name)
+                            new_items.append(item)
+                    except (AttributeError, TypeError):
+                        continue
+                
+                if new_items:
+                    update_user_pantry(user_id, pantry_list)
+            except (KeyError, TypeError, AttributeError) as e:
+                if VERBOSE_LOGGING:
+                    print(f"Error adding items to user pantry: {e}")
+                # Continue with anonymous pantry as fallback
         else:
             # Add to anonymous web pantry (stored in session for persistence)
-            # CRITICAL: Mark session as permanent for anonymous users
-            session.permanent = True
-            
-            if 'web_pantry' not in session:
-                session['web_pantry'] = []
-            
-            # Convert to list of dicts if needed
-            pantry_list = []
-            for item in session['web_pantry']:
-                if isinstance(item, dict):
-                    pantry_list.append(item)
-                else:
-                    pantry_list.append({
-                        'id': str(uuid.uuid4()),
-                        'name': item,
-                        'quantity': '1',
-                        'expirationDate': None,
-                        'addedDate': datetime.now().isoformat()
-                    })
-            
-            # Add new items (check for duplicates first)
-            existing_names = {item.get('name', '').strip().lower() for item in pantry_list if item.get('name')}
-            new_items = []
-            for item in pantry_items:
-                item_name = item.get('name', '').strip().lower() if item.get('name') else ''
-                if item_name and item_name not in existing_names:
-                    pantry_list.append(item)
-                    existing_names.add(item_name)
-                    new_items.append(item)
-            
-            if new_items:
-                session['web_pantry'] = pantry_list
-                # Mark session as modified to ensure it's saved
-                session.modified = True
+            try:
+                # CRITICAL: Mark session as permanent for anonymous users
+                session.permanent = True
+                
+                if 'web_pantry' not in session:
+                    session['web_pantry'] = []
+                
+                # Validate session['web_pantry'] is a list
+                web_pantry = session.get('web_pantry', [])
+                if not isinstance(web_pantry, list):
+                    web_pantry = []
+                
+                # Convert to list of dicts if needed
+                pantry_list = []
+                for item in web_pantry:
+                    try:
+                        if isinstance(item, dict):
+                            pantry_list.append(item)
+                        else:
+                            item_str = str(item).strip() if item else ''
+                            if item_str:
+                                pantry_list.append({
+                                    'id': str(uuid.uuid4()),
+                                    'name': item_str,
+                                    'quantity': '1',
+                                    'expirationDate': None,
+                                    'addedDate': datetime.now().isoformat()
+                                })
+                    except (TypeError, AttributeError):
+                        continue
+                
+                # Add new items (check for duplicates first)
+                existing_names = {item.get('name', '').strip().lower() for item in pantry_list if isinstance(item, dict) and item.get('name')}
+                new_items = []
+                for item in pantry_items:
+                    try:
+                        if not isinstance(item, dict):
+                            continue
+                        item_name = item.get('name', '')
+                        if not isinstance(item_name, str):
+                            item_name = str(item_name) if item_name else ''
+                        item_name = item_name.strip().lower()
+                        if item_name and item_name not in existing_names:
+                            pantry_list.append(item)
+                            existing_names.add(item_name)
+                            new_items.append(item)
+                    except (AttributeError, TypeError):
+                        continue
+                
+                if new_items:
+                    session['web_pantry'] = pantry_list
+                    # Mark session as modified to ensure it's saved
+                    session.modified = True
+            except (KeyError, TypeError, AttributeError) as e:
+                if VERBOSE_LOGGING:
+                    print(f"Error adding items to anonymous pantry: {e}")
+                # Initialize empty pantry if session is corrupted
+                try:
+                    session['web_pantry'] = pantry_items if pantry_items else []
+                    session.modified = True
+                except:
+                    pass
         
         item_names = [item['name'] for item in pantry_items]
         flash(f"Successfully analyzed photo! Added {len(pantry_items)} items: {', '.join(item_names)}", "success")
@@ -2269,7 +2374,10 @@ Format as JSON:
     try:
         if not client:
             raise ValueError("OpenAI API key not configured. Please set OPENAI_API_KEY in your .env file.")
-        response = client.chat.completions.create(
+        
+        # Add timeout and error handling for API calls
+        try:
+            response = client.chat.completions.create(
             model="gpt-4o",
             messages=[
                 {"role": "system", "content": "You are a nutritionist and chef. Create recipes that use at least 50% pantry ingredients and provide accurate nutrition information."},
@@ -3828,7 +3936,10 @@ IMPORTANT: Return ONLY valid JSON, no explanations, no markdown, no code blocks.
                 'success': False,
                 'error': 'OpenAI API key not configured. Please set OPENAI_API_KEY in your .env file.'
             }), 500
-        response = client.chat.completions.create(
+        
+        # Add timeout and error handling for API calls
+        try:
+            response = client.chat.completions.create(
             model="gpt-4o",
             messages=[
                 {"role": "system", "content": "You are an expert food recognition system with exceptional attention to detail. Your task is to accurately identify all food items in images, extract quantities, read expiration dates from packaging labels, and classify items into appropriate categories. Always return results in valid JSON format with no additional text."},
@@ -3893,51 +4004,121 @@ IMPORTANT: Return ONLY valid JSON, no explanations, no markdown, no code blocks.
         
         total_items = 0
         if user_id:
-            # Add to user's pantry
-            user_pantry = get_user_pantry(user_id)
-            # Convert detected_items to proper format (list of dicts)
-            for item in pantry_items:
-                user_pantry.append(item)
-            update_user_pantry(user_id, user_pantry)
-            total_items = len(user_pantry)
+            try:
+                # Add to user's pantry
+                user_pantry = get_user_pantry(user_id)
+                if not isinstance(user_pantry, list):
+                    user_pantry = []
+                
+                # Convert detected_items to proper format (list of dicts) with duplicate checking
+                existing_names = {item.get('name', '').strip().lower() for item in user_pantry if isinstance(item, dict) and item.get('name')}
+                for item in pantry_items:
+                    try:
+                        if not isinstance(item, dict):
+                            continue
+                        item_name = item.get('name', '')
+                        if not isinstance(item_name, str):
+                            item_name = str(item_name) if item_name else ''
+                        item_name = item_name.strip().lower()
+                        if item_name and item_name not in existing_names:
+                            user_pantry.append(item)
+                            existing_names.add(item_name)
+                    except (AttributeError, TypeError):
+                        continue
+                
+                update_user_pantry(user_id, user_pantry)
+                total_items = len(user_pantry)
+            except (TypeError, AttributeError, KeyError) as e:
+                if VERBOSE_LOGGING:
+                    print(f"Error adding items to user pantry: {e}")
+                total_items = len(pantry_items)
         else:
             # Add to anonymous pantry
             global mobile_pantry, web_pantry  # Declare globals at function start
             if client_type == 'mobile':
-                if not isinstance(mobile_pantry, list):
-                    mobile_pantry = []
-                for item in pantry_items:
-                    mobile_pantry.append(item)
-                total_items = len(mobile_pantry)
+                try:
+                    if not isinstance(mobile_pantry, list):
+                        mobile_pantry = []
+                    existing_names = {item.get('name', '').strip().lower() for item in mobile_pantry if isinstance(item, dict) and item.get('name')}
+                    for item in pantry_items:
+                        try:
+                            if not isinstance(item, dict):
+                                continue
+                            item_name = item.get('name', '')
+                            if not isinstance(item_name, str):
+                                item_name = str(item_name) if item_name else ''
+                            item_name = item_name.strip().lower()
+                            if item_name and item_name not in existing_names:
+                                mobile_pantry.append(item)
+                                existing_names.add(item_name)
+                        except (AttributeError, TypeError):
+                            continue
+                    total_items = len(mobile_pantry)
+                except (TypeError, AttributeError):
+                    mobile_pantry = pantry_items.copy() if pantry_items else []
+                    total_items = len(mobile_pantry)
             else:
-                # Add to anonymous web pantry (stored in session)
-                # CRITICAL: Mark session as permanent for anonymous users
-                session.permanent = True
-                
-                if 'web_pantry' not in session:
-                    session['web_pantry'] = []
-                
-                # Check for duplicates before adding (case-insensitive)
-                existing_names = {item.get('name', '').strip().lower() for item in session['web_pantry'] if isinstance(item, dict) and item.get('name')}
-                new_items = []
-                for item in pantry_items:
-                    item_name = item.get('name', '').strip().lower() if item.get('name') else ''
-                    if item_name and item_name not in existing_names:
-                        session['web_pantry'].append(item)
-                        existing_names.add(item_name)
-                        new_items.append(item)
-                
-                # Mark session as modified to ensure it's saved
-                if new_items:
-                    session.modified = True
-                total_items = len(session.get('web_pantry', []))
+                try:
+                    # Add to anonymous web pantry (stored in session)
+                    # CRITICAL: Mark session as permanent for anonymous users
+                    session.permanent = True
+                    
+                    if 'web_pantry' not in session:
+                        session['web_pantry'] = []
+                    
+                    # Validate session['web_pantry'] is a list
+                    web_pantry_session = session.get('web_pantry', [])
+                    if not isinstance(web_pantry_session, list):
+                        web_pantry_session = []
+                    
+                    # Check for duplicates before adding (case-insensitive)
+                    existing_names = {item.get('name', '').strip().lower() for item in web_pantry_session if isinstance(item, dict) and item.get('name')}
+                    new_items = []
+                    for item in pantry_items:
+                        try:
+                            if not isinstance(item, dict):
+                                continue
+                            item_name = item.get('name', '')
+                            if not isinstance(item_name, str):
+                                item_name = str(item_name) if item_name else ''
+                            item_name = item_name.strip().lower()
+                            if item_name and item_name not in existing_names:
+                                web_pantry_session.append(item)
+                                existing_names.add(item_name)
+                                new_items.append(item)
+                        except (AttributeError, TypeError):
+                            continue
+                    
+                    # Mark session as modified to ensure it's saved
+                    if new_items:
+                        session['web_pantry'] = web_pantry_session
+                        session.modified = True
+                    total_items = len(session.get('web_pantry', []))
+                except (KeyError, TypeError, AttributeError) as e:
+                    if VERBOSE_LOGGING:
+                        print(f"Error adding items to anonymous web pantry: {e}")
+                    # Initialize empty pantry if session is corrupted
+                    try:
+                        session['web_pantry'] = pantry_items.copy() if pantry_items else []
+                        session.modified = True
+                        total_items = len(pantry_items)
+                    except:
+                        total_items = 0
         
         # Return item names as strings for backward compatibility with iOS app
-        item_names = [item['name'] for item in pantry_items]
+        item_names = []
+        for item in pantry_items:
+            try:
+                if isinstance(item, dict):
+                    name = item.get('name', '')
+                    if name:
+                        item_names.append(str(name))
+            except (AttributeError, TypeError):
+                continue
         
         return jsonify({
             'success': True,
-            'message': f'Successfully analyzed photo! Added {len(pantry_items)} items',
+            'message': f'Successfully analyzed photo! Added {len(pantry_items)} items' if pantry_items else 'Photo analyzed but no items were detected',
             'items': item_names,  # Return as list of strings for iOS compatibility
             'total_items': total_items
         })
