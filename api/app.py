@@ -646,44 +646,57 @@ def detect_food_items_with_ml(img_bytes):
                     
                     if conf > 0.3:  # OCR confidence threshold
                         text_lower = text.lower().strip()
-                    # Look for food-related keywords in OCR text
-                    # Common food words that might indicate rare items
-                    food_indicators = [
-                        'organic', 'artisan', 'gourmet', 'specialty', 'imported',
-                        'gluten-free', 'vegan', 'keto', 'paleo', 'halal', 'kosher',
-                        'spice', 'herb', 'seasoning', 'sauce', 'dressing', 'marinade',
-                        'paste', 'concentrate', 'extract', 'syrup', 'preserve', 'jam',
-                        'chutney', 'relish', 'pickle', 'fermented', 'kimchi', 'miso',
-                        'tahini', 'hummus', 'pesto', 'salsa', 'guacamole', 'tzatziki'
-                    ]
-                    # Check if text contains food indicators
-                    for indicator in food_indicators:
-                        if indicator in text_lower:
-                            # Extract potential food name from surrounding text
-                            words = text_lower.split()
-                            for i, word in enumerate(words):
-                                if indicator in word or any(food_word in word for food_word in ['sauce', 'spice', 'herb', 'oil', 'vinegar']):
-                                    # Try to get the food name (word before or after indicator)
-                                    if i > 0:
-                                        potential_name = words[i-1] + ' ' + words[i]
-                                    elif i < len(words) - 1:
-                                        potential_name = words[i] + ' ' + words[i+1]
-                                    else:
-                                        potential_name = words[i]
-                                    # Clean up the name
-                                    potential_name = re.sub(r'[^a-z\s]', '', potential_name).strip()
-                                    if len(potential_name) > 2:
-                                        normalized = normalize_item_name(potential_name)
-                                        if normalized and normalized.lower() not in item_confidence:
-                                            items.append({
-                                                "name": normalized,
-                                                "quantity": "1",
-                                                "expirationDate": exp_date,
-                                                "category": validate_category(normalized, "other"),
-                                                "confidence": float(conf * 0.6)  # OCR-based confidence (lower weight)
-                                            })
-                                            item_confidence[normalized.lower()] = float(conf * 0.6)
-                            break
+                        if not text_lower or len(text_lower) < 2:
+                            continue
+                        
+                        # Look for food-related keywords in OCR text
+                        # Common food words that might indicate rare items
+                        food_indicators = [
+                            'organic', 'artisan', 'gourmet', 'specialty', 'imported',
+                            'gluten-free', 'vegan', 'keto', 'paleo', 'halal', 'kosher',
+                            'spice', 'herb', 'seasoning', 'sauce', 'dressing', 'marinade',
+                            'paste', 'concentrate', 'extract', 'syrup', 'preserve', 'jam',
+                            'chutney', 'relish', 'pickle', 'fermented', 'kimchi', 'miso',
+                            'tahini', 'hummus', 'pesto', 'salsa', 'guacamole', 'tzatziki'
+                        ]
+                        # Check if text contains food indicators
+                        for indicator in food_indicators:
+                            if indicator in text_lower:
+                                try:
+                                    # Extract potential food name from surrounding text
+                                    words = text_lower.split()
+                                    for i, word in enumerate(words):
+                                        if indicator in word or any(food_word in word for food_word in ['sauce', 'spice', 'herb', 'oil', 'vinegar']):
+                                            # Try to get the food name (word before or after indicator)
+                                            if i > 0:
+                                                potential_name = words[i-1] + ' ' + words[i]
+                                            elif i < len(words) - 1:
+                                                potential_name = words[i] + ' ' + words[i+1]
+                                            else:
+                                                potential_name = words[i]
+                                            # Clean up the name
+                                            potential_name = re.sub(r'[^a-z\s]', '', potential_name).strip()
+                                            if len(potential_name) > 2 and len(potential_name) < 100:  # Length limit
+                                                normalized = normalize_item_name(potential_name)
+                                                if normalized and normalized.lower() not in item_confidence:
+                                                    items.append({
+                                                        "name": normalized,
+                                                        "quantity": "1",
+                                                        "expirationDate": exp_date,
+                                                        "category": validate_category(normalized, "other"),
+                                                        "confidence": float(conf * 0.6)  # OCR-based confidence (lower weight)
+                                                    })
+                                                    item_confidence[normalized.lower()] = float(conf * 0.6)
+                                                break  # Only process first match per text
+                                except Exception as word_error:
+                                    if VERBOSE_LOGGING:
+                                        print(f"Warning: Error processing OCR word: {word_error}")
+                                    continue
+                                break  # Move to next OCR result
+                except Exception as item_error:
+                    if VERBOSE_LOGGING:
+                        print(f"Warning: Error processing OCR item: {item_error}")
+                    continue
         except Exception as e:
             if VERBOSE_LOGGING:
                 print(f"OCR-based rare food detection error: {e}")
