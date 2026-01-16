@@ -388,6 +388,7 @@ def detect_food_items_with_ml(img_bytes):
     if _ocr_reader and not items:  # Only if no items found yet (rare food scenario)
         try:
             import re
+            import numpy as np
             ocr_results = _ocr_reader.readtext(np.array(img))
             food_keywords = []
             for (bbox, text, conf) in ocr_results:
@@ -2456,10 +2457,27 @@ CRITICAL NAMING RULES:
    - frozen: frozen foods, ice cream, frozen vegetables, frozen meals
    - other: anything that doesn't fit above
 
-5. **Accuracy Requirements**:
-   - Include ALL clearly visible food items
-   - Don't skip items just because they're in background
-   - If you see packaging/labels, try to identify the food inside
+5. **RARE/UNCOMMON FOODS** (CRITICAL):
+   - Read ALL text on labels, especially for specialty/organic/imported items
+   - Look for food names in multiple languages (many rare foods have foreign names)
+   - If you see a food name you don't recognize, include it anyway if it appears to be food
+   - Preserve authentic names: "gochujang" not "korean chili paste", "tahini" not "sesame paste"
+   - Check for descriptors: "organic", "artisan", "gourmet", "specialty", "imported" - these often indicate rare foods
+   - Look for dietary labels: "gluten-free", "vegan", "keto", "paleo" - these products are often less common
+   - Ethnic/regional foods: Look for names in other languages or transliterations
+   - Fermented foods: kimchi, sauerkraut, miso, tempeh, kombucha, kefir
+   - Specialty condiments: harissa, gochujang, sriracha, ponzu, mirin, fish sauce, oyster sauce
+   - Nuts/seeds: macadamia, pistachio, pine nuts, hemp seeds, chia seeds, flax seeds
+   - Grains/legumes: quinoa, farro, bulgur, lentils, chickpeas, black beans, edamame
+   - Specialty oils: truffle oil, avocado oil, coconut oil, sesame oil, walnut oil
+   - Specialty vinegars: balsamic, rice vinegar, apple cider vinegar, white wine vinegar
+   - Preserves/spreads: tahini, hummus, pesto, tapenade, bruschetta, guacamole
+
+6. **Accuracy Requirements**:
+   - Include ALL clearly visible food items, ESPECIALLY rare/uncommon ones
+   - Don't skip items just because they're in background or you don't recognize them
+   - If you see packaging/labels, read them carefully to identify rare foods
+   - When in doubt about a rare food, include it with a descriptive name based on the label
    - Only skip if completely unidentifiable or clearly not food
 
 FEW-SHOT EXAMPLES:
@@ -4414,10 +4432,27 @@ CRITICAL NAMING RULES:
    - frozen: frozen foods, ice cream, frozen vegetables, frozen meals
    - other: anything that doesn't fit above
 
-5. **Accuracy Requirements**:
-   - Include ALL clearly visible food items
-   - Don't skip items just because they're in background
-   - If you see packaging/labels, try to identify the food inside
+5. **RARE/UNCOMMON FOODS** (CRITICAL):
+   - Read ALL text on labels, especially for specialty/organic/imported items
+   - Look for food names in multiple languages (many rare foods have foreign names)
+   - If you see a food name you don't recognize, include it anyway if it appears to be food
+   - Preserve authentic names: "gochujang" not "korean chili paste", "tahini" not "sesame paste"
+   - Check for descriptors: "organic", "artisan", "gourmet", "specialty", "imported" - these often indicate rare foods
+   - Look for dietary labels: "gluten-free", "vegan", "keto", "paleo" - these products are often less common
+   - Ethnic/regional foods: Look for names in other languages or transliterations
+   - Fermented foods: kimchi, sauerkraut, miso, tempeh, kombucha, kefir
+   - Specialty condiments: harissa, gochujang, sriracha, ponzu, mirin, fish sauce, oyster sauce
+   - Nuts/seeds: macadamia, pistachio, pine nuts, hemp seeds, chia seeds, flax seeds
+   - Grains/legumes: quinoa, farro, bulgur, lentils, chickpeas, black beans, edamame
+   - Specialty oils: truffle oil, avocado oil, coconut oil, sesame oil, walnut oil
+   - Specialty vinegars: balsamic, rice vinegar, apple cider vinegar, white wine vinegar
+   - Preserves/spreads: tahini, hummus, pesto, tapenade, bruschetta, guacamole
+
+6. **Accuracy Requirements**:
+   - Include ALL clearly visible food items, ESPECIALLY rare/uncommon ones
+   - Don't skip items just because they're in background or you don't recognize them
+   - If you see packaging/labels, read them carefully to identify rare foods
+   - When in doubt about a rare food, include it with a descriptive name based on the label
    - Only skip if completely unidentifiable or clearly not food
 
 FEW-SHOT EXAMPLES:
