@@ -2104,19 +2104,40 @@ Return JSON only (no explanations, no markdown):
         # Add timeout and error handling for API calls
         try:
             response = client.chat.completions.create(
-            model="gpt-4o",
-            messages=[
-                {"role": "system", "content": "You are an expert food recognition system with exceptional attention to detail. Your task is to accurately identify all food items in images, extract quantities, read expiration dates from packaging labels, and classify items into appropriate categories. Always return results in valid JSON format with no additional text."},
-                {"role": "user", "content": [
-                    {"type": "text", "text": prompt},
-                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img_b64}", "detail": "high"}}
-                ]}
-            ],
-            max_tokens=2000,
-            temperature=0.1,
-            response_format={"type": "json_object"}
-        )
-        food_response = response.choices[0].message.content
+                model="gpt-4o",
+                messages=[
+                    {"role": "system", "content": "You are an expert food recognition system with exceptional attention to detail. Your task is to accurately identify all food items in images, extract quantities, read expiration dates from packaging labels, and classify items into appropriate categories. Always return results in valid JSON format with no additional text."},
+                    {"role": "user", "content": [
+                        {"type": "text", "text": prompt},
+                        {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img_b64}", "detail": "high"}}
+                    ]}
+                ],
+                max_tokens=2000,
+                temperature=0.1,
+                response_format={"type": "json_object"},
+                timeout=60.0  # 60 second timeout to prevent hanging
+            )
+        except Exception as api_error:
+            # Handle API errors gracefully
+            error_type = type(api_error).__name__
+            error_msg = str(api_error)
+            if VERBOSE_LOGGING:
+                print(f"OpenAI API error ({error_type}): {error_msg}")
+            
+            # Provide user-friendly error messages
+            if 'rate limit' in error_msg.lower() or 'RateLimitError' in error_type:
+                raise ValueError("API rate limit exceeded. Please try again in a few moments.")
+            elif 'timeout' in error_msg.lower() or 'Timeout' in error_type:
+                raise ValueError("Request timed out. Please try again with a smaller image.")
+            elif 'invalid' in error_msg.lower() or 'InvalidRequestError' in error_type:
+                raise ValueError("Invalid image format. Please upload a valid photo.")
+            else:
+                raise ValueError(f"Error connecting to AI service: {error_msg[:100]}")
+        
+        # Safely extract response content
+        food_response = safe_get_response_content(response)
+        if not food_response:
+            raise ValueError("Empty or invalid response from OpenAI API")
         
         # Parse JSON response with improved error handling
         detected_items_data = parse_api_response_with_retry(food_response)
@@ -3949,19 +3970,55 @@ IMPORTANT: Return ONLY valid JSON, no explanations, no markdown, no code blocks.
         # Add timeout and error handling for API calls
         try:
             response = client.chat.completions.create(
-            model="gpt-4o",
-            messages=[
-                {"role": "system", "content": "You are an expert food recognition system with exceptional attention to detail. Your task is to accurately identify all food items in images, extract quantities, read expiration dates from packaging labels, and classify items into appropriate categories. Always return results in valid JSON format with no additional text."},
-                {"role": "user", "content": [
-                    {"type": "text", "text": prompt},
-                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img_b64}", "detail": "high"}}
-                ]}
-            ],
-            max_tokens=2000,
-            temperature=0.1,
-            response_format={"type": "json_object"}
-        )
-        food_response = response.choices[0].message.content
+                model="gpt-4o",
+                messages=[
+                    {"role": "system", "content": "You are an expert food recognition system with exceptional attention to detail. Your task is to accurately identify all food items in images, extract quantities, read expiration dates from packaging labels, and classify items into appropriate categories. Always return results in valid JSON format with no additional text."},
+                    {"role": "user", "content": [
+                        {"type": "text", "text": prompt},
+                        {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img_b64}", "detail": "high"}}
+                    ]}
+                ],
+                max_tokens=2000,
+                temperature=0.1,
+                response_format={"type": "json_object"},
+                timeout=60.0  # 60 second timeout to prevent hanging
+            )
+        except Exception as api_error:
+            # Handle API errors gracefully
+            error_type = type(api_error).__name__
+            error_msg = str(api_error)
+            if VERBOSE_LOGGING:
+                print(f"OpenAI API error ({error_type}): {error_msg}")
+            
+            # Provide user-friendly error messages
+            if 'rate limit' in error_msg.lower() or 'RateLimitError' in error_type:
+                return jsonify({
+                    'success': False,
+                    'error': 'API rate limit exceeded. Please try again in a few moments.'
+                }), 429
+            elif 'timeout' in error_msg.lower() or 'Timeout' in error_type:
+                return jsonify({
+                    'success': False,
+                    'error': 'Request timed out. Please try again with a smaller image.'
+                }), 504
+            elif 'invalid' in error_msg.lower() or 'InvalidRequestError' in error_type:
+                return jsonify({
+                    'success': False,
+                    'error': 'Invalid image format. Please upload a valid photo.'
+                }), 400
+            else:
+                return jsonify({
+                    'success': False,
+                    'error': f'Error connecting to AI service: {error_msg[:100]}'
+                }), 500
+        
+        # Safely extract response content
+        food_response = safe_get_response_content(response)
+        if not food_response:
+            return jsonify({
+                'success': False,
+                'error': 'Empty or invalid response from OpenAI API. Please try again.'
+            }), 500
         
         # Parse JSON response with improved error handling
         detected_items_data = parse_api_response_with_retry(food_response)
