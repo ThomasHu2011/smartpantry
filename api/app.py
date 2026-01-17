@@ -2319,17 +2319,17 @@ def update_user_pantry(user_id, pantry_items):
     if VERBOSE_LOGGING:
         print(f"🔍 Verifying save...")
         verify_users = load_users(use_cache=False)
-    if user_id in verify_users:
-        verify_pantry = verify_users[user_id].get('pantry', [])
-        if len(verify_pantry) == len(normalized_items):
-            print(f"✅ Verified: Pantry update saved correctly ({len(verify_pantry)} items)")
+        if user_id in verify_users:
+            verify_pantry = verify_users[user_id].get('pantry', [])
+            if len(verify_pantry) == len(normalized_items):
+                print(f"✅ Verified: Pantry update saved correctly ({len(verify_pantry)} items)")
+            else:
+                print(f"⚠️ Warning: Saved {len(normalized_items)} items but file contains {len(verify_pantry)} items")
+                print(f"   Expected items: {[item.get('name', 'unknown') if isinstance(item, dict) else str(item) for item in normalized_items[:5]]}")
+                print(f"   Saved items: {[item.get('name', 'unknown') if isinstance(item, dict) else str(item) for item in verify_pantry[:5]]}")
         else:
-            print(f"⚠️ Warning: Saved {len(normalized_items)} items but file contains {len(verify_pantry)} items")
-            print(f"   Expected items: {[item.get('name', 'unknown') if isinstance(item, dict) else str(item) for item in normalized_items[:5]]}")
-            print(f"   Saved items: {[item.get('name', 'unknown') if isinstance(item, dict) else str(item) for item in verify_pantry[:5]]}")
-    else:
-        print(f"❌ Error: User {user_id} not found after save!")
-    print(f"{'='*60}\n")
+            print(f"❌ Error: User {user_id} not found after save!")
+        print(f"{'='*60}\n")
 
  
 
@@ -3410,7 +3410,24 @@ Return ONLY valid JSON (no markdown, no code blocks, no explanations):
                 raw_quantity = item.get('quantity', '1')
                 expiration_date = item.get('expirationDate')
                 raw_category = item.get('category', 'other')
-                confidence = item.get('confidence', 0.5)
+                # Default confidence: OpenAI is generally reliable, so default to 0.75 (medium-high)
+                # If confidence is explicitly provided, use it; otherwise use intelligent default
+                confidence = item.get('confidence')
+                if confidence is None:
+                    # Assign default confidence based on item properties
+                    # Common food items get higher default confidence
+                    common_foods = ['milk', 'bread', 'egg', 'chicken', 'beef', 'cheese', 'yogurt', 'butter', 
+                                   'pasta', 'rice', 'cereal', 'soup', 'juice', 'water', 'soda', 'coffee', 'tea',
+                                   'apple', 'banana', 'orange', 'tomato', 'carrot', 'lettuce', 'onion']
+                    name_lower = raw_name.lower()
+                    if any(common in name_lower for common in common_foods):
+                        confidence = 0.85  # High confidence for common items
+                    elif raw_category and raw_category != 'other':
+                        confidence = 0.70  # Medium-high for categorized items
+                    else:
+                        confidence = 0.60  # Medium for uncategorized items
+                else:
+                    confidence = float(confidence)
                 
                 # Handle partial recognition - if confidence is very low, provide category-based name
                 if confidence < 0.3 and raw_category and raw_category != 'other':
@@ -3681,19 +3698,9 @@ Return ONLY valid JSON (no markdown, no code blocks, no explanations):
                 'success': True,
                 'auto_added': len(auto_added),
                 'needs_confirmation': len(low_conf_items),
-                'items': pantry_items,  # All items with confidence
-                'high_confidence': [{'name': item['name'], 'confidence': item.get('confidence', 0), 'expiration_risk': item.get('expiration_risk')} for item in auto_added],
-                'low_confidence': [
-                    {
-                        'name': item['name'], 
-                        'confidence': item.get('confidence', 0), 
-                        'quantity': item.get('quantity', '1'), 
-                        'category': item.get('category', 'other'),
-                        'is_partial': item.get('is_partial', False),
-                        'expiration_risk': item.get('expiration_risk')
-                    } 
-                    for item in low_conf_items
-                ],
+                'items': pantry_items,  # All items with full details including confidence
+                'high_confidence': auto_added,  # Full item objects for high confidence
+                'low_confidence': low_conf_items,  # Full item objects for low confidence
                 'partial_recognition': [{'name': item['name'], 'category': item.get('category'), 'confidence': item.get('confidence', 0)} for item in partial_items],
                 'message': f"Found {len(pantry_items)} items ({len(complete_items)} identified, {len(partial_items)} partial). {len(auto_added)} added automatically, {len(low_conf_items)} need confirmation."
             })
@@ -4492,6 +4499,114 @@ def api_add_item():
             'error': f'Error adding item: {error_msg[:100]}',
             'type': error_type
         }), 500
+
+@app.route('/api/confirm_items', methods=['POST'])
+def api_confirm_items():
+    """Confirm and add multiple items from photo analysis"""
+    try:
+        if not request.is_json:
+            return jsonify({'success': False, 'error': 'Request must be JSON'}), 400
+        
+        data = request.get_json(force=True)
+        if not data or 'items' not in data:
+            return jsonify({'success': False, 'error': 'Missing items array'}), 400
+        
+        items = data['items']
+        if not isinstance(items, list):
+            return jsonify({'success': False, 'error': 'Items must be an array'}), 400
+        
+        # Determine user context
+        user_id = None
+        if 'user_id' in session and session.get('user_id'):
+            user_id = session['user_id']
+        else:
+            # For anonymous users, use session
+            session.permanent = True
+        
+        items_added = 0
+        skipped_duplicates = 0
+        
+        for item in items:
+            if not isinstance(item, dict) or 'name' not in item:
+                continue
+            
+            item_name = item.get('name', '').strip()
+            if not item_name:
+                continue
+            
+            # Prepare item data
+            pantry_item = {
+                'id': item.get('id', str(uuid.uuid4())),
+                'name': item_name,
+                'quantity': item.get('quantity', '1'),
+                'expirationDate': item.get('expirationDate'),
+                'category': item.get('category', 'other'),
+                'addedDate': item.get('addedDate', datetime.now().isoformat()),
+                'confidence': item.get('confidence', 0.5)
+            }
+            
+            if user_id:
+                # Add to user's pantry
+                user_pantry = get_user_pantry(user_id)
+                if not isinstance(user_pantry, list):
+                    user_pantry = []
+                
+                pantry_list = []
+                for p_item in user_pantry:
+                    if isinstance(p_item, dict):
+                        pantry_list.append(p_item)
+                
+                # Check for duplicates
+                existing_names = {p.get('name', '').strip().lower() for p in pantry_list if isinstance(p, dict) and p.get('name')}
+                item_name_lower = item_name.lower()
+                
+                if item_name_lower not in existing_names:
+                    pantry_list.append(pantry_item)
+                    existing_names.add(item_name_lower)
+                    items_added += 1
+                    update_user_pantry(user_id, pantry_list)
+                else:
+                    skipped_duplicates += 1
+            else:
+                # Add to anonymous pantry (session)
+                if 'web_pantry' not in session:
+                    session['web_pantry'] = []
+                
+                web_pantry = session.get('web_pantry', [])
+                if not isinstance(web_pantry, list):
+                    web_pantry = []
+                
+                pantry_list = []
+                for p_item in web_pantry:
+                    if isinstance(p_item, dict):
+                        pantry_list.append(p_item)
+                
+                # Check for duplicates
+                existing_names = {p.get('name', '').strip().lower() for p in pantry_list if isinstance(p, dict) and p.get('name')}
+                item_name_lower = item_name.lower()
+                
+                if item_name_lower not in existing_names:
+                    pantry_list.append(pantry_item)
+                    existing_names.add(item_name_lower)
+                    items_added += 1
+                    session['web_pantry'] = pantry_list
+                    session.modified = True
+                else:
+                    skipped_duplicates += 1
+        
+        return jsonify({
+            'success': True,
+            'items_added': items_added,
+            'skipped_duplicates': skipped_duplicates,
+            'message': f'Added {items_added} items to pantry' + (f' ({skipped_duplicates} duplicates skipped)' if skipped_duplicates > 0 else '')
+        }), 200
+        
+    except Exception as e:
+        if VERBOSE_LOGGING:
+            print(f"Error confirming items: {e}")
+            import traceback
+            traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/pantry/<item_id>', methods=['DELETE'])
 def api_delete_item(item_id):

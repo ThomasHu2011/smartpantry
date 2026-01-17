@@ -2442,18 +2442,20 @@
                     
                     <!-- Take Photo Section -->
                     <div id="takePhotoSection" class="photo-section">
-                    <div class="row g-2 mb-3">
-                        <div class="col-6">
-                                <button type="button" class="btn btn-outline-success w-100 photo-modal-btn" id="openCameraBtn" style="border: 2px solid #10b981; color: #10b981; background: transparent; transition: all 0.2s ease; will-change: auto;">
-                                <i class="bi bi-camera-video me-2"></i>Live Camera
+                        <div class="text-center mb-4">
+                            <div class="mb-3">
+                                <i class="bi bi-camera-fill" style="font-size: 3rem; color: #10b981; opacity: 0.7;"></i>
+                            </div>
+                            <h6 class="mb-3" style="color: #1e293b; font-weight: 600;">Choose how to capture your photo</h6>
+                        </div>
+                        <div class="d-grid gap-2">
+                            <button type="button" class="btn btn-success btn-lg photo-modal-btn" id="mobileCameraBtn" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); border: none; color: white; padding: 14px; font-weight: 600; border-radius: 12px; transition: all 0.2s ease; box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);">
+                                <i class="bi bi-camera-fill me-2"></i>Take Photo with Camera
+                            </button>
+                            <button type="button" class="btn btn-outline-success photo-modal-btn" id="openCameraBtn" style="border: 2px solid #10b981; color: #10b981; background: white; padding: 12px; font-weight: 600; border-radius: 12px; transition: all 0.2s ease;">
+                                <i class="bi bi-camera-video me-2"></i>Use Live Camera Preview
                             </button>
                         </div>
-                        <div class="col-6">
-                                <button type="button" class="btn btn-success w-100 photo-modal-btn" id="mobileCameraBtn" style="background: #10b981; border: 2px solid #10b981; color: white; transition: all 0.2s ease; will-change: auto;">
-                                <i class="bi bi-camera-fill me-2"></i>Take Photo
-                            </button>
-                        </div>
-                    </div>
                         <label for="mobileCameraInput" class="visually-hidden">Take photo with camera</label>
                         <input type="file" id="mobileCameraInput" accept="image/*" capture="environment" style="position: absolute; width: 1px; height: 1px; opacity: 0; overflow: hidden; pointer-events: none;">
                     </div>
@@ -2778,14 +2780,37 @@
         selectedFile = file;
         const reader = new FileReader();
         reader.onload = (e) => {
+            // Hide placeholder and show image preview
+            const placeholder = document.getElementById('imagePreviewPlaceholder');
+            if (placeholder) {
+                placeholder.style.display = 'none';
+            }
+            
             if (imagePreview) {
                 imagePreview.src = e.target.result;
                 imagePreview.style.display = 'block';
                 imagePreview.style.opacity = '0';
                 imagePreview.style.transition = 'opacity 0.3s ease';
+                
+                // Wait for image to load before showing
+                imagePreview.onload = () => {
+                    setTimeout(() => {
+                        imagePreview.style.opacity = '1';
+                    }, 50);
+                };
+                
+                // Fallback if onload doesn't fire
                 setTimeout(() => {
-                    imagePreview.style.opacity = '1';
-                }, 50);
+                    if (imagePreview.style.opacity === '0') {
+                        imagePreview.style.opacity = '1';
+                    }
+                }, 100);
+            }
+            
+            // Show remove button
+            const removeBtn = document.getElementById('removePreviewBtn');
+            if (removeBtn) {
+                removeBtn.style.display = 'flex';
             }
             
             // Show progress feedback
@@ -2836,6 +2861,17 @@
         if (imagePreview) {
             imagePreview.src = '';
             imagePreview.style.display = 'none';
+            imagePreview.style.opacity = '0';
+        }
+        // Show placeholder again
+        const placeholder = document.getElementById('imagePreviewPlaceholder');
+        if (placeholder) {
+            placeholder.style.display = 'flex';
+        }
+        // Hide remove button
+        const removeBtn = document.getElementById('removePreviewBtn');
+        if (removeBtn) {
+            removeBtn.style.display = 'none';
         }
         if (previewSection) {
             previewSection.style.display = 'none';
@@ -3496,13 +3532,16 @@
             const photoFiles = multiPhotoMode ? Array.from(document.getElementById('mobileCameraInput')?.files || []) : [selectedFile];
             
             const formData = new FormData();
+            let uploadEndpoint;
             if (multiPhotoMode && photoFiles.length > 1) {
                 // Multi-photo mode: use batch endpoint
+                uploadEndpoint = '/api/upload_photos_batch';
                 photoFiles.forEach((file, idx) => {
                     formData.append('photos[]', file);
                 });
             } else {
                 // Single photo mode
+                uploadEndpoint = '/upload_photo';
                 formData.append('photo', selectedFile);
             }
 
@@ -3692,6 +3731,8 @@
         
         const autoAdded = data.auto_added || 0;
         const needsConfirmation = data.needs_confirmation || 0;
+        const allItems = data.items || [];
+        const highConfItems = data.high_confidence || [];
         const lowConfItems = data.low_confidence || [];
         
         // Show success message
@@ -3701,19 +3742,8 @@
             uploadFeedback.style.display = 'flex';
         }
         
-        // If there are items needing confirmation, show confirmation UI
-        if (needsConfirmation > 0 && lowConfItems.length > 0) {
-            showConfirmationModal(lowConfItems, autoAdded);
-        } else {
-            // All items auto-added, just close and reload
-            setTimeout(() => {
-                closePhotoModal();
-                resetPhotoUploadState();
-                setTimeout(async () => {
-                    await reloadPantryItems();
-                }, 300);
-            }, 2000);
-        }
+        // Always show modal with all detected items and their confidence levels
+        showAIConfidenceModal(allItems, autoAdded, highConfItems, lowConfItems);
     }
     
     // Show confirmation modal for low-confidence items
@@ -3880,6 +3910,360 @@
         } else {
             confirmModal.style.display = 'block';
             confirmModal.classList.add('show');
+        }
+    }
+    
+    // Show AI confidence modal with all detected items
+    function showAIConfidenceModal(allItems, autoAdded, highConfItems, lowConfItems) {
+        // Categorize items by confidence level
+        const HIGH_THRESHOLD = 0.8;  // Green: High confidence
+        const MEDIUM_THRESHOLD = 0.5;  // Yellow: Medium confidence
+        
+        const highConf = allItems.filter(item => (item.confidence || 0) >= HIGH_THRESHOLD);
+        const mediumConf = allItems.filter(item => {
+            const conf = item.confidence || 0;
+            return conf >= MEDIUM_THRESHOLD && conf < HIGH_THRESHOLD;
+        });
+        const lowConf = allItems.filter(item => (item.confidence || 0) < MEDIUM_THRESHOLD);
+        
+        // Create or get AI confidence modal
+        let confidenceModal = document.getElementById('aiConfidenceModal');
+        if (!confidenceModal) {
+            confidenceModal = document.createElement('div');
+            confidenceModal.id = 'aiConfidenceModal';
+            confidenceModal.className = 'modal fade';
+            confidenceModal.setAttribute('tabindex', '-1');
+            confidenceModal.setAttribute('aria-labelledby', 'aiConfidenceModalLabel');
+            confidenceModal.innerHTML = `
+                <div class="modal-dialog modal-dialog-centered modal-xl">
+                    <div class="modal-content" style="border-radius: 16px; max-height: 90vh; display: flex; flex-direction: column;">
+                        <div class="modal-header" style="background: linear-gradient(135deg, #10B981 0%, #3B82F6 50%, #F59E0B 100%); color: white; border-radius: 16px 16px 0 0; border-bottom: none;">
+                            <h5 class="modal-title" id="aiConfidenceModalLabel">
+                                <i class="bi bi-robot me-2"></i>AI Photo Analysis Results
+                            </h5>
+                            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                        </div>
+                        <div class="modal-body p-4" style="background: #f8f9fa; overflow-y: auto; flex: 1;">
+                            <!-- Info Banner -->
+                            <div class="alert alert-info mb-4" style="background: linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, rgba(139, 92, 246, 0.1) 100%); border-left: 4px solid #3B82F6; border-radius: 8px;">
+                                <div class="d-flex align-items-start">
+                                    <i class="bi bi-info-circle-fill me-2" style="font-size: 1.2rem; color: #3B82F6;"></i>
+                                    <div>
+                                        <strong>Help Improve AI Accuracy!</strong>
+                                        <p class="mb-0 small mt-1">By confirming items detected in your photo, you're helping our AI learn and become more accurate. Your feedback trains the model to better recognize food items in future photos.</p>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Summary Cards -->
+                            <div class="row mb-4">
+                                <div class="col-md-4 mb-3">
+                                    <div class="card border-0 shadow-sm" style="background: linear-gradient(135deg, #10B981 0%, #059669 100%); color: white;">
+                                        <div class="card-body text-center">
+                                            <i class="bi bi-check-circle-fill" style="font-size: 2rem;"></i>
+                                            <h3 class="mt-2 mb-0">${highConf.length}</h3>
+                                            <small>High Confidence</small>
+                                            <div class="mt-2">
+                                                <span class="badge" style="background: rgba(255,255,255,0.3); color: white;">✓ Auto-Added</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-md-4 mb-3">
+                                    <div class="card border-0 shadow-sm" style="background: linear-gradient(135deg, #F59E0B 0%, #D97706 100%); color: white;">
+                                        <div class="card-body text-center">
+                                            <i class="bi bi-exclamation-triangle-fill" style="font-size: 2rem;"></i>
+                                            <h3 class="mt-2 mb-0">${mediumConf.length}</h3>
+                                            <small>Needs Confirmation</small>
+                                            <div class="mt-2">
+                                                <span class="badge" style="background: rgba(255,255,255,0.3); color: white;">Review</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-md-4 mb-3">
+                                    <div class="card border-0 shadow-sm" style="background: linear-gradient(135deg, #EF4444 0%, #DC2626 100%); color: white;">
+                                        <div class="card-body text-center">
+                                            <i class="bi bi-question-circle-fill" style="font-size: 2rem;"></i>
+                                            <h3 class="mt-2 mb-0">${lowConf.length}</h3>
+                                            <small>Uncertain</small>
+                                            <div class="mt-2">
+                                                <span class="badge" style="background: rgba(255,255,255,0.3); color: white;">Verify</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Items Lists -->
+                            <div id="aiConfidenceItemsList"></div>
+                        </div>
+                        <div class="modal-footer" style="background: #f8f9fa; border-top: 1px solid #e2e8f0; border-radius: 0 0 16px 16px;">
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                                <i class="bi bi-x-circle me-2"></i>Close
+                            </button>
+                            <button type="button" class="btn btn-primary" id="addSelectedItemsBtn">
+                                <i class="bi bi-plus-circle-fill me-2"></i>Add Selected Items (<span id="selectedCount">0</span>)
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(confidenceModal);
+            
+            // Handle add selected items button
+            document.getElementById('addSelectedItemsBtn').addEventListener('click', async () => {
+                const checkboxes = confidenceModal.querySelectorAll('input[type="checkbox"]:checked');
+                const selectedItems = [];
+                checkboxes.forEach(cb => {
+                    const itemData = JSON.parse(cb.dataset.item);
+                    selectedItems.push(itemData);
+                });
+                
+                if (selectedItems.length > 0) {
+                    try {
+                        const response = await fetchWithTimeout('/api/confirm_items', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'X-Requested-With': 'XMLHttpRequest'
+                            },
+                            credentials: 'same-origin',
+                            body: JSON.stringify({ items: selectedItems })
+                        });
+                        
+                        const data = await response.json();
+                        if (data.success) {
+                            showFeedback(`✅ Added ${data.items_added} items to your pantry`, 'success');
+                            if (typeof bootstrap !== 'undefined' && bootstrap.Modal) {
+                                const modalInstance = bootstrap.Modal.getInstance(confidenceModal);
+                                if (modalInstance) modalInstance.hide();
+                            }
+                            setTimeout(async () => {
+                                await reloadPantryItems();
+                            }, 300);
+                        } else {
+                            showFeedback(data.error || 'Failed to add items', 'danger');
+                        }
+                    } catch (error) {
+                        console.error('Error adding items:', error);
+                        const errorMsg = error.name === 'AbortError' 
+                            ? 'Request timed out. Please try again.' 
+                            : 'Error adding items. Please try again.';
+                        showFeedback(errorMsg, 'danger');
+                    }
+                } else {
+                    showFeedback('Please select at least one item to add', 'warning');
+                }
+                
+                // Close photo modal and reset
+                closePhotoModal();
+                resetPhotoUploadState();
+            });
+            
+            // Update selected count on checkbox change
+            confidenceModal.addEventListener('change', (e) => {
+                if (e.target.type === 'checkbox') {
+                    const checked = confidenceModal.querySelectorAll('input[type="checkbox"]:checked').length;
+                    const selectedCountEl = document.getElementById('selectedCount');
+                    if (selectedCountEl) {
+                        selectedCountEl.textContent = checked;
+                    }
+                }
+            });
+        }
+        
+        // Populate items list
+        const itemsList = confidenceModal.querySelector('#aiConfidenceItemsList');
+        itemsList.innerHTML = '';
+        
+        // Helper function to create item card
+        function createItemCard(item, confidenceLevel) {
+            const conf = item.confidence || 0;
+            const confPercent = Math.round(conf * 100);
+            
+            // Determine colors based on confidence level
+            let confColor, confLabel, borderColor, bgColor;
+            if (confidenceLevel === 'high') {
+                confColor = '#10B981'; // Green
+                confLabel = 'High Confidence';
+                borderColor = '#10B981';
+                bgColor = 'rgba(16, 185, 129, 0.05)';
+            } else if (confidenceLevel === 'medium') {
+                confColor = '#F59E0B'; // Yellow
+                confLabel = 'Needs Confirmation';
+                borderColor = '#F59E0B';
+                bgColor = 'rgba(245, 158, 11, 0.05)';
+            } else {
+                confColor = '#EF4444'; // Red
+                confLabel = 'Uncertain';
+                borderColor = '#EF4444';
+                bgColor = 'rgba(239, 68, 68, 0.05)';
+            }
+            
+            const isPartial = item.is_partial || false;
+            const expirationRisk = item.expiration_risk || null;
+            const wasAutoAdded = (item.confidence || 0) >= 0.7;
+            
+            // Expiration risk badge
+            let expRiskBadge = '';
+            if (expirationRisk) {
+                const riskColors = {
+                    'expired': '#EF4444',
+                    'critical': '#DC2626',
+                    'high': '#F59E0B',
+                    'medium': '#3B82F6',
+                    'low': '#10B981'
+                };
+                const riskLabels = {
+                    'expired': '⚠️ Expired',
+                    'critical': '🔴 Critical',
+                    'high': '🟡 High Risk',
+                    'medium': '🔵 Medium',
+                    'low': '🟢 Low Risk'
+                };
+                const riskColor = riskColors[expirationRisk] || '#64748b';
+                const riskLabel = riskLabels[expirationRisk] || expirationRisk;
+                expRiskBadge = `<span class="badge ms-2" style="background: ${riskColor}; color: white; font-size: 0.75rem;">${riskLabel}</span>`;
+            }
+            
+            // Partial recognition indicator
+            let partialBadge = '';
+            if (isPartial) {
+                partialBadge = `<span class="badge ms-2" style="background: #8B5CF6; color: white; font-size: 0.75rem;"><i class="bi bi-question-circle me-1"></i>Partial</span>`;
+            }
+            
+            // Auto-added indicator
+            let autoAddedBadge = '';
+            if (wasAutoAdded) {
+                autoAddedBadge = `<span class="badge ms-2" style="background: #10B981; color: white; font-size: 0.75rem;"><i class="bi bi-check-circle me-1"></i>Auto-Added</span>`;
+            }
+            
+            const itemDiv = document.createElement('div');
+            itemDiv.className = 'card mb-3';
+            itemDiv.style.border = `2px solid ${borderColor}`;
+            itemDiv.style.borderLeft = `4px solid ${borderColor}`;
+            itemDiv.style.background = bgColor;
+            itemDiv.style.borderRadius = '12px';
+            itemDiv.style.transition = 'all 0.2s ease';
+            
+            // Add hover effect
+            itemDiv.onmouseenter = () => {
+                itemDiv.style.transform = 'translateY(-2px)';
+                itemDiv.style.boxShadow = `0 4px 12px ${confColor}40`;
+            };
+            itemDiv.onmouseleave = () => {
+                itemDiv.style.transform = 'translateY(0)';
+                itemDiv.style.boxShadow = 'none';
+            };
+            
+            itemDiv.innerHTML = `
+                <div class="card-body p-3">
+                    <div class="form-check d-flex align-items-center">
+                        <input class="form-check-input me-3" type="checkbox" 
+                               ${wasAutoAdded ? 'disabled' : 'checked'}
+                               data-item='${JSON.stringify(item).replace(/'/g, "&#39;")}' 
+                               id="ai_item_${item.id || item.name.replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_]/g, '')}"
+                               style="width: 1.25rem; height: 1.25rem; cursor: pointer;">
+                        <label class="form-check-label flex-grow-1" for="ai_item_${item.id || item.name.replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_]/g, '')}" style="cursor: pointer;">
+                            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+                                <div style="flex: 1;">
+                                    <div class="d-flex align-items-center gap-2 flex-wrap">
+                                        <strong style="font-size: 1.05rem; color: #1e293b;">${item.name}</strong>
+                                        ${partialBadge}
+                                        ${autoAddedBadge}
+                                    </div>
+                                    <div class="mt-1">
+                                        <small class="text-muted">
+                                            <i class="bi bi-box-seam me-1"></i>${item.quantity || '1'} 
+                                            <i class="bi bi-tag-fill ms-2 me-1"></i>${item.category || 'other'}
+                                        </small>
+                                        ${expRiskBadge}
+                                    </div>
+                                </div>
+                                <div class="d-flex align-items-center gap-2">
+                                    <span class="badge" style="background: ${confColor}; color: white; font-size: 0.875rem; padding: 6px 12px; border-radius: 8px;">
+                                        <i class="bi ${confidenceLevel === 'high' ? 'bi-shield-check' : confidenceLevel === 'medium' ? 'bi-exclamation-triangle' : 'bi-question-circle'} me-1"></i>
+                                        ${confLabel}
+                                    </span>
+                                    <span class="badge" style="background: rgba(0,0,0,0.1); color: #475569; font-size: 0.875rem; padding: 6px 10px; border-radius: 6px; font-weight: 600;">
+                                        ${confPercent}%
+                                    </span>
+                                </div>
+                            </div>
+                        </label>
+                    </div>
+                </div>
+            `;
+            
+            return itemDiv;
+        }
+        
+        // Add high confidence items section
+        if (highConf.length > 0) {
+            const sectionDiv = document.createElement('div');
+            sectionDiv.className = 'mb-4';
+            sectionDiv.innerHTML = `
+                <h6 class="mb-3" style="color: #10B981; font-weight: 600;">
+                    <i class="bi bi-shield-check-fill me-2"></i>High Confidence Items (${highConf.length})
+                    <small class="text-muted ms-2">✓ Automatically added to your pantry</small>
+                </h6>
+            `;
+            itemsList.appendChild(sectionDiv);
+            
+            highConf.forEach(item => {
+                itemsList.appendChild(createItemCard(item, 'high'));
+            });
+        }
+        
+        // Add medium confidence items section
+        if (mediumConf.length > 0) {
+            const sectionDiv = document.createElement('div');
+            sectionDiv.className = 'mb-4';
+            sectionDiv.innerHTML = `
+                <h6 class="mb-3" style="color: #F59E0B; font-weight: 600;">
+                    <i class="bi bi-exclamation-triangle-fill me-2"></i>Needs Confirmation (${mediumConf.length})
+                    <small class="text-muted ms-2">Please review and confirm</small>
+                </h6>
+            `;
+            itemsList.appendChild(sectionDiv);
+            
+            mediumConf.forEach(item => {
+                itemsList.appendChild(createItemCard(item, 'medium'));
+            });
+        }
+        
+        // Add low confidence items section
+        if (lowConf.length > 0) {
+            const sectionDiv = document.createElement('div');
+            sectionDiv.className = 'mb-4';
+            sectionDiv.innerHTML = `
+                <h6 class="mb-3" style="color: #EF4444; font-weight: 600;">
+                    <i class="bi bi-question-circle-fill me-2"></i>Uncertain Items (${lowConf.length})
+                    <small class="text-muted ms-2">Verify these items carefully</small>
+                </h6>
+            `;
+            itemsList.appendChild(sectionDiv);
+            
+            lowConf.forEach(item => {
+                itemsList.appendChild(createItemCard(item, 'low'));
+            });
+        }
+        
+        // Update selected count
+        const checked = confidenceModal.querySelectorAll('input[type="checkbox"]:checked:not([disabled])').length;
+        const selectedCountEl = document.getElementById('selectedCount');
+        if (selectedCountEl) {
+            selectedCountEl.textContent = checked;
+        }
+        
+        // Show modal
+        if (typeof bootstrap !== 'undefined' && bootstrap.Modal) {
+            const modalInstance = new bootstrap.Modal(confidenceModal);
+            modalInstance.show();
+        } else {
+            confidenceModal.style.display = 'block';
+            confidenceModal.classList.add('show');
         }
     }
     
@@ -4534,10 +4918,19 @@
             return;
         }
         
-        // Get only visible items (respecting search filter)
-        const items = Array.from(container.querySelectorAll('.pantry-item-wrapper:not([style*="display: none"])'));
+        // Get all items first (including hidden ones for proper sorting)
+        const allItems = Array.from(container.querySelectorAll('.pantry-item-wrapper'));
         
-        if (items.length === 0) {
+        // Get only visible items (respecting search and filter)
+        const visibleItems = allItems.filter(item => {
+            const style = item.getAttribute('style') || '';
+            return !style.includes('display: none');
+        });
+        
+        // Use visible items for sorting, but keep track of all items
+        const itemsToSort = visibleItems.length > 0 ? visibleItems : allItems;
+        
+        if (itemsToSort.length === 0) {
             console.warn('No items to sort');
             return;
         }
@@ -4546,7 +4939,7 @@
         currentSortType = sortType;
         sessionStorage.setItem('pantrySortType', sortType);
         
-        items.sort((a, b) => {
+        itemsToSort.sort((a, b) => {
             if (sortType === 'category') {
                 const nameA = a.getAttribute('data-item-name') || '';
                 const nameB = b.getAttribute('data-item-name') || '';
@@ -4570,22 +4963,44 @@
             } else if (sortType === 'expiration') {
                 const dateA = a.getAttribute('data-expiration-date') || '9999-12-31';
                 const dateB = b.getAttribute('data-expiration-date') || '9999-12-31';
+                // Handle expired items (dates in the past) - put them first
+                const today = new Date().toISOString().split('T')[0];
+                const isExpiredA = dateA < today && dateA !== '9999-12-31';
+                const isExpiredB = dateB < today && dateB !== '9999-12-31';
+                if (isExpiredA !== isExpiredB) {
+                    return isExpiredA ? -1 : 1;
+                }
                 return dateA.localeCompare(dateB);
             } else if (sortType === 'expiration-desc') {
                 const dateA = a.getAttribute('data-expiration-date') || '9999-12-31';
                 const dateB = b.getAttribute('data-expiration-date') || '9999-12-31';
+                return dateB.localeCompare(dateA);
+            } else if (sortType === 'recent') {
+                // Sort by recently added
+                const dateA = a.getAttribute('data-added-date') || '';
+                const dateB = b.getAttribute('data-added-date') || '';
+                // Most recent first (descending)
                 return dateB.localeCompare(dateA);
             }
             return 0;
         });
         
         // Clear container and re-append sorted items with category grouping
+        // First, hide all items that should be hidden (filters)
+        allItems.forEach(item => {
+            const style = item.getAttribute('style') || '';
+            const shouldHide = style.includes('display: none');
+            if (shouldHide) {
+                item.style.display = 'none';
+            }
+        });
+        
         container.innerHTML = '';
         
         if (sortType === 'category') {
             // Group items by category for better visual organization
             const categoryGroups = {};
-            items.forEach(item => {
+            itemsToSort.forEach(item => {
                 const name = item.getAttribute('data-item-name') || '';
                 const category = getItemCategory(name);
                 if (!categoryGroups[category]) {
@@ -4600,7 +5015,7 @@
             });
             
             // Only show category headers if we have multiple categories or multiple items
-            const totalItems = items.length;
+            const totalItems = itemsToSort.length;
             const showCategoryHeaders = categoryKeys.length > 1 || totalItems > 3;
             
             categoryKeys.forEach((category, categoryIndex) => {
@@ -4645,19 +5060,19 @@
             }
         } else {
             // Regular sorting without category grouping
-        items.forEach((item, index) => {
-            const card = item.querySelector('.pantry-item-card');
-            if (card) {
-                card.style.animationDelay = (index * 0.05) + 's';
-            }
-            container.appendChild(item);
-        });
-            
-            // Hide category info
-            const categoryInfo = document.getElementById('categoryGroupInfo');
-            if (categoryInfo) {
-                categoryInfo.style.display = 'none';
-            }
+            itemsToSort.forEach((item, index) => {
+                const card = item.querySelector('.pantry-item-card');
+                if (card) {
+                    card.style.animationDelay = (index * 0.05) + 's';
+                }
+                container.appendChild(item);
+                
+                // Hide category info
+                const categoryInfo = document.getElementById('categoryGroupInfo');
+                if (categoryInfo) {
+                    categoryInfo.style.display = 'none';
+                }
+            });
         }
         
         // Ensure container is visible
@@ -4673,6 +5088,54 @@
         initializeDeleteButtons();
         initializeQuantityEditing();
         initializeExpirationEditing();
+        
+        // Re-apply filters after sorting to maintain filter state
+        document.querySelectorAll('.filter-chip.active').forEach(chip => {
+            const filter = chip.getAttribute('data-filter');
+            if (filter && filter !== 'category') {
+                // Re-apply filter logic
+                const allItems = Array.from(container.querySelectorAll('.pantry-item-wrapper'));
+                allItems.forEach(item => {
+                    let show = true;
+                    if (filter === 'expiring-soon') {
+                        const expirationBadge = item.querySelector('.expiration-badge[data-exp-date]');
+                        if (expirationBadge) {
+                            const expDate = expirationBadge.getAttribute('data-exp-date');
+                            if (expDate && expDate !== '9999-12-31') {
+                                const daysDiff = getDaysUntilExpiration(expDate);
+                                show = daysDiff >= 0 && daysDiff <= 7;
+                            } else {
+                                show = false;
+                            }
+                        } else {
+                            show = false;
+                        }
+                    } else if (filter === 'recent') {
+                        const addedDateAttr = item.getAttribute('data-added-date');
+                        if (addedDateAttr && addedDateAttr !== '') {
+                            try {
+                                let addedDate;
+                                if (addedDateAttr.includes('T')) {
+                                    addedDate = new Date(addedDateAttr);
+                                } else {
+                                    addedDate = new Date(addedDateAttr + 'T00:00:00');
+                                }
+                                const today = new Date();
+                                today.setHours(0, 0, 0, 0);
+                                addedDate.setHours(0, 0, 0, 0);
+                                const daysDiff = Math.floor((today - addedDate) / (1000 * 60 * 60 * 24));
+                                show = daysDiff >= 0 && daysDiff <= 7;
+                            } catch (e) {
+                                show = true;
+                            }
+                        } else {
+                            show = false;
+                        }
+                    }
+                    item.style.display = show ? '' : 'none';
+                });
+            }
+        });
         
         // Update expiration badges and card backgrounds after sorting
         setTimeout(() => {
@@ -4823,8 +5286,8 @@
             btnText.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Adding...';
         }
         
-        // Submit form using fetch
-        fetch('/add', {
+        // Submit form using fetch with timeout
+        fetchWithTimeout('/add', {
             method: 'POST',
             body: formData,
             credentials: 'same-origin', // Include cookies for session
@@ -4837,8 +5300,28 @@
             const contentType = response.headers.get('content-type');
             if (contentType && contentType.includes('application/json')) {
                 // JSON response (AJAX mode)
-                return response.json().then(async data => {
-                    if (data.success) {
+                // Parse JSON even for error responses
+                const data = await response.json().catch(async (parseError) => {
+                    // If JSON parsing fails, try to get text
+                    const text = await response.text().catch(() => 'Unknown error');
+                    console.error('Failed to parse JSON response:', text);
+                    return { success: false, error: text || 'Unknown error' };
+                });
+                
+                // Check if response is OK
+                if (!response.ok) {
+                    // Server returned error status with JSON
+                    const errorMsg = data.error || `Server error (${response.status})`;
+                    if (feedback) {
+                        showFeedback(errorMsg, 'danger');
+                    } else {
+                        alert(errorMsg);
+                    }
+                    resetButton();
+                    return;
+                }
+                
+                if (data.success) {
                         // Success - show feedback and reload
                         if (feedback) {
                             showFeedback(data.message || 'Item added successfully!', 'success');
@@ -4884,14 +5367,13 @@
                         setTimeout(async () => {
                             await reloadPantryItems();
                         }, 300);
-                    } else {
-                        // Error from server
-                        if (feedback) {
-                            showFeedback(data.error || 'Failed to add item. Please try again.', 'danger');
-                        }
-                        resetButton();
+                } else {
+                    // Error from server
+                    if (feedback) {
+                        showFeedback(data.error || 'Failed to add item. Please try again.', 'danger');
                     }
-                });
+                    resetButton();
+                }
             } else {
                 // HTML response (redirect) - Flask redirects return 302, then 200
                 if (response.ok || response.status === 200 || response.status === 302) {
@@ -4938,8 +5420,16 @@
         })
         .catch(error => {
             console.error('Error adding item:', error);
+            let errorMessage = 'Failed to add item. Please try again.';
+            if (error.name === 'AbortError') {
+                errorMessage = 'Request timed out. Please check your connection and try again.';
+            } else if (error.message) {
+                errorMessage = 'Failed to add item: ' + error.message;
+            }
             if (feedback) {
-                showFeedback('Failed to add item: ' + error.message, 'danger');
+                showFeedback(errorMessage, 'danger');
+            } else {
+                alert(errorMessage);
             }
             resetButton();
         });
@@ -6048,19 +6538,26 @@
                         const addedDateAttr = item.getAttribute('data-added-date');
                         if (addedDateAttr && addedDateAttr !== '') {
                             try {
-                                const addedDate = new Date(addedDateAttr);
+                                // Handle both ISO format and YYYY-MM-DD format
+                                let addedDate;
+                                if (addedDateAttr.includes('T')) {
+                                    addedDate = new Date(addedDateAttr);
+                                } else {
+                                    addedDate = new Date(addedDateAttr + 'T00:00:00');
+                                }
                                 const today = new Date();
                                 today.setHours(0, 0, 0, 0);
                                 addedDate.setHours(0, 0, 0, 0);
                                 const daysDiff = Math.floor((today - addedDate) / (1000 * 60 * 60 * 24));
                                 show = daysDiff >= 0 && daysDiff <= 7;
                             } catch (e) {
+                                console.warn('Error parsing added date:', addedDateAttr, e);
                                 // If date parsing fails, show item
                                 show = true;
                             }
                         } else {
-                            // If no added date, show all items
-                            show = true;
+                            // If no added date, hide item when filter is active
+                            show = false;
                         }
                     }
                 }
@@ -6068,6 +6565,13 @@
                 
                 item.style.display = show ? '' : 'none';
             });
+            
+            // Re-apply sorting after filter change to maintain sort order
+            if (currentSortType && typeof sortPantry === 'function') {
+                setTimeout(() => {
+                    sortPantry(currentSortType);
+                }, 50);
+            }
             
             // Update active state styling
             if (isActive) {
