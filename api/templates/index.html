@@ -32,17 +32,22 @@
         z-index: 1;
     }
     
-    /* Fix modal backdrop - proper isolation to prevent page blur */
+    /* Fix modal backdrop - DISABLED: No gray screen */
     .modal-backdrop {
-        background-color: rgba(0, 0, 0, 0.5) !important;
-        z-index: 1040 !important; /* Bootstrap default */
-        position: fixed !important;
-        top: 0 !important;
-        left: 0 !important;
-        width: 100% !important;
-        height: 100% !important;
-        inset: 0 !important;
-        pointer-events: auto !important; /* Allow backdrop clicks to close modal */
+        display: none !important; /* Completely hide backdrop */
+        opacity: 0 !important;
+        visibility: hidden !important;
+        pointer-events: none !important;
+        background-color: transparent !important;
+    }
+    
+    /* Specifically hide backdrop for addItemModal */
+    #addItemModal + .modal-backdrop,
+    body:has(#addItemModal.show) .modal-backdrop {
+        display: none !important;
+        opacity: 0 !important;
+        visibility: hidden !important;
+        pointer-events: none !important;
     }
     
     /* Modal container - must be above backdrop - NO ANIMATIONS */
@@ -115,23 +120,17 @@
         padding-right: 0 !important;
     }
     
-    .modal-backdrop {
-        transition: none !important; /* Disable backdrop transitions */
-        opacity: 1 !important; /* Always visible when shown */
-    }
-    
-    .modal-backdrop.fade {
-        transition: none !important; /* Disable fade transition */
-        opacity: 1 !important;
-    }
-    
-    .modal-backdrop.show {
-        opacity: 1 !important;
-        display: block !important;
-    }
-    
+    /* Backdrop completely disabled - no gray screen */
+    .modal-backdrop,
+    .modal-backdrop.fade,
+    .modal-backdrop.show,
     .modal-backdrop.fade.show {
-        opacity: 1 !important; /* Instant show even with fade class */
+        display: none !important;
+        opacity: 0 !important;
+        visibility: hidden !important;
+        pointer-events: none !important;
+        background-color: transparent !important;
+        transition: none !important;
     }
     
     /* Disable modal dialog transitions */
@@ -2255,7 +2254,7 @@
 </div>
 
 <!-- Add Item Modal -->
-<div class="modal" id="addItemModal" tabindex="-1" aria-labelledby="addItemModalLabel" aria-hidden="true" data-bs-backdrop="true" data-bs-keyboard="true" role="dialog" aria-modal="true">
+<div class="modal" id="addItemModal" tabindex="-1" aria-labelledby="addItemModalLabel" aria-hidden="true" data-bs-backdrop="false" data-bs-keyboard="true" role="dialog" aria-modal="true">
     <div class="modal-dialog modal-dialog-centered" style="max-height: 90vh;">
         <div class="modal-content" style="border-radius: 16px; border: none; position: relative; max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 50px rgba(0, 0, 0, 0.25);">
             <div class="modal-header border-0">
@@ -2331,8 +2330,54 @@
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body p-4" style="background: #f8f9fa;">
+                <!-- Guided Scan Mode Banner -->
+                <div id="guidedScanBanner" class="alert alert-info mb-3" style="display: none; border-radius: 12px; background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%); color: white; border: none;">
+                    <div class="d-flex align-items-start gap-2">
+                        <i class="bi bi-lightbulb-fill" style="font-size: 1.5rem; margin-top: 2px;"></i>
+                        <div style="flex: 1;">
+                            <h6 class="fw-bold mb-2" style="color: white;">📸 Guided Fridge Scan Mode</h6>
+                            <ul class="mb-0 small" style="padding-left: 20px;">
+                                <li>Scan <strong>one shelf at a time</strong> for best accuracy</li>
+                                <li>Use the <strong>grid overlay</strong> to align your photo</li>
+                                <li>Ensure <strong>good lighting</strong> - avoid shadows</li>
+                                <li>Wait for <strong>quality check</strong> before analyzing</li>
+                            </ul>
+                        </div>
+                        <button type="button" class="btn-close btn-close-white" onclick="document.getElementById('guidedScanBanner').style.display='none';" aria-label="Close"></button>
+                    </div>
+                </div>
+                
+                <!-- Scan Quality Indicator -->
+                <div id="scanQualityIndicator" class="mb-3" style="display: none;">
+                    <div class="d-flex align-items-center gap-2 p-3 rounded" style="background: #f8f9fa; border: 2px solid #e2e8f0;">
+                        <i id="qualityIcon" class="bi" style="font-size: 1.5rem;"></i>
+                        <div style="flex: 1;">
+                            <h6 class="mb-1 fw-bold">Scan Quality: <span id="qualityScoreText">Checking...</span></h6>
+                            <p id="qualityMessage" class="mb-0 small text-muted"></p>
+                        </div>
+                        <button type="button" class="btn btn-sm btn-outline-primary" id="retakePhotoBtn" style="display: none;">
+                            <i class="bi bi-arrow-clockwise me-1"></i>Retake
+                        </button>
+                    </div>
+                </div>
+                
                 <!-- Camera View (Hidden by default) -->
-                <div id="cameraView" class="camera-preview mb-3" style="display: none;">
+                <div id="cameraView" class="camera-preview mb-3" style="display: none; position: relative;">
+                    <!-- Grid Overlay for Alignment -->
+                    <div id="gridOverlay" class="grid-overlay" style="display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 10;">
+                        <svg width="100%" height="100%" style="position: absolute; top: 0; left: 0;">
+                            <!-- Vertical lines -->
+                            <line x1="33.33%" y1="0" x2="33.33%" y2="100%" stroke="rgba(139, 92, 246, 0.5)" stroke-width="2"/>
+                            <line x1="66.66%" y1="0" x2="66.66%" y2="100%" stroke="rgba(139, 92, 246, 0.5)" stroke-width="2"/>
+                            <!-- Horizontal lines -->
+                            <line x1="0" y1="33.33%" x2="100%" y2="33.33%" stroke="rgba(139, 92, 246, 0.5)" stroke-width="2"/>
+                            <line x1="0" y1="66.66%" x2="100%" y2="66.66%" stroke="rgba(139, 92, 246, 0.5)" stroke-width="2"/>
+                        </svg>
+                        <div class="text-center p-2" style="position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%); background: rgba(139, 92, 246, 0.9); color: white; border-radius: 8px; font-size: 0.75rem; font-weight: 600;">
+                            📐 Use grid to align shelf
+                        </div>
+                    </div>
+                    
                     <!-- Camera Status Messages -->
                     <div id="cameraStatus" class="camera-status-message" style="display: none;">
                         <div class="d-flex align-items-center justify-content-center gap-2 p-3">
@@ -2490,11 +2535,72 @@
         console.error('Stack:', e.error?.stack);
     });
     
+    // Handle unhandled promise rejections
+    window.addEventListener('unhandledrejection', function(e) {
+        console.error('Unhandled Promise Rejection:', e.reason);
+        e.preventDefault(); // Prevent default browser behavior
+    });
+    
     // Ensure all critical functions are available
     console.log('Initializing SmartPantry JavaScript...');
     
     let selectedFile = null;
     let cameraStream = null;
+    
+    // Request timeout helper with AbortController
+    const REQUEST_TIMEOUT_MS = 30000; // 30 seconds default timeout
+    const UPLOAD_TIMEOUT_MS = 60000; // 60 seconds for uploads
+    
+    function fetchWithTimeout(url, options = {}, timeoutMs = REQUEST_TIMEOUT_MS) {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+        
+        return fetch(url, {
+            ...options,
+            signal: controller.signal
+        }).finally(() => clearTimeout(timeoutId));
+    }
+    
+    // Retry helper for failed requests
+    async function fetchWithRetry(url, options = {}, maxRetries = 3, retryDelay = 1000) {
+        let lastError;
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
+            try {
+                const response = await fetchWithTimeout(url, options);
+                return response;
+            } catch (error) {
+                lastError = error;
+                if (error.name === 'AbortError') {
+                    console.warn(`Request to ${url} timed out (attempt ${attempt}/${maxRetries})`);
+                } else {
+                    console.warn(`Request to ${url} failed (attempt ${attempt}/${maxRetries}):`, error.message);
+                }
+                if (attempt < maxRetries) {
+                    await new Promise(resolve => setTimeout(resolve, retryDelay * attempt));
+                }
+            }
+        }
+        throw lastError;
+    }
+    
+    // Safe DOM query helper
+    function safeQuerySelector(selector, parent = document) {
+        try {
+            return parent.querySelector(selector);
+        } catch (e) {
+            console.warn(`Failed to query selector: ${selector}`, e);
+            return null;
+        }
+    }
+    
+    // Safe element property setter
+    function safeSetProperty(element, property, value) {
+        if (element && element[property] !== undefined) {
+            element[property] = value;
+            return true;
+        }
+        return false;
+    }
 
     // DOM Elements
     const photoModal = document.getElementById('photoModal');
@@ -2794,6 +2900,13 @@
         }
         if (captureBtn) captureBtn.style.display = 'block';
         if (testCameraBtn) testCameraBtn.style.display = 'none';
+        
+        // Show grid overlay if guided scan mode is enabled
+        const guidedScanEnabled = document.getElementById('guidedScanMode')?.checked || false;
+        const gridOverlay = document.getElementById('gridOverlay');
+        if (guidedScanEnabled && gridOverlay && cameraStreamVideo) {
+            gridOverlay.style.display = 'block';
+        }
     }
     
     // Function to initialize camera - Single-frame capture (no live video)
@@ -2833,6 +2946,13 @@
             setTimeout(() => {
                 cameraView.style.opacity = '1';
             }, 150);
+        }
+        
+        // Show guided scan banner if enabled
+        const guidedScanEnabled = document.getElementById('guidedScanMode')?.checked || false;
+        const guidedScanBanner = document.getElementById('guidedScanBanner');
+        if (guidedScanEnabled && guidedScanBanner) {
+            guidedScanBanner.style.display = 'block';
         }
         
         // Show status immediately
@@ -3194,6 +3314,153 @@
         });
     }
 
+    // Scan Quality Checking Function
+    function checkImageQuality(file) {
+        return new Promise((resolve) => {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const img = new Image();
+                img.onload = () => {
+                    // Create canvas to analyze image
+                    const canvas = document.createElement('canvas');
+                    const ctx = canvas.getContext('2d');
+                    canvas.width = img.width;
+                    canvas.height = img.height;
+                    ctx.drawImage(img, 0, 0);
+                    
+                    // Get image data
+                    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                    const data = imageData.data;
+                    
+                    // Calculate brightness (mean)
+                    let brightnessSum = 0;
+                    for (let i = 0; i < data.length; i += 4) {
+                        const gray = (data[i] + data[i+1] + data[i+2]) / 3;
+                        brightnessSum += gray;
+                    }
+                    const brightness = (brightnessSum / (data.length / 4)) / 255;
+                    
+                    // Calculate blur (Laplacian variance)
+                    let variance = 0;
+                    let mean = 0;
+                    const laplacianKernel = [0, -1, 0, -1, 4, -1, 0, -1, 0];
+                    
+                    // Convert to grayscale and calculate Laplacian
+                    const grayData = [];
+                    for (let i = 0; i < data.length; i += 4) {
+                        grayData.push((data[i] + data[i+1] + data[i+2]) / 3);
+                    }
+                    
+                    // Calculate Laplacian variance (blur detection)
+                    for (let y = 1; y < img.height - 1; y++) {
+                        for (let x = 1; x < img.width - 1; x++) {
+                            let laplacian = 0;
+                            let kernelIdx = 0;
+                            for (let ky = -1; ky <= 1; ky++) {
+                                for (let kx = -1; kx <= 1; kx++) {
+                                    const idx = ((y + ky) * img.width + (x + kx)) * 4;
+                                    laplacian += grayData[(y + ky) * img.width + (x + kx)] * laplacianKernel[kernelIdx];
+                                    kernelIdx++;
+                                }
+                            }
+                            mean += laplacian;
+                        }
+                    }
+                    mean /= ((img.width - 2) * (img.height - 2));
+                    
+                    for (let y = 1; y < img.height - 1; y++) {
+                        for (let x = 1; x < img.width - 1; x++) {
+                            let laplacian = 0;
+                            let kernelIdx = 0;
+                            for (let ky = -1; ky <= 1; ky++) {
+                                for (let kx = -1; kx <= 1; kx++) {
+                                    laplacian += grayData[(y + ky) * img.width + (x + kx)] * laplacianKernel[kernelIdx];
+                                    kernelIdx++;
+                                }
+                            }
+                            variance += Math.pow(laplacian - mean, 2);
+                        }
+                    }
+                    variance /= ((img.width - 2) * (img.height - 2));
+                    
+                    // Determine quality
+                    let quality = 'Good';
+                    let qualityIcon = 'bi-check-circle-fill';
+                    let qualityColor = '#10B981';
+                    let messages = [];
+                    
+                    if (brightness < 0.3) {
+                        quality = 'Poor';
+                        qualityIcon = 'bi-exclamation-triangle-fill';
+                        qualityColor = '#EF4444';
+                        messages.push('Image is too dark - improve lighting');
+                    } else if (brightness < 0.4) {
+                        quality = 'Fair';
+                        qualityIcon = 'bi-info-circle-fill';
+                        qualityColor = '#F59E0B';
+                        messages.push('Image is somewhat dark - consider better lighting');
+                    }
+                    
+                    if (variance < 100) {
+                        if (quality === 'Good') {
+                            quality = 'Poor';
+                            qualityIcon = 'bi-exclamation-triangle-fill';
+                            qualityColor = '#EF4444';
+                        } else if (quality === 'Fair') {
+                            quality = 'Poor';
+                        }
+                        messages.push('Image is blurry - hold camera steady');
+                    } else if (variance < 200) {
+                        if (quality === 'Good') {
+                            quality = 'Fair';
+                            qualityIcon = 'bi-info-circle-fill';
+                            qualityColor = '#F59E0B';
+                        }
+                        messages.push('Image is slightly blurry');
+                    }
+                    
+                    resolve({
+                        quality,
+                        icon: qualityIcon,
+                        color: qualityColor,
+                        messages: messages.length > 0 ? messages : ['Image quality is good'],
+                        brightness: Math.round(brightness * 100),
+                        blurScore: Math.round(variance)
+                    });
+                };
+                img.src = e.target.result;
+            };
+            reader.readAsDataURL(file);
+        });
+    }
+    
+    // Show scan quality indicator
+    function showScanQuality(qualityData) {
+        const indicator = document.getElementById('scanQualityIndicator');
+        const qualityScoreText = document.getElementById('qualityScoreText');
+        const qualityMessage = document.getElementById('qualityMessage');
+        const qualityIcon = document.getElementById('qualityIcon');
+        const retakeBtn = document.getElementById('retakePhotoBtn');
+        
+        if (!indicator) return;
+        
+        indicator.style.display = 'block';
+        if (qualityScoreText) {
+            qualityScoreText.textContent = qualityData.quality;
+            qualityScoreText.style.color = qualityData.color;
+        }
+        if (qualityMessage) {
+            qualityMessage.textContent = qualityData.messages.join(' • ');
+        }
+        if (qualityIcon) {
+            qualityIcon.className = `bi ${qualityData.icon}`;
+            qualityIcon.style.color = qualityData.color;
+        }
+        if (retakeBtn) {
+            retakeBtn.style.display = qualityData.quality === 'Poor' ? 'block' : 'none';
+        }
+    }
+
     // Upload photo - Redone with better error handling and state management
     if (uploadBtn && uploadBtnText) {
         uploadBtn.addEventListener('click', async function handlePhotoUpload() {
@@ -3212,8 +3479,32 @@
                 return;
             }
 
+            // Check image quality first
+            const qualityData = await checkImageQuality(selectedFile);
+            showScanQuality(qualityData);
+            
+            // Warn user if quality is poor
+            if (qualityData.quality === 'Poor') {
+                const proceed = confirm(`⚠️ Scan Quality: ${qualityData.quality}\n\n${qualityData.messages.join('\n')}\n\nContinue anyway?`);
+                if (!proceed) {
+                    return;
+                }
+            }
+
+            // Check if multi-photo mode is enabled
+            const multiPhotoMode = document.getElementById('multiPhotoMode')?.checked || false;
+            const photoFiles = multiPhotoMode ? Array.from(document.getElementById('mobileCameraInput')?.files || []) : [selectedFile];
+            
             const formData = new FormData();
-            formData.append('photo', selectedFile);
+            if (multiPhotoMode && photoFiles.length > 1) {
+                // Multi-photo mode: use batch endpoint
+                photoFiles.forEach((file, idx) => {
+                    formData.append('photos[]', file);
+                });
+            } else {
+                // Single photo mode
+                formData.append('photo', selectedFile);
+            }
 
             // Set loading state - Clear visual feedback
             uploadBtn.disabled = true;
@@ -3244,14 +3535,15 @@
             }
 
             try {
-                const response = await fetch('{{ url_for("upload_photo") }}', {
+                // Use longer timeout for uploads (60 seconds)
+                const response = await fetchWithTimeout(uploadEndpoint, {
                     method: 'POST',
                     body: formData,
                     credentials: 'same-origin',
                     headers: {
                         'X-Requested-With': 'XMLHttpRequest'  // Request JSON response
                     }
-                });
+                }, UPLOAD_TIMEOUT_MS);
 
                 if (response.ok) {
                     const contentType = response.headers.get('content-type');
@@ -3316,7 +3608,14 @@
                 }
             } catch (err) {
                 console.error('Photo upload error:', err);
-                const errorMessage = err.message || 'Network error. Please check your connection and try again.';
+                let errorMessage = 'Network error. Please check your connection and try again.';
+                
+                // Handle specific error types
+                if (err.name === 'AbortError') {
+                    errorMessage = 'Request timed out. The image may be too large or the server is busy. Please try again.';
+                } else if (err.message) {
+                    errorMessage = err.message;
+                }
                 
                 // Show error in modal
                 const uploadFeedback = document.getElementById('uploadFeedback');
@@ -3463,7 +3762,7 @@
                 
                 if (selectedItems.length > 0) {
                     try {
-                        const response = await fetch('/api/confirm_items', {
+                        const response = await fetchWithTimeout('/api/confirm_items', {
                             method: 'POST',
                             headers: {
                                 'Content-Type': 'application/json',
@@ -3488,7 +3787,10 @@
                         }
                     } catch (error) {
                         console.error('Error confirming items:', error);
-                        showFeedback('Error confirming items. Please try again.', 'danger');
+                        const errorMsg = error.name === 'AbortError' 
+                            ? 'Request timed out. Please try again.' 
+                            : 'Error confirming items. Please try again.';
+                        showFeedback(errorMsg, 'danger');
                     }
                 }
                 
@@ -3506,10 +3808,48 @@
             const confPercent = Math.round((item.confidence || 0) * 100);
             const confColor = confPercent >= 50 ? '#F59E0B' : '#EF4444';
             const confLabel = confPercent >= 50 ? 'Medium' : 'Low';
+            const isPartial = item.is_partial || false;
+            const expirationRisk = item.expiration_risk || null;
+            
+            // Expiration risk badge
+            let expRiskBadge = '';
+            if (expirationRisk) {
+                const riskColors = {
+                    'expired': '#EF4444',
+                    'critical': '#DC2626',
+                    'high': '#F59E0B',
+                    'medium': '#3B82F6',
+                    'low': '#10B981'
+                };
+                const riskLabels = {
+                    'expired': '⚠️ Expired',
+                    'critical': '🔴 Critical',
+                    'high': '🟡 High Risk',
+                    'medium': '🔵 Medium',
+                    'low': '🟢 Low Risk'
+                };
+                const riskColor = riskColors[expirationRisk] || '#64748b';
+                const riskLabel = riskLabels[expirationRisk] || expirationRisk;
+                expRiskBadge = `<span class="badge ms-2" style="background: ${riskColor}; color: white; font-size: 0.75rem;">
+                    ${riskLabel}
+                </span>`;
+            }
+            
+            // Partial recognition indicator
+            let partialBadge = '';
+            if (isPartial) {
+                partialBadge = `<span class="badge ms-2" style="background: #8B5CF6; color: white; font-size: 0.75rem;">
+                    <i class="bi bi-question-circle me-1"></i>Partial Recognition
+                </span>`;
+            }
             
             const itemDiv = document.createElement('div');
             itemDiv.className = 'card mb-2';
             itemDiv.style.border = '1px solid #e2e8f0';
+            if (expirationRisk === 'expired' || expirationRisk === 'critical') {
+                itemDiv.style.borderLeft = '4px solid #EF4444';
+                itemDiv.style.background = 'rgba(239, 68, 68, 0.05)';
+            }
             itemDiv.innerHTML = `
                 <div class="card-body p-3">
                     <div class="form-check d-flex align-items-center">
@@ -3517,10 +3857,10 @@
                                data-item='${JSON.stringify(item).replace(/'/g, "&#39;")}' 
                                id="item_${item.name.replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_]/g, '')}">
                         <label class="form-check-label flex-grow-1" for="item_${item.name.replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_]/g, '')}">
-                            <div class="d-flex justify-content-between align-items-center">
+                            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
                                 <div>
-                                    <strong>${item.name}</strong>
-                                    <small class="text-muted d-block">${item.quantity || '1'} • ${item.category || 'other'}</small>
+                                    <strong>${item.name}${partialBadge}</strong>
+                                    <small class="text-muted d-block">${item.quantity || '1'} • ${item.category || 'other'}${expRiskBadge}</small>
                                 </div>
                                 <span class="badge" style="background: ${confColor}; color: white;">
                                     ${confLabel} (${confPercent}%)
@@ -4666,14 +5006,22 @@
     
     // Reload pantry items without refreshing the page
     // Make reloadPantryItems globally accessible
+    let reloadInProgress = false;  // Prevent concurrent reloads
     window.reloadPantryItems = async function reloadPantryItems() {
+        // Prevent concurrent reloads
+        if (reloadInProgress) {
+            console.log('Reload already in progress, skipping...');
+            return;
+        }
+        reloadInProgress = true;
+        
         // Store scroll position before reload
         const scrollPosition = window.pageYOffset || document.documentElement.scrollTop;
         
         try {
             // Add cache busting to ensure we get fresh data
             const url = window.location.pathname + '?t=' + Date.now();
-            const response = await fetch(url, {
+            const response = await fetchWithTimeout(url, {
                 method: 'GET',
                 headers: {
                     'X-Requested-With': 'XMLHttpRequest'
@@ -4949,11 +5297,18 @@
             
         } catch (error) {
             console.error('Error reloading pantry items:', error);
+            // Handle timeout errors specifically
+            if (error.name === 'AbortError') {
+                console.warn('Reload request timed out');
+            }
             // Don't reload page - just show error message
             const feedback = document.getElementById('addItemFeedback');
             if (feedback) {
                 showFeedback('Failed to reload items. Please refresh the page.', 'warning');
             }
+        } finally {
+            // Always reset the reload flag
+            reloadInProgress = false;
         }
     }
     
@@ -4981,7 +5336,7 @@
             const encodedName = encodeURIComponent(itemName.trim());
             console.log('Deleting item:', itemName, 'Encoded:', encodedName);
             
-            const response = await fetch(`/delete/${encodedName}`, {
+            const response = await fetchWithTimeout(`/delete/${encodedName}`, {
                 method: 'GET',
                 headers: {
                     'X-Requested-With': 'XMLHttpRequest',
@@ -5131,7 +5486,7 @@
             // Encode item ID for URL (use 'unknown' if empty to avoid invalid URL)
             const encodedItemId = itemId && itemId.trim() ? encodeURIComponent(itemId) : 'unknown';
             
-            const response = await fetch(`/api/pantry/${encodedItemId}`, {
+            const response = await fetchWithTimeout(`/api/pantry/${encodedItemId}`, {
                 method: 'PUT',
                 headers: headers,
                 body: JSON.stringify(updateData),
@@ -5815,13 +6170,17 @@
         wrapReloadPantryItems();
     }
     
-    // Cleanup stuck backdrops function
+    // Cleanup stuck backdrops function - ALWAYS remove backdrops
     function cleanupStuckBackdrops() {
+        // Always remove all backdrops - we don't want them at all
+        const backdrops = document.querySelectorAll('.modal-backdrop');
+        backdrops.forEach(backdrop => {
+            backdrop.style.display = 'none';
+            backdrop.remove();
+        });
+        // Don't remove modal-open class if modals are actually open
         const openModals = document.querySelectorAll('.modal.show');
         if (openModals.length === 0) {
-            // No modals open, remove all backdrops
-            const backdrops = document.querySelectorAll('.modal-backdrop');
-            backdrops.forEach(backdrop => backdrop.remove());
             document.body.classList.remove('modal-open');
             document.body.style.overflow = '';
             document.body.style.paddingRight = '';
@@ -5836,10 +6195,27 @@
             // Clean up any stuck backdrops on page load
             cleanupStuckBackdrops();
             
-            // Set up modal event listeners to ensure proper cleanup
+            // Set up modal event listeners to ensure proper cleanup and prevent backdrop
             const addItemModal = document.getElementById('addItemModal');
             if (addItemModal && typeof bootstrap !== 'undefined' && bootstrap.Modal) {
+                // Prevent backdrop from being created
+                addItemModal.addEventListener('show.bs.modal', function(e) {
+                    // Remove any existing backdrop immediately
+                    const backdrops = document.querySelectorAll('.modal-backdrop');
+                    backdrops.forEach(backdrop => backdrop.remove());
+                    document.body.classList.remove('modal-open');
+                });
+                
                 addItemModal.addEventListener('shown.bs.modal', function() {
+                    // Remove any backdrop that was created
+                    const backdrops = document.querySelectorAll('.modal-backdrop');
+                    backdrops.forEach(backdrop => {
+                        backdrop.style.display = 'none';
+                        backdrop.remove();
+                    });
+                    document.body.classList.remove('modal-open');
+                    document.body.style.overflow = '';
+                    
                     // Ensure modal content is clickable when shown
                     const modalContent = addItemModal.querySelector('.modal-content');
                     if (modalContent) {
@@ -5855,6 +6231,23 @@
                 addItemModal.addEventListener('hidden.bs.modal', function() {
                     // Clean up backdrop when modal is hidden
                     cleanupStuckBackdrops();
+                });
+            }
+            
+            // Also prevent backdrop on photo modal
+            const photoModal = document.getElementById('photoModal');
+            if (photoModal && typeof bootstrap !== 'undefined' && bootstrap.Modal) {
+                photoModal.addEventListener('show.bs.modal', function(e) {
+                    const backdrops = document.querySelectorAll('.modal-backdrop');
+                    backdrops.forEach(backdrop => backdrop.remove());
+                });
+                photoModal.addEventListener('shown.bs.modal', function() {
+                    const backdrops = document.querySelectorAll('.modal-backdrop');
+                    backdrops.forEach(backdrop => {
+                        backdrop.style.display = 'none';
+                        backdrop.remove();
+                    });
+                    document.body.classList.remove('modal-open');
                 });
             }
             
@@ -5898,9 +6291,39 @@
             }, 1000);
             
             // Periodic cleanup check (every 2 seconds)
-            setInterval(cleanupStuckBackdrops, 2000);
+            const cleanupIntervalId = setInterval(cleanupStuckBackdrops, 2000);
+            
+            // Store interval ID for cleanup on unload
+            window._smartPantryCleanupInterval = cleanupIntervalId;
         } catch (error) {
             console.error('Error in DOMContentLoaded handler:', error);
+        }
+    });
+    
+    // Cleanup on page unload to prevent memory leaks
+    window.addEventListener('beforeunload', function() {
+        try {
+            // Stop camera stream if running
+            if (cameraStream) {
+                cameraStream.getTracks().forEach(track => track.stop());
+                cameraStream = null;
+            }
+            
+            // Clear video element source
+            const cameraStreamVideo = document.getElementById('cameraStream');
+            if (cameraStreamVideo && cameraStreamVideo.srcObject) {
+                cameraStreamVideo.srcObject = null;
+            }
+            
+            // Clear cleanup interval
+            if (window._smartPantryCleanupInterval) {
+                clearInterval(window._smartPantryCleanupInterval);
+            }
+            
+            // Clear selected file
+            selectedFile = null;
+        } catch (e) {
+            console.warn('Error during cleanup:', e);
         }
     });
     

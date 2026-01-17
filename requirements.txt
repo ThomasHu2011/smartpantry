@@ -3,9 +3,13 @@ openai==2.8.1
 python-dotenv==1.2.1
 Pillow==12.0.0
 gunicorn==21.2.0
-transformers==4.40.0
-torch==2.2.0
-torchvision==0.17.0
-easyocr==1.7.1
-numpy==1.26.4
+
+# ML Vision dependencies (OPTIONAL - very large packages)
+# Uncomment these ONLY if you enable ML_VISION_ENABLED=true and have sufficient storage
+# These packages can cause serverless functions to exceed size limits (>2GB)
+# transformers==4.40.0
+# torch==2.2.0
+# torchvision==0.17.0
+# easyocr==1.7.1
+# numpy==1.26.4
 
