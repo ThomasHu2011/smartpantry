@@ -163,7 +163,10 @@
                                     <br><span class="badge bg-light text-dark">{{ recipe.difficulty }}</span>
                                     {% endif %}
                                     {% if recipe.cooking_time %}
-                                    <br><small class="opacity-75">{{ recipe.cooking_time }}</small>
+                                    <br><small class="opacity-75"><i class="bi bi-clock me-1"></i>{{ recipe.cooking_time }}</small>
+                                    {% endif %}
+                                    {% if recipe.servings %}
+                                    <br><small class="opacity-75"><i class="bi bi-people me-1"></i>{{ recipe.servings }}</small>
                                     {% endif %}
                                 </div>
                             </div>
@@ -179,7 +182,8 @@
                                 
                                 {% if pantry_items_full %}
                                     {% for item in pantry_items_full %}
-                                        {% if not is_in_pantry and item.get('name', '')|lower == ing_lower %}
+                                        {% set item_name_lower = item.get('name', '')|lower %}
+                                        {% if not is_in_pantry and item_name_lower and (item_name_lower == ing_lower or item_name_lower in ing_lower or ing_lower in item_name_lower) %}
                                             {% set is_in_pantry = True %}
                                             {% set in_pantry_count = in_pantry_count + 1 %}
                                         {% endif %}
@@ -194,24 +198,48 @@
                                 {% endif %}
                             {% endfor %}
                             
-                            {% set match_percentage = ((in_pantry_count / total_ingredients) * 100)|round|int %}
+                            {% if total_ingredients > 0 %}
+                                {% set match_percentage = ((in_pantry_count / total_ingredients) * 100)|round|int %}
+                            {% else %}
+                                {% set match_percentage = 0 %}
+                            {% endif %}
+                            
+                            {% if match_percentage >= 80 %}
+                                {% set match_bg = "linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(5, 150, 105, 0.08) 100%)" %}
+                                {% set match_border = "#10B981" %}
+                                {% set match_color = "#10B981" %}
+                                {% set match_text_color = "#059669" %}
+                                {% set match_badge_bg = "linear-gradient(135deg, #10B981 0%, #059669 100%)" %}
+                            {% elif match_percentage >= 50 %}
+                                {% set match_bg = "linear-gradient(135deg, rgba(245, 158, 11, 0.1) 0%, rgba(217, 119, 6, 0.08) 100%)" %}
+                                {% set match_border = "#F59E0B" %}
+                                {% set match_color = "#F59E0B" %}
+                                {% set match_text_color = "#D97706" %}
+                                {% set match_badge_bg = "linear-gradient(135deg, #F59E0B 0%, #D97706 100%)" %}
+                            {% else %}
+                                {% set match_bg = "linear-gradient(135deg, rgba(239, 68, 68, 0.1) 0%, rgba(220, 38, 38, 0.08) 100%)" %}
+                                {% set match_border = "#EF4444" %}
+                                {% set match_color = "#EF4444" %}
+                                {% set match_text_color = "#DC2626" %}
+                                {% set match_badge_bg = "linear-gradient(135deg, #EF4444 0%, #DC2626 100%)" %}
+                            {% endif %}
                             
                             <!-- Recipe Match Score -->
-                            <div class="mb-3 p-3 rounded" style="background: {% if match_percentage >= 80 %}linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(5, 150, 105, 0.08) 100%){% elif match_percentage >= 50 %}linear-gradient(135deg, rgba(245, 158, 11, 0.1) 0%, rgba(217, 119, 6, 0.08) 100%){% else %}linear-gradient(135deg, rgba(239, 68, 68, 0.1) 0%, rgba(220, 38, 38, 0.08) 100%){% endif %}; border-left: 4px solid {% if match_percentage >= 80 %}#10B981{% elif match_percentage >= 50 %}#F59E0B{% else %}#EF4444{% endif %};">
+                            <div class="mb-3 p-3 rounded" style="--match-bg: {{ match_bg }}; --match-border: {{ match_border }}; background: var(--match-bg); border-left: 4px solid var(--match-border);">
                                 <div class="d-flex align-items-center justify-content-between">
                                     <div>
                                         <h6 class="mb-1 fw-bold" style="color: #1e293b;">
-                                            <i class="bi bi-check-circle-fill me-2" style="color: {% if match_percentage >= 80 %}#10B981{% elif match_percentage >= 50 %}#F59E0B{% else %}#EF4444{% endif %};"></i>Recipe Match
+                                            <i class="bi bi-check-circle-fill me-2" style="--match-color: {{ match_color }}; color: var(--match-color);"></i>Recipe Match
                                         </h6>
                                         <p class="mb-0 small" style="color: #64748b;">
-                                            <strong style="color: {% if match_percentage >= 80 %}#059669{% elif match_percentage >= 50 %}#D97706{% else %}#DC2626{% endif %};">Uses {{ in_pantry_count }} / {{ total_ingredients }} pantry items</strong>
+                                            <strong style="--match-text-color: {{ match_text_color }}; color: var(--match-text-color);">Uses {{ in_pantry_count }} / {{ total_ingredients }} pantry items</strong>
                                             {% if missing_ingredients|length > 0 %}
                                                 <br><span class="text-muted">Missing: {{ missing_ingredients[:3]|join(', ') }}{% if missing_ingredients|length > 3 %}...{% endif %}</span>
                                             {% endif %}
                                         </p>
                                     </div>
                                     <div class="text-end">
-                                        <div class="badge px-3 py-2 fw-bold" style="background: {% if match_percentage >= 80 %}linear-gradient(135deg, #10B981 0%, #059669 100%){% elif match_percentage >= 50 %}linear-gradient(135deg, #F59E0B 0%, #D97706 100%){% else %}linear-gradient(135deg, #EF4444 0%, #DC2626 100%){% endif %}; color: white; font-size: 1rem;">
+                                        <div class="badge px-3 py-2 fw-bold" style="--match-badge-bg: {{ match_badge_bg }}; background: var(--match-badge-bg); color: white; font-size: 1rem;">
                                             {{ match_percentage }}%
                                         </div>
                                     </div>
@@ -230,7 +258,8 @@
                                     
                                     {% if pantry_items_full %}
                                         {% for item in pantry_items_full %}
-                                            {% if not is_in_pantry and item.get('name', '')|lower == ing_lower %}
+                                            {% set item_name_lower = item.get('name', '')|lower %}
+                                            {% if not is_in_pantry and item_name_lower and (item_name_lower == ing_lower or item_name_lower in ing_lower or ing_lower in item_name_lower) %}
                                                 {% set pantry_item = item %}
                                                 {% set is_in_pantry = True %}
                                                 {% set exp_date = item.get('expirationDate', '') %}
