@@ -7,6 +7,28 @@ from flask import Flask, render_template, request, redirect, url_for, flash, jso
 from openai import OpenAI
 from dotenv import load_dotenv
 
+# Firebase support (optional - set USE_FIREBASE=true to enable)
+USE_FIREBASE = os.getenv('USE_FIREBASE', 'false').lower() == 'true'
+if USE_FIREBASE:
+    try:
+        from firebase_config import get_db, initialize_firebase
+        from firebase_helpers import (
+            load_users as firebase_load_users,
+            save_users as firebase_save_users,
+            create_user_in_firestore,
+            get_user_by_id as firebase_get_user_by_id,
+            update_user as firebase_update_user,
+            get_user_pantry as firebase_get_user_pantry,
+            update_user_pantry as firebase_update_user_pantry
+        )
+        # Initialize Firebase on import
+        initialize_firebase()
+        print("✅ Firebase enabled and initialized")
+    except Exception as e:
+        print(f"⚠️ Warning: Firebase enabled but initialization failed: {e}")
+        print("   Falling back to file-based storage")
+        USE_FIREBASE = False
+
 # Check if running on Vercel (serverless environment)
 IS_VERCEL = os.getenv('VERCEL') == '1' or os.getenv('VERCEL_ENV') is not None
 # Check if running on Render (persistent server environment)
@@ -19,7 +41,13 @@ CORS_AVAILABLE = False
 # Load environment variables from .env file (optional - safe for serverless)
 # In Vercel, environment variables are set directly, so .env file is optional
 try:
-    load_dotenv()
+    # Try to load from api/.env first (where app.py is located)
+    _env_path = os.path.join(_app_file_dir, '.env')
+    if os.path.exists(_env_path):
+        load_dotenv(_env_path)
+    else:
+        # Fallback to root .env
+        load_dotenv()
     pass
 except Exception as e:
     # Silently ignore if .env file doesn't exist (common in serverless)
@@ -1741,7 +1769,25 @@ _pantry_cache_timestamp = {}
 VERBOSE_LOGGING = os.getenv('VERBOSE_LOGGING', 'false').lower() == 'true'
 
 def load_users(use_cache=True):
-    """Load users from JSON file or in-memory storage with caching"""
+    """Load users from Firebase or JSON file or in-memory storage with caching"""
+    # Use Firebase if enabled
+    if USE_FIREBASE:
+        try:
+            users = firebase_load_users()
+            # Convert to dict format expected by the rest of the app
+            if isinstance(users, dict):
+                return users
+            # If Firebase returns a list, convert to dict
+            users_dict = {}
+            for user in users if isinstance(users, list) else []:
+                user_id = user.get('id') or user.get('user_id')
+                if user_id:
+                    users_dict[user_id] = user
+            return users_dict if users_dict else {}
+        except Exception as e:
+            print(f"⚠️ Error loading users from Firebase: {e}, falling back to file storage")
+            # Fall through to file-based storage
+    
     global _in_memory_users, _users_cache, _users_cache_timestamp  # Declare global at the start of the function
     
     # Check cache first
@@ -1876,8 +1922,26 @@ def load_users(use_cache=True):
         return users
 
 def save_users(users):
-    """Save users to JSON file or in-memory storage and update cache"""
-    global _users_cache, _users_cache_timestamp
+    """Save users to Firebase or JSON file or in-memory storage and update cache"""
+    # Declare all globals at the start of the function
+    global _users_cache, _users_cache_timestamp, _pantry_cache, _pantry_cache_timestamp, _in_memory_users
+    
+    # Use Firebase if enabled
+    if USE_FIREBASE:
+        try:
+            success = firebase_save_users(users)
+            if success:
+                # Invalidate cache
+                if '_all_users' in _users_cache:
+                    del _users_cache['_all_users']
+                _pantry_cache.clear()
+                _pantry_cache_timestamp.clear()
+                return
+            else:
+                print("⚠️ Failed to save users to Firebase, falling back to file storage")
+        except Exception as e:
+            print(f"⚠️ Error saving users to Firebase: {e}, falling back to file storage")
+            # Fall through to file-based storage
     
     # Invalidate cache on save
     if '_all_users' in _users_cache:
@@ -1888,7 +1952,6 @@ def save_users(users):
     
     if IS_VERCEL or IS_RENDER:
         # Try to save to /tmp, always update in-memory cache
-        global _in_memory_users
         _in_memory_users = users.copy()  # Always update in-memory first
         
         try:
@@ -2005,6 +2068,20 @@ def hash_password(password):
 
 def create_user(username, email, password, client_type='web'):
     """Create a new user"""
+    # Use Firebase if enabled
+    if USE_FIREBASE:
+        try:
+            user_id, error = create_user_in_firestore(username, email, password, client_type)
+            if error:
+                return None, error
+            if user_id:
+                print(f"✅ User created in Firebase: '{username}' (ID: {user_id})")
+                return user_id, None
+        except Exception as e:
+            print(f"⚠️ Error creating user in Firebase: {e}, falling back to file storage")
+            # Fall through to file-based storage
+    
+    # File-based storage (original implementation)
     users = load_users()
     
     # Normalize inputs for case-insensitive comparison
@@ -2742,6 +2819,46 @@ def update_user_pantry(user_id, pantry_items):
         print(f"User ID: {user_id}")
         print(f"Items to save: {len(pantry_items) if isinstance(pantry_items, list) else 0}")
     
+    # Use Firebase if enabled
+    if USE_FIREBASE:
+        try:
+            # Normalize items first (using the same normalization logic)
+            normalized_items = []
+            for item in pantry_items:
+                try:
+                    if isinstance(item, dict):
+                        normalized_item = normalize_pantry_item(item.copy())
+                        if normalized_item and normalized_item.get('name'):
+                            normalized_items.append(normalized_item)
+                    elif item is not None:
+                        normalized_item = normalize_pantry_item(item)
+                        if normalized_item and normalized_item.get('name'):
+                            normalized_items.append(normalized_item)
+                except Exception as e:
+                    print(f"Warning: Failed to normalize item {item}: {e}")
+                    continue
+            
+            # Update pantry in Firebase
+            success = firebase_update_user_pantry(user_id, normalized_items)
+            if success:
+                # Invalidate cache
+                if user_id in _pantry_cache:
+                    del _pantry_cache[user_id]
+                if user_id in _pantry_cache_timestamp:
+                    del _pantry_cache_timestamp[user_id]
+                
+                if VERBOSE_LOGGING:
+                    print(f"✅ Updated pantry for user {user_id}: {len(normalized_items)} items saved to Firebase")
+                return True
+            else:
+                print("⚠️ Failed to update pantry in Firebase, falling back to file storage")
+        except Exception as e:
+            print(f"⚠️ Error updating pantry in Firebase: {e}, falling back to file storage")
+            import traceback
+            traceback.print_exc()
+            # Fall through to file-based storage
+    
+    # File-based storage (original implementation)
     users = load_users(use_cache=False)  # Don't use cache when updating
     if not isinstance(users, dict):
         print(f"Error: Users data is not a dict")
@@ -5990,6 +6107,7 @@ def api_upload_photo():
         
         # Try ML vision first (if enabled), fallback to OpenAI
         detected_items_data = []
+        pantry_items = []  # Initialize pantry_items early
         use_ml = ML_VISION_ENABLED
         if use_ml:
             try:
@@ -5999,6 +6117,72 @@ def api_upload_photo():
 
                         print("ML vision found no items, falling back to OpenAI")
                     use_ml = False
+                else:
+                    # Process ML detection results into pantry_items format
+                    if detected_items_data:
+                        for item in detected_items_data:
+                            try:
+                                raw_name = item.get('name', '').strip()
+                                if not raw_name:
+                                    continue
+                                
+                                raw_quantity = item.get('quantity', '1')
+                                expiration_date = item.get('expirationDate')
+                                raw_category = item.get('category', 'other')
+                                confidence = item.get('confidence', 0.5)
+                                
+                                # Normalize and validate
+                                normalized_name = normalize_item_name(raw_name)
+                                if not normalized_name or len(normalized_name) < 2:
+                                    continue  # Skip invalid items
+                                
+                                normalized_quantity = parse_quantity(raw_quantity)
+                                validated_category = validate_category(normalized_name, raw_category)
+                                
+                                # Normalize expiration date
+                                normalized_exp_date = None
+                                if expiration_date:
+                                    if isinstance(expiration_date, str):
+                                        normalized_exp_date = normalize_expiration_date(expiration_date)
+                                    else:
+                                        normalized_exp_date = None
+                                
+                                pantry_items.append({
+                                    'id': str(uuid.uuid4()),
+                                    'name': normalized_name,
+                                    'quantity': normalized_quantity,
+                                    'expirationDate': normalized_exp_date,
+                                    'category': validated_category,
+                                    'confidence': float(confidence) if confidence else 0.5,
+                                    'addedDate': datetime.now().isoformat()
+                                })
+                            except (AttributeError, TypeError, KeyError) as item_error:
+                                if VERBOSE_LOGGING:
+                                    print(f"Warning: Error processing ML detection item: {item_error}")
+                                continue
+                        
+                        # Remove duplicates (case-insensitive) and ensure all items have required fields
+                        seen_names = set()
+                        unique_items = []
+                        for item in pantry_items:
+                            try:
+                                name_lower = item.get('name', '').lower()
+                                if name_lower and name_lower not in seen_names:
+                                    # Ensure all required fields are present
+                                    if 'id' not in item or not item['id']:
+                                        item['id'] = str(uuid.uuid4())
+                                    if 'confidence' not in item:
+                                        item['confidence'] = 0.5
+                                    if 'addedDate' not in item:
+                                        item['addedDate'] = datetime.now().isoformat()
+                                    seen_names.add(name_lower)
+                                    unique_items.append(item)
+                            except (AttributeError, TypeError):
+                                continue
+                        
+                        pantry_items = unique_items
+                        if VERBOSE_LOGGING:
+                            print(f"✅ ML detection found {len(pantry_items)} items")
                 pass
             except Exception as e:
                 if VERBOSE_LOGGING:
@@ -6305,22 +6489,58 @@ Return ONLY valid JSON (no markdown, no code blocks, no explanations):
                     except:
                         total_items = 0
         
-        # Return item names as strings for backward compatibility with iOS app
-        item_names = []
+        # Prepare response items with confidence scores for mobile app
+        # Convert pantry_items to DetectedItem format with all required fields
+        response_items = []
         for item in pantry_items:
             try:
-                if isinstance(item, dict):
-                    name = item.get('name', '')
-                    if name:
-                        item_names.append(str(name))
-                pass
-            except (AttributeError, TypeError):
+                if not isinstance(item, dict):
+                    continue
+                
+                # Ensure all required fields are present
+                item_id = item.get('id', str(uuid.uuid4()))
+                name = item.get('name', '').strip()
+                if not name:
+                    continue
+                
+                quantity = item.get('quantity', '1')
+                category = item.get('category', 'other')
+                confidence = item.get('confidence', 0.5)
+                expiration_date = item.get('expirationDate')
+                
+                # Ensure confidence is a float between 0 and 1
+                try:
+                    confidence = float(confidence)
+                    if confidence < 0 or confidence > 1:
+                        confidence = 0.5
+                except (ValueError, TypeError):
+                    confidence = 0.5
+                
+                response_items.append({
+                    'id': item_id,
+                    'name': name,
+                    'quantity': str(quantity) if quantity else '1',
+                    'category': str(category) if category else 'other',
+                    'confidence': confidence,
+                    'expirationDate': expiration_date if expiration_date else None,
+                    'is_partial': False,  # Default to False
+                    'expiration_risk': None  # Can be calculated later if needed
+                })
+            except (AttributeError, TypeError, KeyError) as item_error:
+                if VERBOSE_LOGGING:
+                    print(f"Warning: Error formatting response item: {item_error}")
                 continue
+        
+        # Categorize items by confidence for mobile app
+        high_confidence_count = sum(1 for item in response_items if item.get('confidence', 0) >= 0.7)
+        needs_confirmation_count = len(response_items) - high_confidence_count
         
         return jsonify({
             'success': True,
-            'message': f'Successfully analyzed photo! Added {len(pantry_items)} items' if pantry_items else 'Photo analyzed but no items were detected',
-            'items': item_names,  # Return as list of strings for iOS compatibility
+            'message': f'Successfully analyzed photo! Found {len(response_items)} items' if response_items else 'Photo analyzed but no items were detected',
+            'items': response_items,  # Return full item objects with confidence for mobile app
+            'auto_added': high_confidence_count,  # Items with high confidence (>= 0.7)
+            'needs_confirmation': needs_confirmation_count,  # Items needing user confirmation
             'total_items': total_items
         })
         

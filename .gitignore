@@ -48,13 +48,21 @@ hoco-proposal/
 **/*.md
 !**/README.md
 
-# Test files
-test_save.py
+# Test files and utility scripts
+test_*.py
+check_*.py
+verify_*.py
+check_env.py
 
 # User data files
 users.json
 api/users.json
 /tmp/users.json
+
+# Firebase credentials (NEVER commit these!)
+firebase-credentials.json
+*serviceAccount*.json
+*firebase-admin*.json
 
 # Debug logs
 *.log

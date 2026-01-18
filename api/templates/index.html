@@ -4091,6 +4091,33 @@
             `;
             document.body.appendChild(confidenceModal);
             
+            // Show the modal using Bootstrap
+            if (typeof bootstrap !== 'undefined' && bootstrap.Modal) {
+                const modalInstance = new bootstrap.Modal(confidenceModal, {
+                    backdrop: 'static', // Prevent closing by clicking outside
+                    keyboard: false    // Prevent closing with ESC
+                });
+                modalInstance.show();
+                
+                // Ensure modal stays on top - remove any z-index issues
+                confidenceModal.style.zIndex = '1060'; // Higher than default Bootstrap modal (1055)
+                
+                // Make sure photo modal doesn't interfere
+                const photoModal = document.getElementById('photoModal');
+                if (photoModal) {
+                    photoModal.style.zIndex = '1055'; // Lower than confidence modal
+                }
+            } else {
+                // Fallback if Bootstrap not available
+                confidenceModal.style.display = 'block';
+                confidenceModal.classList.add('show');
+                document.body.classList.add('modal-open');
+                const backdrop = document.createElement('div');
+                backdrop.className = 'modal-backdrop fade show';
+                backdrop.style.zIndex = '1055';
+                document.body.appendChild(backdrop);
+            }
+            
             // Handle add selected items button
             document.getElementById('addSelectedItemsBtn').addEventListener('click', async () => {
                 const checkboxes = confidenceModal.querySelectorAll('input[type="checkbox"]:checked');
@@ -4115,29 +4142,79 @@
                         const data = await response.json();
                         if (data.success) {
                             showFeedback(`✅ Added ${data.items_added} items to your pantry`, 'success');
+                            
+                            // Close confidence modal first
                             if (typeof bootstrap !== 'undefined' && bootstrap.Modal) {
                                 const modalInstance = bootstrap.Modal.getInstance(confidenceModal);
-                                if (modalInstance) modalInstance.hide();
-                            }
-                            // Close photo modal and reset
-                            closePhotoModal();
-                            resetPhotoUploadState();
-                            
-                            // Force reload pantry items with a longer delay to ensure backend saved
-                            setTimeout(async () => {
-                                console.log('Reloading pantry items after adding items...');
-                                try {
-                                    await reloadPantryItems();
-                                    // Double-check: reload again after a short delay to ensure items appear
+                                if (modalInstance) {
+                                    modalInstance.hide();
+                                    // Wait for modal to fully close before proceeding
+                                    confidenceModal.addEventListener('hidden.bs.modal', function onHidden() {
+                                        confidenceModal.removeEventListener('hidden.bs.modal', onHidden);
+                                        // Now close photo modal and reset
+                                        closePhotoModal();
+                                        resetPhotoUploadState();
+                                        
+                                        // Force reload pantry items with longer delay to ensure backend saved
+                                        setTimeout(async () => {
+                                            console.log('Reloading pantry items after adding items...');
+                                            try {
+                                                await reloadPantryItems();
+                                                // Double-check: reload again after a delay to ensure items appear
+                                                setTimeout(async () => {
+                                                    await reloadPantryItems();
+                                                    // Final check: if items still not visible, do full reload
+                                                    setTimeout(() => {
+                                                        const container = document.getElementById('pantryItemsContainer');
+                                                        if (container && container.children.length === 0 && data.items_added > 0) {
+                                                            console.warn('Items not appearing after reload, doing full page reload');
+                                                            window.location.reload();
+                                                        }
+                                                    }, 1000);
+                                                }, 800);
+                                            } catch (error) {
+                                                console.error('Error reloading pantry:', error);
+                                                // Fallback: full page reload
+                                                window.location.reload();
+                                            }
+                                        }, 1000);
+                                    }, { once: true });
+                                } else {
+                                    // Bootstrap not available, close manually
+                                    confidenceModal.style.display = 'none';
+                                    confidenceModal.classList.remove('show');
+                                    document.body.classList.remove('modal-open');
+                                    const backdrops = document.querySelectorAll('.modal-backdrop');
+                                    backdrops.forEach(b => b.remove());
+                                    
+                                    closePhotoModal();
+                                    resetPhotoUploadState();
+                                    
                                     setTimeout(async () => {
                                         await reloadPantryItems();
-                                    }, 500);
-                                } catch (error) {
-                                    console.error('Error reloading pantry:', error);
-                                    // Fallback: full page reload
-                                    window.location.reload();
+                                        setTimeout(async () => {
+                                            await reloadPantryItems();
+                                        }, 800);
+                                    }, 1000);
                                 }
-                            }, 500);
+                            } else {
+                                // No Bootstrap, close manually and reload
+                                confidenceModal.style.display = 'none';
+                                confidenceModal.classList.remove('show');
+                                document.body.classList.remove('modal-open');
+                                const backdrops = document.querySelectorAll('.modal-backdrop');
+                                backdrops.forEach(b => b.remove());
+                                
+                                closePhotoModal();
+                                resetPhotoUploadState();
+                                
+                                setTimeout(async () => {
+                                    await reloadPantryItems();
+                                    setTimeout(async () => {
+                                        await reloadPantryItems();
+                                    }, 800);
+                                }, 1000);
+                            }
                         } else {
                             showFeedback(data.error || 'Failed to add items', 'danger');
                         }

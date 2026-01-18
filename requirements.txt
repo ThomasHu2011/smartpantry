@@ -3,6 +3,7 @@ openai==2.8.1
 python-dotenv==1.2.1
 Pillow==12.0.0
 gunicorn==21.2.0
+firebase-admin==6.5.0
 
 # ML Vision dependencies (OPTIONAL - very large packages)
 # Uncomment these ONLY if you enable ML_VISION_ENABLED=true and have sufficient storage
