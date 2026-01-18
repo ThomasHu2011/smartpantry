@@ -226,11 +226,18 @@ ML_VISION_ENABLED = os.getenv("ML_VISION_ENABLED", "false").lower() == "true"
 # ML models (transformers, torch, easyocr) are very large and can exceed function size limits
 ML_VISION_MODE = os.getenv("ML_VISION_MODE", "classify_only").lower()  # hybrid | classify_only
 
+# ✅ YOLOv8 Object Detection (Better accuracy than DETR)
+# YOLOv8 provides superior object detection for pantry/fridge images
+# Enable this for better detection accuracy (recommended over DETR)
+YOLO_DETECTION_ENABLED = os.getenv("YOLO_DETECTION_ENABLED", "false").lower() == "true"
+YOLO_MODEL_SIZE = os.getenv("YOLO_MODEL_SIZE", "n").lower()  # n (nano), s (small), m (medium), l (large), x (xlarge)
+
 # Lazy-loaded ML models (keep memory usage lower in serverless)
 _ml_models_loaded = False
 _food_classifier = None
 _ocr_reader = None
 _object_detector = None
+_yolo_model = None  # YOLOv8 model for better object detection
 
 def load_ml_models():
     """Load ML models lazily for serverless-friendly photo analysis.
@@ -397,6 +404,58 @@ def load_ml_models():
                 except Exception as e:
                     print(f"⚠️  Warning: object detector loading failed: {e}")
                     _object_detector = None
+
+            # YOLOv8 Object Detection (Better accuracy - recommended over DETR)
+            # YOLOv8 provides superior object detection for pantry/fridge images
+            if not YOLO_DETECTION_ENABLED:
+                print("ℹ️  YOLOv8 detection disabled. Set YOLO_DETECTION_ENABLED=true to enable.")
+                _yolo_model = None
+            else:
+                try:
+                    # Import only when needed (lazy loading)
+                    from ultralytics import YOLO
+                    import threading
+                    
+                    yolo_loaded = False
+                    yolo_error = None
+                    _yolo_model_local = None
+                    
+                    # Use YOLOv8n (nano) by default for faster inference
+                    # Options: yolov8n.pt (nano), yolov8s.pt (small), yolov8m.pt (medium), yolov8l.pt (large), yolov8x.pt (xlarge)
+                    model_name = f"yolov8{YOLO_MODEL_SIZE}.pt"
+                    
+                    def load_yolo():
+                        nonlocal yolo_loaded, yolo_error, _yolo_model_local
+                        try:
+                            _yolo_model_local = YOLO(model_name)
+                            yolo_loaded = True
+                            pass
+                        except Exception as e:
+                            yolo_error = e
+                    
+                    thread = threading.Thread(target=load_yolo)
+                    thread.daemon = True
+                    thread.start()
+                    thread.join(timeout=120)  # 2 minute timeout
+                    
+                    if thread.is_alive():
+                        print("⚠️  Warning: YOLOv8 model loading timed out")
+                        _yolo_model = None
+                    elif yolo_error:
+                        print(f"⚠️  Warning: YOLOv8 not available: {yolo_error}")
+                        print("   Install with: pip install ultralytics")
+                        _yolo_model = None
+                    elif yolo_loaded and _yolo_model_local:
+                        _yolo_model = _yolo_model_local
+                        print(f"✅ YOLOv8 model loaded ({model_name})")
+                    else:
+                        _yolo_model = None
+                except ImportError:
+                    print("⚠️  Warning: ultralytics not installed. Install with: pip install ultralytics")
+                    _yolo_model = None
+                except Exception as e:
+                    print(f"⚠️  Warning: YOLOv8 loading failed: {e}")
+                    _yolo_model = None
 
             # Mark as loaded even if some models failed (partial loading is OK)
             _ml_models_loaded = True
@@ -1020,7 +1079,162 @@ def detect_food_items_with_ml(img_bytes, user_pantry=None, skip_preprocessing=Fa
                 print(f"OCR-based rare food detection error: {e}")
 
     # STEP 2: Object Detection (Primary Method) - Find bounding boxes, then classify each
-    if _object_detector and ML_VISION_MODE == "hybrid":
+    # Priority: YOLOv8 (if enabled) > DETR (if enabled)
+    
+    # STEP 2a: YOLOv8 Detection (Better accuracy - recommended)
+    detections_found_yolo = False
+    if _yolo_model and YOLO_DETECTION_ENABLED:
+        try:
+            import numpy as np
+            from PIL import Image
+            import io
+            
+            # Convert PIL image to numpy array for YOLOv8
+            img_array = np.array(img)
+            
+            # Run YOLOv8 inference with confidence threshold
+            # Lower threshold (0.25) to catch more items, especially in cluttered pantry images
+            results = _yolo_model(img_array, conf=0.25, iou=0.45, verbose=False)
+            
+            if results and len(results) > 0:
+                result = results[0]
+                
+                # YOLOv8 COCO class names (80 classes including food items)
+                # Map COCO classes to food items
+                coco_to_food = {
+                    # Fruits
+                    46: "banana", 47: "apple", 48: "sandwich", 49: "orange", 50: "broccoli",
+                    51: "carrot", 52: "hot dog", 53: "pizza", 54: "donut", 55: "cake",
+                    # Containers that might contain food
+                    39: "bottle", 40: "wine glass", 41: "cup", 42: "fork", 43: "knife",
+                    44: "spoon", 45: "bowl",
+                }
+                
+                # Process detections
+                boxes = result.boxes
+                if boxes is not None and len(boxes) > 0:
+                    detections_found_yolo = True
+                    
+                    for box in boxes:
+                        try:
+                            # Extract box coordinates (xyxy format)
+                            # Handle both tensor and numpy array formats
+                            xyxy = box.xyxy[0] if hasattr(box.xyxy, '__getitem__') else box.xyxy
+                            if hasattr(xyxy, 'cpu'):
+                                xyxy = xyxy.cpu().numpy()
+                            elif hasattr(xyxy, 'numpy'):
+                                xyxy = xyxy.numpy()
+                            
+                            # Ensure we have 4 coordinates
+                            if len(xyxy) < 4:
+                                continue
+                            x1, y1, x2, y2 = xyxy[:4]
+                            
+                            conf = box.conf[0] if hasattr(box.conf, '__getitem__') else box.conf
+                            if hasattr(conf, 'cpu'):
+                                conf = conf.cpu().numpy()
+                            elif hasattr(conf, 'numpy'):
+                                conf = conf.numpy()
+                            confidence = float(conf)
+                            
+                            cls = box.cls[0] if hasattr(box.cls, '__getitem__') else box.cls
+                            if hasattr(cls, 'cpu'):
+                                cls = cls.cpu().numpy()
+                            elif hasattr(cls, 'numpy'):
+                                cls = cls.numpy()
+                            class_id = int(cls)
+                            
+                            # Only process high-confidence detections
+                            if confidence < 0.3:  # Lower threshold for pantry images
+                                continue
+                            
+                            # Get class name from YOLOv8 (with bounds checking)
+                            if hasattr(_yolo_model, 'names') and class_id < len(_yolo_model.names):
+                                class_name = _yolo_model.names[class_id]
+                            else:
+                                class_name = f"class_{class_id}"
+                            
+                            # Map COCO class to food item
+                            mapped_name = coco_to_food.get(class_id)
+                            
+                            # If not in food map, check if class name suggests food
+                            if not mapped_name:
+                                class_lower = class_name.lower()
+                                # Check for common food-related keywords
+                                if any(keyword in class_lower for keyword in ['food', 'fruit', 'vegetable', 'bottle', 'can', 'container']):
+                                    mapped_name = class_name
+                                else:
+                                    # Skip non-food items
+                                    continue
+                            
+                            # Ensure valid crop coordinates
+                            x1, y1, x2, y2 = int(x1), int(y1), int(x2), int(y2)
+                            x1 = max(0, min(x1, img.size[0] - 1))
+                            y1 = max(0, min(y1, img.size[1] - 1))
+                            x2 = max(x1 + 1, min(x2, img.size[0]))
+                            y2 = max(y1 + 1, min(y2, img.size[1]))
+                            
+                            if x2 <= x1 or y2 <= y1:
+                                continue
+                            
+                            # Crop the detected region
+                            try:
+                                crop = img.crop((x1, y1, x2, y2))
+                                if crop.size[0] == 0 or crop.size[1] == 0:
+                                    continue
+                            except Exception:
+                                continue
+                            
+                            # Classify the cropped region for better accuracy
+                            classification = classify_food_hierarchical(crop)
+                            if classification:
+                                final_name = classification["name"]
+                                final_category = classification["category"]
+                                classification_conf = classification["confidence"]
+                                # Combine YOLO detection confidence with classification confidence
+                                combined_conf = (confidence * 0.5 + classification_conf * 0.5)
+                            else:
+                                # Use mapped name from YOLO
+                                final_name = mapped_name
+                                final_category = validate_category(mapped_name, "other")
+                                combined_conf = confidence
+                            
+                            # Extract expiration date from OCR if available
+                            exp_date = None
+                            if _ocr_reader:
+                                try:
+                                    # extract_expiration_dates handles OCR internally
+                                    exp_dates = extract_expiration_dates(crop, _ocr_reader)
+                                    if exp_dates and len(exp_dates) > 0:
+                                        exp_date = exp_dates[0]
+                                except Exception:
+                                    pass
+                            
+                            key = final_name.lower().strip()
+                            # Keep highest confidence version of each item
+                            if key and (key not in item_confidence or combined_conf > item_confidence[key]):
+                                items.append({
+                                    "name": final_name,
+                                    "quantity": "1",
+                                    "expirationDate": exp_date,
+                                    "category": final_category,
+                                    "confidence": combined_conf,
+                                    "bbox": (x1, y1, x2, y2),
+                                    "detection_method": "yolov8"
+                                })
+                                item_confidence[key] = combined_conf
+                        except Exception as det_error:
+                            if VERBOSE_LOGGING:
+                                print(f"Warning: Error processing YOLOv8 detection: {det_error}")
+                            continue
+        except Exception as e:
+            if VERBOSE_LOGGING:
+                print(f"YOLOv8 detection error: {e}")
+            detections_found_yolo = False
+    
+    # STEP 2b: DETR Detection (Fallback if YOLOv8 not available)
+    # Note: detections_found is already initialized at line 932
+    if not detections_found_yolo and _object_detector and ML_VISION_MODE == "hybrid":
         try:
             processor = _object_detector.get("processor")
             model = _object_detector.get("model")
@@ -1185,9 +1399,14 @@ def detect_food_items_with_ml(img_bytes, user_pantry=None, skip_preprocessing=Fa
             if VERBOSE_LOGGING:
 
                 print(f"Object detection error: {e}")
-            detections_found = False
+            if not detections_found_yolo:  # Only set if YOLO didn't find anything
+                detections_found = False
     
     # STEP 3: Fallback to Full-Image Classification if no detections found
+    # Use YOLO results if available, otherwise use DETR results
+    if detections_found_yolo:
+        detections_found = True  # YOLO found items
+    
     if not detections_found and _food_classifier:
         try:
             # Add timeout protection for classification (prevent hanging)
