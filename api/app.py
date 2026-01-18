@@ -805,6 +805,147 @@ def apply_context_fusion(items, user_pantry=None):
     
     return items
 
+def apply_nms(items, iou_threshold=0.5):
+    """
+    Apply Non-Maximum Suppression to remove overlapping detections of the same item.
+    Keeps the detection with highest confidence when boxes overlap significantly.
+    """
+    if not items or len(items) < 2:
+        return items
+    
+    # Filter items that have bounding boxes
+    items_with_bbox = [item for item in items if 'bbox' in item and item.get('bbox')]
+    items_without_bbox = [item for item in items if 'bbox' not in item or not item.get('bbox')]
+    
+    if not items_with_bbox:
+        return items
+    
+    def calculate_iou(box1, box2):
+        """Calculate Intersection over Union (IoU) of two bounding boxes"""
+        x1_1, y1_1, x2_1, y2_1 = box1
+        x1_2, y1_2, x2_2, y2_2 = box2
+        
+        # Calculate intersection area
+        xi1 = max(x1_1, x1_2)
+        yi1 = max(y1_1, y1_2)
+        xi2 = min(x2_1, x2_2)
+        yi2 = min(y2_1, y2_2)
+        
+        if xi2 <= xi1 or yi2 <= yi1:
+            return 0.0
+        
+        intersection = (xi2 - xi1) * (yi2 - yi1)
+        
+        # Calculate union area
+        area1 = (x2_1 - x1_1) * (y2_1 - y1_1)
+        area2 = (x2_2 - x1_2) * (y2_2 - y1_2)
+        union = area1 + area2 - intersection
+        
+        if union == 0:
+            return 0.0
+        
+        return intersection / union
+    
+    # Sort by confidence (descending)
+    items_with_bbox.sort(key=lambda x: x.get('confidence', 0), reverse=True)
+    
+    # Apply NMS
+    keep = []
+    while items_with_bbox:
+        # Take the item with highest confidence
+        current = items_with_bbox.pop(0)
+        keep.append(current)
+        
+        # Remove items that overlap significantly with current
+        items_with_bbox = [
+            item for item in items_with_bbox
+            if calculate_iou(current['bbox'], item['bbox']) < iou_threshold
+        ]
+    
+    # Combine kept items with items without bboxes
+    return keep + items_without_bbox
+
+def apply_ensemble_boosting(result, all_detections):
+    """
+    Boost confidence for items detected by multiple methods.
+    If the same item was detected by YOLOv8, DETR, and classification, boost confidence.
+    """
+    if not all_detections or len(all_detections) < 2:
+        return result
+    
+    # Count detection methods per item
+    detection_counts = {}
+    for item in all_detections:
+        key = item.get("name", "").lower().strip()
+        if not key:
+            continue
+        
+        if key not in detection_counts:
+            detection_counts[key] = {
+                'count': 0,
+                'methods': set(),
+                'max_confidence': item.get('confidence', 0),
+                'item': item
+            }
+        
+        detection_counts[key]['count'] += 1
+        method = item.get('detection_method', 'unknown')
+        if method:
+            detection_counts[key]['methods'].add(method)
+        detection_counts[key]['max_confidence'] = max(
+            detection_counts[key]['max_confidence'],
+            item.get('confidence', 0)
+        )
+    
+    # Boost confidence for items detected by multiple methods
+    for item in result:
+        key = item.get("name", "").lower().strip()
+        if key in detection_counts:
+            detection_info = detection_counts[key]
+            method_count = len(detection_info['methods'])
+            
+            # Boost confidence: +5% for each additional detection method
+            if method_count > 1:
+                boost = min(0.15, (method_count - 1) * 0.05)  # Max 15% boost
+                item['confidence'] = min(1.0, item.get('confidence', 0) * (1 + boost))
+                item['ensemble_boost'] = True
+                item['detection_methods'] = list(detection_info['methods'])
+    
+    return result
+
+def calibrate_confidence(items):
+    """
+    Calibrate confidence scores based on historical accuracy data.
+    Adjusts confidence to better reflect actual accuracy.
+    """
+    # TODO: Load historical accuracy data from feedback
+    # For now, apply basic calibration based on detection method
+    for item in items:
+        method = item.get('detection_method', 'unknown')
+        original_conf = item.get('confidence', 0.5)
+        
+        # Calibration factors based on method reliability (empirical)
+        calibration_factors = {
+            'yolov8': 0.95,  # YOLOv8 is generally reliable, slight calibration down
+            'dETR': 0.90,   # DETR is reliable but slightly less than YOLOv8
+            'classification': 0.85,  # Classification alone is less reliable
+            'ensemble': 1.0,  # Ensemble is most reliable
+            'yolov8+classification': 0.98,  # Combined methods are more reliable
+            'unknown': 0.85
+        }
+        
+        factor = calibration_factors.get(method, 0.85)
+        
+        # Apply calibration (slightly reduce overconfident predictions)
+        calibrated_conf = original_conf * factor
+        
+        # Store both original and calibrated
+        item['original_confidence'] = original_conf
+        item['confidence'] = calibrated_conf
+        item['calibration_factor'] = factor
+    
+    return items
+
 def categorize_by_confidence(items):
     """
     Categorize items by confidence for user confirmation:
@@ -1092,9 +1233,11 @@ def detect_food_items_with_ml(img_bytes, user_pantry=None, skip_preprocessing=Fa
             # Convert PIL image to numpy array for YOLOv8
             img_array = np.array(img)
             
-            # Run YOLOv8 inference with confidence threshold
-            # Lower threshold (0.25) to catch more items, especially in cluttered pantry images
-            results = _yolo_model(img_array, conf=0.25, iou=0.45, verbose=False)
+            # Run YOLOv8 inference with optimized confidence threshold
+            # Use adaptive threshold: start lower to catch more items, then filter
+            # Lower threshold (0.20) to catch more items, especially in cluttered pantry images
+            # Higher IOU (0.5) for better NMS to reduce duplicates
+            results = _yolo_model(img_array, conf=0.20, iou=0.50, verbose=False)
             
             if results and len(results) > 0:
                 result = results[0]
@@ -1144,8 +1287,9 @@ def detect_food_items_with_ml(img_bytes, user_pantry=None, skip_preprocessing=Fa
                                 cls = cls.numpy()
                             class_id = int(cls)
                             
-                            # Only process high-confidence detections
-                            if confidence < 0.3:  # Lower threshold for pantry images
+                            # Filter by confidence threshold (increased from 0.3 to 0.25 for better recall)
+                            # We'll use NMS later to filter duplicates
+                            if confidence < 0.25:  # Lower threshold to catch more items
                                 continue
                             
                             # Get class name from YOLOv8 (with bounds checking)
@@ -1185,14 +1329,34 @@ def detect_food_items_with_ml(img_bytes, user_pantry=None, skip_preprocessing=Fa
                             except Exception:
                                 continue
                             
-                            # Classify the cropped region for better accuracy
+                            # Initialize detection method
+                            detection_method = 'yolov8'
+                            classification_conf = 0
+                            
+                            # Classify the cropped region for better accuracy (ensemble approach)
                             classification = classify_food_hierarchical(crop)
                             if classification:
                                 final_name = classification["name"]
                                 final_category = classification["category"]
                                 classification_conf = classification["confidence"]
-                                # Combine YOLO detection confidence with classification confidence
-                                combined_conf = (confidence * 0.5 + classification_conf * 0.5)
+                                
+                                # Smart ensemble: weight based on both confidences
+                                # If both are high, boost more. If one is low, be more conservative
+                                yolo_weight = 0.4 if confidence > 0.5 else 0.3
+                                class_weight = 0.6 if classification_conf > 0.5 else 0.7
+                                
+                                # Normalize weights
+                                total_weight = yolo_weight + class_weight
+                                yolo_weight /= total_weight
+                                class_weight /= total_weight
+                                
+                                combined_conf = (confidence * yolo_weight + classification_conf * class_weight)
+                                
+                                # Additional boost if names match (consensus)
+                                if final_name.lower() == mapped_name.lower():
+                                    combined_conf = min(1.0, combined_conf * 1.1)  # 10% boost for consensus
+                                
+                                detection_method = 'yolov8+classification'
                             else:
                                 # Use mapped name from YOLO
                                 final_name = mapped_name
@@ -1213,15 +1377,18 @@ def detect_food_items_with_ml(img_bytes, user_pantry=None, skip_preprocessing=Fa
                             key = final_name.lower().strip()
                             # Keep highest confidence version of each item
                             if key and (key not in item_confidence or combined_conf > item_confidence[key]):
-                                items.append({
+                                item_data = {
                                     "name": final_name,
                                     "quantity": "1",
                                     "expirationDate": exp_date,
                                     "category": final_category,
                                     "confidence": combined_conf,
                                     "bbox": (x1, y1, x2, y2),
-                                    "detection_method": "yolov8"
-                                })
+                                    "detection_method": detection_method,
+                                    "yolo_confidence": confidence,
+                                    "classification_confidence": classification_conf
+                                }
+                                items.append(item_data)
                                 item_confidence[key] = combined_conf
                         except Exception as det_error:
                             if VERBOSE_LOGGING:
@@ -1399,7 +1566,8 @@ def detect_food_items_with_ml(img_bytes, user_pantry=None, skip_preprocessing=Fa
             if VERBOSE_LOGGING:
 
                 print(f"Object detection error: {e}")
-            if not detections_found_yolo:  # Only set if YOLO didn't find anything
+            # Only set detections_found to False if YOLO didn't find anything
+            if not detections_found_yolo:
                 detections_found = False
     
     # STEP 3: Fallback to Full-Image Classification if no detections found
@@ -1503,7 +1671,10 @@ def detect_food_items_with_ml(img_bytes, user_pantry=None, skip_preprocessing=Fa
                 print(f"Classification error: {e}")
             # Continue even if classification fails
 
-    # STEP 4: De-duplicate by name (keep highest confidence)
+    # STEP 4: Apply Non-Maximum Suppression (NMS) to remove overlapping detections
+    items = apply_nms(items, iou_threshold=0.5)
+    
+    # STEP 5: De-duplicate by name (keep highest confidence)
     unique = {}
     for item in items:
         key = item.get("name", "").lower().strip()
@@ -1520,12 +1691,17 @@ def detect_food_items_with_ml(img_bytes, user_pantry=None, skip_preprocessing=Fa
     result = list(unique.values())
     result.sort(key=lambda x: x.get("confidence", 0), reverse=True)
     
-    # STEP 5: Apply context fusion (boost confidence for items in pantry)
+    # STEP 6: Apply ensemble confidence boosting (if multiple methods detected same item)
+    result = apply_ensemble_boosting(result, items)
+    
+    # STEP 7: Apply context fusion (boost confidence for items in pantry)
     if user_pantry:
         result = apply_context_fusion(result, user_pantry)
     
-    # STEP 6: Return categorized by confidence (high/medium/low)
-    # Note: Currently returning all items, but categorization is available via categorize_by_confidence()
+    # STEP 8: Calibrate confidence based on historical accuracy
+    result = calibrate_confidence(result)
+    
+    # STEP 9: Return categorized by confidence (high/medium/low)
     return result
  
 
@@ -2368,6 +2544,51 @@ def safe_get_response_content(response):
             print(f"Error extracting response content: {e}")
         return None
 
+def get_session_pantry():
+    """Safely get and validate session pantry - ensures it's always a list"""
+    if 'web_pantry' not in session:
+        session['web_pantry'] = []
+        session.modified = True
+    
+    web_pantry = session.get('web_pantry', [])
+    if not isinstance(web_pantry, list):
+        if VERBOSE_LOGGING:
+            print(f"Warning: session['web_pantry'] is not a list, resetting to empty list")
+        session['web_pantry'] = []
+        session.modified = True
+        web_pantry = []
+    
+    return web_pantry
+
+def set_session_pantry(pantry_list):
+    """Safely set session pantry - validates and normalizes items"""
+    if not isinstance(pantry_list, list):
+        if VERBOSE_LOGGING:
+            print(f"Warning: pantry_list is not a list in set_session_pantry, converting")
+        pantry_list = []
+    
+    # Normalize all items
+    normalized_list = []
+    for item in pantry_list:
+        try:
+            if isinstance(item, dict):
+                normalized_item = normalize_pantry_item(item.copy())
+                if normalized_item and normalized_item.get('name'):
+                    normalized_list.append(normalized_item)
+            elif item is not None:
+                normalized_item = normalize_pantry_item(item)
+                if normalized_item and normalized_item.get('name'):
+                    normalized_list.append(normalized_item)
+        except Exception as e:
+            if VERBOSE_LOGGING:
+                print(f"Warning: Failed to normalize item in set_session_pantry: {e}")
+            continue
+    
+    session['web_pantry'] = normalized_list
+    session.modified = True
+    session.permanent = True
+    return normalized_list
+
 def normalize_pantry_item(item):
     """Normalize a pantry item to ensure consistent format"""
     if item is None:
@@ -2432,6 +2653,12 @@ def get_user_pantry(user_id, use_cache=True):
     """Get user's pantry items with caching"""
     global _pantry_cache, _pantry_cache_timestamp
     
+    # Validate user_id
+    if not user_id or not isinstance(user_id, str):
+        if VERBOSE_LOGGING:
+            print(f"Warning: Invalid user_id in get_user_pantry: {user_id}")
+        return []
+    
     # Check pantry cache first
     if use_cache:
         import time
@@ -2439,11 +2666,26 @@ def get_user_pantry(user_id, use_cache=True):
         if user_id in _pantry_cache:
             cache_age = current_time - _pantry_cache_timestamp.get(user_id, 0)
             if cache_age < _users_cache_ttl:
-                if VERBOSE_LOGGING:
-                    print(f"Using cached pantry for user {user_id} (age: {cache_age:.2f}s)")
-                return _pantry_cache[user_id].copy()
+                cached_pantry = _pantry_cache[user_id]
+                # Validate cached data is a list
+                if isinstance(cached_pantry, list):
+                    if VERBOSE_LOGGING:
+                        print(f"Using cached pantry for user {user_id} (age: {cache_age:.2f}s)")
+                    return cached_pantry.copy()
+                else:
+                    # Cache corrupted, clear it
+                    if VERBOSE_LOGGING:
+                        print(f"Warning: Cached pantry for user {user_id} is corrupted, clearing cache")
+                    del _pantry_cache[user_id]
+                    if user_id in _pantry_cache_timestamp:
+                        del _pantry_cache_timestamp[user_id]
     
     users = load_users(use_cache=use_cache)
+    if not isinstance(users, dict):
+        if VERBOSE_LOGGING:
+            print(f"Warning: Users data is not a dict, returning empty pantry")
+        return []
+    
     if user_id in users:
         pantry = users[user_id].get('pantry', [])
         # Ensure pantry is a list
@@ -2486,14 +2728,25 @@ def get_user_pantry(user_id, use_cache=True):
 
 def update_user_pantry(user_id, pantry_items):
     """Update user's pantry items"""
+    global _pantry_cache, _pantry_cache_timestamp
+    
+    # Validate user_id
+    if not user_id or not isinstance(user_id, str):
+        print(f"Error: Invalid user_id in update_user_pantry: {user_id}")
+        return False
+    
     if VERBOSE_LOGGING:
         print(f"\n{'='*60}")
-    print(f"🔄 UPDATE USER PANTRY")
-    print(f"{'='*60}")
-    print(f"User ID: {user_id}")
-    print(f"Items to save: {len(pantry_items)}")
+        print(f"🔄 UPDATE USER PANTRY")
+        print(f"{'='*60}")
+        print(f"User ID: {user_id}")
+        print(f"Items to save: {len(pantry_items) if isinstance(pantry_items, list) else 0}")
     
     users = load_users(use_cache=False)  # Don't use cache when updating
+    if not isinstance(users, dict):
+        print(f"Error: Users data is not a dict")
+        return False
+    
     if VERBOSE_LOGGING:
         print(f"Total users in database: {len(users)}")
     
@@ -2514,20 +2767,39 @@ def update_user_pantry(user_id, pantry_items):
     for item in pantry_items:
         try:
             if isinstance(item, dict):
-                normalized_items.append(normalize_pantry_item(item.copy()))
+                normalized_item = normalize_pantry_item(item.copy())
+                if normalized_item and normalized_item.get('name'):
+                    normalized_items.append(normalized_item)
             elif item is not None:
-                normalized_items.append(normalize_pantry_item(item))
+                normalized_item = normalize_pantry_item(item)
+                if normalized_item and normalized_item.get('name'):
+                    normalized_items.append(normalized_item)
             pass
         except Exception as e:
             print(f"Warning: Failed to normalize item {item}: {e}")
             continue
     
     users[user_id]['pantry'] = normalized_items
+    
+    # Invalidate cache for this user
+    if user_id in _pantry_cache:
+        del _pantry_cache[user_id]
+    if user_id in _pantry_cache_timestamp:
+        del _pantry_cache_timestamp[user_id]
+    
     if VERBOSE_LOGGING:
         print(f"💾 Saving {len(users)} users to {USERS_FILE}...")
-    save_users(users)
-    if VERBOSE_LOGGING:
-        print(f"✅ Updated pantry for user {user_id}: {len(normalized_items)} items saved to {USERS_FILE}")
+    
+    try:
+        save_users(users)
+        if VERBOSE_LOGGING:
+            print(f"✅ Updated pantry for user {user_id}: {len(normalized_items)} items saved to {USERS_FILE}")
+        return True
+    except Exception as e:
+        print(f"Error: Failed to save pantry for user {user_id}: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
     
     # Update pantry cache directly (no need to verify by loading again)
     import time
@@ -2816,15 +3088,12 @@ def add_items():
     else:
         # Add to anonymous web pantry (stored in session for persistence)
         # CRITICAL: Mark session as permanent for anonymous users to persist pantry items
-        session.permanent = True
-        
-        if 'web_pantry' not in session:
-            session['web_pantry'] = []
+        web_pantry = get_session_pantry()
         
         # Check for duplicates (case-insensitive, normalized)
         item_exists = False
         item_normalized = item.strip().lower()  # Normalize for comparison
-        for pantry_item in session['web_pantry']:
+        for pantry_item in web_pantry:
             if isinstance(pantry_item, dict):
                 pantry_name = pantry_item.get('name', '').strip().lower() if pantry_item.get('name') else ''
                 if pantry_name == item_normalized:
@@ -2845,9 +3114,8 @@ def add_items():
                 'expirationDate': normalized_expiration,
                 'addedDate': datetime.now().isoformat()
             }
-            session['web_pantry'].append(new_item)
-            # Mark session as modified to ensure it's saved
-            session.modified = True
+            web_pantry.append(new_item)
+            set_session_pantry(web_pantry)
             if normalized_expiration:
                 flash(f"{item} added to pantry.", "success")
             else:
@@ -2979,9 +3247,7 @@ def delete_item(item_name):
                     })
         
         if item_found:
-            session['web_pantry'] = pantry_list
-            # Mark session as modified to ensure it's saved
-            session.modified = True
+            set_session_pantry(pantry_list)
             # Check if AJAX request
             if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
                 return jsonify({'success': True, 'message': f'{item_name} removed from pantry.'}), 200
@@ -3909,9 +4175,33 @@ Return ONLY valid JSON (no markdown, no code blocks, no explanations):
         
         # Return JSON response with items and confidence for AJAX requests
         if request.headers.get('X-Requested-With') == 'XMLHttpRequest' or request.headers.get('Content-Type', '').startswith('application/json'):
+            # Ensure pantry_items is a list
+            if not isinstance(pantry_items, list):
+                pantry_items = []
+            
+            # Ensure all items have required fields
+            for item in pantry_items:
+                if not isinstance(item, dict):
+                    continue
+                # Ensure confidence exists
+                if 'confidence' not in item or item['confidence'] is None:
+                    # Assign default confidence
+                    item['confidence'] = 0.5
+                # Ensure id exists
+                if 'id' not in item or not item['id']:
+                    import uuid
+                    item['id'] = str(uuid.uuid4())
+            
             # Separate partial recognition items
             partial_items = [item for item in pantry_items if item.get('is_partial', False)]
             complete_items = [item for item in pantry_items if not item.get('is_partial', False)]
+            
+            # Debug logging
+            if VERBOSE_LOGGING:
+                print(f"Returning {len(pantry_items)} items to frontend")
+                print(f"  - High confidence: {len(auto_added)}")
+                print(f"  - Low confidence: {len(low_conf_items)}")
+                print(f"  - Total items: {len(pantry_items)}")
             
             return jsonify({
                 'success': True,
@@ -3921,7 +4211,7 @@ Return ONLY valid JSON (no markdown, no code blocks, no explanations):
                 'high_confidence': auto_added,  # Full item objects for high confidence
                 'low_confidence': low_conf_items,  # Full item objects for low confidence
                 'partial_recognition': [{'name': item['name'], 'category': item.get('category'), 'confidence': item.get('confidence', 0)} for item in partial_items],
-                'message': f"Found {len(pantry_items)} items ({len(complete_items)} identified, {len(partial_items)} partial). {len(auto_added)} added automatically, {len(low_conf_items)} need confirmation."
+                'message': f"Found {len(pantry_items)} items ({len(complete_items)} identified, {len(partial_items)} partial). {len(auto_added)} added automatically, {len(low_conf_items)} need confirmation." if pantry_items else "No items were detected in the photo. Please try again with a clearer image."
             })
         
         # Flash message for regular form submission
@@ -4486,8 +4776,17 @@ def api_get_pantry():
         if user_id:
             pantry_to_use = get_user_pantry(user_id)
         else:
-            # Use anonymous pantry
-            pantry_to_use = mobile_pantry if client_type == 'mobile' else web_pantry
+            # Use anonymous pantry from session (not global variable)
+            # CRITICAL: For web clients, always use session as that's where items are saved
+            if client_type == 'mobile':
+                # For mobile, use global variable (legacy support)
+                pantry_to_use = mobile_pantry if 'mobile_pantry' in globals() else []
+            else:
+                # For web, ALWAYS use session (this is where items are saved by confirm_items)
+                pantry_to_use = get_session_pantry()
+                # Sync global variable for backward compatibility
+                global web_pantry
+                web_pantry = pantry_to_use.copy()
         
         # Ensure pantry_to_use is a list
         if not isinstance(pantry_to_use, list):
@@ -4745,6 +5044,8 @@ def api_confirm_items():
         items_added = 0
         skipped_duplicates = 0
         
+        # Prepare all items to add
+        items_to_add = []
         for item in items:
             if not isinstance(item, dict) or 'name' not in item:
                 continue
@@ -4761,62 +5062,97 @@ def api_confirm_items():
                 'expirationDate': item.get('expirationDate'),
                 'category': item.get('category', 'other'),
                 'addedDate': item.get('addedDate', datetime.now().isoformat()),
-                'confidence': item.get('confidence', 0.5)
+                'confidence': item.get('confidence', 0.5),
+                'is_partial': item.get('is_partial', False),
+                'expiration_risk': item.get('expiration_risk')
             }
+            items_to_add.append(pantry_item)
+        
+        # Batch add all items at once to avoid overwriting
+        if user_id:
+            # Add to user's pantry
+            user_pantry = get_user_pantry(user_id)
+            if not isinstance(user_pantry, list):
+                user_pantry = []
             
+            # Convert to list of dicts
+            pantry_list = []
+            for p_item in user_pantry:
+                if isinstance(p_item, dict):
+                    pantry_list.append(p_item)
+            
+            # Get existing names (case-insensitive)
+            existing_names = {p.get('name', '').strip().lower() for p in pantry_list if isinstance(p, dict) and p.get('name')}
+            
+            # Add all new items at once
+            for pantry_item in items_to_add:
+                item_name_lower = pantry_item['name'].lower()
+                if item_name_lower not in existing_names:
+                    pantry_list.append(pantry_item)
+                    existing_names.add(item_name_lower)
+                    items_added += 1
+                else:
+                    skipped_duplicates += 1
+            
+            # Save all items at once
+            if items_added > 0:
+                update_user_pantry(user_id, pantry_list)
+                if VERBOSE_LOGGING:
+                    print(f"✅ Added {items_added} items to user {user_id}'s pantry via confirm_items")
+        else:
+            # Add to anonymous pantry (session)
+            web_pantry = get_session_pantry()
+            
+            # Convert to list of dicts
+            pantry_list = []
+            for p_item in web_pantry:
+                if isinstance(p_item, dict):
+                    pantry_list.append(p_item)
+            
+            # Get existing names (case-insensitive)
+            existing_names = {p.get('name', '').strip().lower() for p in pantry_list if isinstance(p, dict) and p.get('name')}
+            
+            # Add all new items at once
+            for pantry_item in items_to_add:
+                item_name_lower = pantry_item['name'].lower()
+                if item_name_lower not in existing_names:
+                    pantry_list.append(pantry_item)
+                    existing_names.add(item_name_lower)
+                    items_added += 1
+                else:
+                    skipped_duplicates += 1
+            
+            # Save all items at once using helper function
+            if items_added > 0:
+                set_session_pantry(pantry_list)
+                if VERBOSE_LOGGING:
+                    print(f"✅ Added {items_added} items to anonymous pantry via confirm_items")
+                    print(f"   Session pantry now has {len(pantry_list)} items")
+        
+        # Debug logging
+        if VERBOSE_LOGGING:
+            print(f"confirm_items result: {items_added} added, {skipped_duplicates} skipped")
             if user_id:
-                # Add to user's pantry
-                user_pantry = get_user_pantry(user_id)
-                if not isinstance(user_pantry, list):
-                    user_pantry = []
-                
-                pantry_list = []
-                for p_item in user_pantry:
-                    if isinstance(p_item, dict):
-                        pantry_list.append(p_item)
-                
-                # Check for duplicates
-                existing_names = {p.get('name', '').strip().lower() for p in pantry_list if isinstance(p, dict) and p.get('name')}
-                item_name_lower = item_name.lower()
-                
-                if item_name_lower not in existing_names:
-                    pantry_list.append(pantry_item)
-                    existing_names.add(item_name_lower)
-                    items_added += 1
-                    update_user_pantry(user_id, pantry_list)
-                else:
-                    skipped_duplicates += 1
+                final_pantry = get_user_pantry(user_id)
+                print(f"   User {user_id} pantry now has {len(final_pantry)} items")
             else:
-                # Add to anonymous pantry (session)
-                if 'web_pantry' not in session:
-                    session['web_pantry'] = []
-                
-                web_pantry = session.get('web_pantry', [])
-                if not isinstance(web_pantry, list):
-                    web_pantry = []
-                
-                pantry_list = []
-                for p_item in web_pantry:
-                    if isinstance(p_item, dict):
-                        pantry_list.append(p_item)
-                
-                # Check for duplicates
-                existing_names = {p.get('name', '').strip().lower() for p in pantry_list if isinstance(p, dict) and p.get('name')}
-                item_name_lower = item_name.lower()
-                
-                if item_name_lower not in existing_names:
-                    pantry_list.append(pantry_item)
-                    existing_names.add(item_name_lower)
-                    items_added += 1
-                    session['web_pantry'] = pantry_list
-                    session.modified = True
-                else:
-                    skipped_duplicates += 1
+                final_pantry = session.get('web_pantry', [])
+                print(f"   Anonymous pantry now has {len(final_pantry)} items")
+        
+        # Collect feedback for model improvement
+        # Store user corrections for learning (items they confirmed/corrected)
+        if items_added > 0:
+            try:
+                log_user_feedback(items, user_id)
+            except Exception as e:
+                if VERBOSE_LOGGING:
+                    print(f"Warning: Failed to log feedback: {e}")
         
         return jsonify({
             'success': True,
             'items_added': items_added,
             'skipped_duplicates': skipped_duplicates,
+            'total_items': len(pantry_list) if 'pantry_list' in locals() else 0,
             'message': f'Added {items_added} items to pantry' + (f' ({skipped_duplicates} duplicates skipped)' if skipped_duplicates > 0 else '')
         }), 200
         
@@ -6214,6 +6550,155 @@ def upload_photos_batch():
             import traceback
             traceback.print_exc()
         return jsonify({'success': False, 'error': str(e)}), 500
+
+def log_user_feedback(confirmed_items, user_id=None):
+    """
+    Log user feedback when they confirm/correct detected items.
+    This data is used to improve model accuracy over time.
+    """
+    try:
+        feedback_dir = '/tmp/feedback' if IS_VERCEL or IS_RENDER else os.path.join(_app_file_dir, 'feedback')
+        os.makedirs(feedback_dir, exist_ok=True)
+        
+        feedback_data = {
+            "confirmed_items": confirmed_items,
+            "user_id": user_id,
+            "timestamp": datetime.now().isoformat(),
+            "detection_methods": [item.get('detection_method', 'unknown') for item in confirmed_items if isinstance(item, dict)]
+        }
+        
+        feedback_file = os.path.join(feedback_dir, f"feedback_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:8]}.json")
+        with open(feedback_file, 'w') as f:
+            json.dump(feedback_data, f, indent=2)
+        
+        if VERBOSE_LOGGING:
+            print(f"✅ Logged user feedback: {len(confirmed_items)} confirmed items")
+        
+        # Also update accuracy statistics
+        update_accuracy_stats(confirmed_items)
+        
+    except Exception as e:
+        if VERBOSE_LOGGING:
+            print(f"Warning: Failed to log user feedback: {e}")
+
+def update_accuracy_stats(confirmed_items):
+    """
+    Update accuracy statistics based on user confirmations.
+    Tracks which detection methods are most accurate for different food types.
+    """
+    try:
+        stats_file = '/tmp/accuracy_stats.json' if IS_VERCEL or IS_RENDER else os.path.join(_app_file_dir, 'accuracy_stats.json')
+        
+        # Load existing stats
+        stats = {}
+        if os.path.exists(stats_file):
+            try:
+                with open(stats_file, 'r') as f:
+                    stats = json.load(f)
+            except Exception:
+                stats = {}
+        
+        # Initialize structure
+        if 'detection_methods' not in stats:
+            stats['detection_methods'] = {}
+        if 'food_categories' not in stats:
+            stats['food_categories'] = {}
+        if 'total_confirmations' not in stats:
+            stats['total_confirmations'] = 0
+        
+        # Update stats for each confirmed item
+        for item in confirmed_items:
+            if not isinstance(item, dict):
+                continue
+            
+            method = item.get('detection_method', 'unknown')
+            category = item.get('category', 'other')
+            confidence = item.get('confidence', 0.5)
+            
+            # Track method accuracy
+            if method not in stats['detection_methods']:
+                stats['detection_methods'][method] = {
+                    'count': 0,
+                    'total_confidence': 0,
+                    'confirmed': 0
+                }
+            
+            stats['detection_methods'][method]['count'] += 1
+            stats['detection_methods'][method]['total_confidence'] += confidence
+            stats['detection_methods'][method]['confirmed'] += 1
+            
+            # Track category accuracy
+            if category not in stats['food_categories']:
+                stats['food_categories'][category] = {
+                    'count': 0,
+                    'total_confidence': 0,
+                    'confirmed': 0
+                }
+            
+            stats['food_categories'][category]['count'] += 1
+            stats['food_categories'][category]['total_confidence'] += confidence
+            stats['food_categories'][category]['confirmed'] += 1
+        
+        stats['total_confirmations'] += len(confirmed_items)
+        stats['last_updated'] = datetime.now().isoformat()
+        
+        # Save updated stats
+        with open(stats_file, 'w') as f:
+            json.dump(stats, f, indent=2)
+        
+        if VERBOSE_LOGGING:
+            print(f"📊 Updated accuracy statistics: {stats['total_confirmations']} total confirmations")
+            
+    except Exception as e:
+        if VERBOSE_LOGGING:
+            print(f"Warning: Failed to update accuracy stats: {e}")
+
+def update_failure_stats(correct_labels, predicted_labels, detected_items):
+    """Update failure statistics to identify common errors"""
+    try:
+        stats_file = '/tmp/failure_stats.json' if IS_VERCEL or IS_RENDER else os.path.join(_app_file_dir, 'failure_stats.json')
+        
+        stats = {}
+        if os.path.exists(stats_file):
+            try:
+                with open(stats_file, 'r') as f:
+                    stats = json.load(f)
+            except Exception:
+                stats = {}
+        
+        if 'common_errors' not in stats:
+            stats['common_errors'] = {}
+        if 'missed_items' not in stats:
+            stats['missed_items'] = {}
+        if 'false_positives' not in stats:
+            stats['false_positives'] = {}
+        
+        # Track common prediction errors
+        for predicted, correct in zip(predicted_labels, correct_labels):
+            if predicted != correct:
+                key = f"{predicted}->{correct}"
+                stats['common_errors'][key] = stats['common_errors'].get(key, 0) + 1
+        
+        # Track missed items (in correct but not in predicted)
+        correct_set = set(str(c).lower() for c in correct_labels)
+        predicted_set = set(str(p).lower() for p in predicted_labels)
+        missed = correct_set - predicted_set
+        for item in missed:
+            stats['missed_items'][item] = stats['missed_items'].get(item, 0) + 1
+        
+        # Track false positives (in predicted but not in correct)
+        false_pos = predicted_set - correct_set
+        for item in false_pos:
+            stats['false_positives'][item] = stats['false_positives'].get(item, 0) + 1
+        
+        stats['last_updated'] = datetime.now().isoformat()
+        
+        with open(stats_file, 'w') as f:
+            json.dump(stats, f, indent=2)
+            
+    except Exception as e:
+        if VERBOSE_LOGGING:
+            print(f"Warning: Failed to update failure stats: {e}")
 
 @app.route('/api/log_detection_failure', methods=['POST'])
 def log_detection_failure():

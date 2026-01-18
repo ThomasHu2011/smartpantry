@@ -3731,9 +3731,52 @@
         
         const autoAdded = data.auto_added || 0;
         const needsConfirmation = data.needs_confirmation || 0;
-        const allItems = data.items || [];
+        let allItems = data.items || [];
         const highConfItems = data.high_confidence || [];
         const lowConfItems = data.low_confidence || [];
+        
+        // Debug: Log items to console
+        console.log('Photo analysis results:', {
+            allItems: allItems.length,
+            highConfItems: highConfItems.length,
+            lowConfItems: lowConfItems.length,
+            autoAdded,
+            needsConfirmation,
+            items: allItems
+        });
+        
+        // Ensure all items have confidence values
+        // If items don't have confidence, assign default based on whether they're in high/low confidence arrays
+        if (allItems.length === 0 && (highConfItems.length > 0 || lowConfItems.length > 0)) {
+            // If allItems is empty but we have high/low items, combine them
+            allItems = [...highConfItems, ...lowConfItems];
+        }
+        
+        // Ensure each item has a confidence value
+        allItems = allItems.map(item => {
+            if (typeof item === 'string') {
+                // Convert string items to objects
+                return {
+                    id: `item_${Date.now()}_${Math.random()}`,
+                    name: item,
+                    quantity: '1',
+                    category: 'other',
+                    confidence: 0.5, // Default medium confidence
+                    is_partial: false
+                };
+            }
+            // Ensure confidence exists
+            if (item.confidence === undefined || item.confidence === null) {
+                // Check if item is in high confidence list
+                const isHighConf = highConfItems.some(hi => hi.name === item.name || (hi.id && hi.id === item.id));
+                item.confidence = isHighConf ? 0.85 : 0.5;
+            }
+            // Ensure id exists
+            if (!item.id) {
+                item.id = `item_${Date.now()}_${Math.random()}`;
+            }
+            return item;
+        });
         
         // Show success message
         if (uploadFeedback) {
@@ -3743,7 +3786,13 @@
         }
         
         // Always show modal with all detected items and their confidence levels
-        showAIConfidenceModal(allItems, autoAdded, highConfItems, lowConfItems);
+        if (allItems.length > 0) {
+            showAIConfidenceModal(allItems, autoAdded, highConfItems, lowConfItems);
+        } else {
+            // Show message if no items detected
+            showFeedback('No items were detected in the photo. Please try again with a clearer image.', 'warning');
+            resetPhotoUploadState();
+        }
     }
     
     // Show confirmation modal for low-confidence items
@@ -3915,16 +3964,47 @@
     
     // Show AI confidence modal with all detected items
     function showAIConfidenceModal(allItems, autoAdded, highConfItems, lowConfItems) {
+        // Debug: Log what we received
+        console.log('showAIConfidenceModal called with:', {
+            allItemsCount: allItems ? allItems.length : 0,
+            autoAdded,
+            highConfItemsCount: highConfItems ? highConfItems.length : 0,
+            lowConfItemsCount: lowConfItems ? lowConfItems.length : 0,
+            allItems: allItems
+        });
+        
+        // Ensure allItems is an array and not empty
+        if (!Array.isArray(allItems) || allItems.length === 0) {
+            console.error('No items to display in modal. allItems:', allItems);
+            showFeedback('No items detected in the photo. Please try again with a clearer image.', 'warning');
+            return;
+        }
+        
         // Categorize items by confidence level
-        const HIGH_THRESHOLD = 0.8;  // Green: High confidence
+        // Match backend threshold (0.7) for consistency
+        const HIGH_THRESHOLD = 0.7;  // Green: High confidence (matches backend HIGH_CONFIDENCE_THRESHOLD)
         const MEDIUM_THRESHOLD = 0.5;  // Yellow: Medium confidence
         
-        const highConf = allItems.filter(item => (item.confidence || 0) >= HIGH_THRESHOLD);
+        const highConf = allItems.filter(item => {
+            const conf = item.confidence || 0;
+            return conf >= HIGH_THRESHOLD;
+        });
         const mediumConf = allItems.filter(item => {
             const conf = item.confidence || 0;
             return conf >= MEDIUM_THRESHOLD && conf < HIGH_THRESHOLD;
         });
-        const lowConf = allItems.filter(item => (item.confidence || 0) < MEDIUM_THRESHOLD);
+        const lowConf = allItems.filter(item => {
+            const conf = item.confidence || 0;
+            return conf < MEDIUM_THRESHOLD;
+        });
+        
+        // Debug: Log categorization
+        console.log('Items categorized:', {
+            high: highConf.length,
+            medium: mediumConf.length,
+            low: lowConf.length,
+            total: allItems.length
+        });
         
         // Create or get AI confidence modal
         let confidenceModal = document.getElementById('aiConfidenceModal');
@@ -4039,9 +4119,25 @@
                                 const modalInstance = bootstrap.Modal.getInstance(confidenceModal);
                                 if (modalInstance) modalInstance.hide();
                             }
+                            // Close photo modal and reset
+                            closePhotoModal();
+                            resetPhotoUploadState();
+                            
+                            // Force reload pantry items with a longer delay to ensure backend saved
                             setTimeout(async () => {
-                                await reloadPantryItems();
-                            }, 300);
+                                console.log('Reloading pantry items after adding items...');
+                                try {
+                                    await reloadPantryItems();
+                                    // Double-check: reload again after a short delay to ensure items appear
+                                    setTimeout(async () => {
+                                        await reloadPantryItems();
+                                    }, 500);
+                                } catch (error) {
+                                    console.error('Error reloading pantry:', error);
+                                    // Fallback: full page reload
+                                    window.location.reload();
+                                }
+                            }, 500);
                         } else {
                             showFeedback(data.error || 'Failed to add items', 'danger');
                         }
