@@ -2668,6 +2668,24 @@
         browseBtn.addEventListener('click', (e) => {
             e.preventDefault();
             e.stopPropagation();
+            
+            // Add visual feedback
+            const originalText = browseBtn.innerHTML;
+            browseBtn.disabled = true;
+            browseBtn.style.opacity = '0.7';
+            browseBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Opening...';
+            
+            // Trigger file input
+            photoInput.click();
+            
+            // Reset button after a short delay
+            setTimeout(() => {
+                browseBtn.disabled = false;
+                browseBtn.style.opacity = '1';
+                browseBtn.innerHTML = originalText;
+            }, 500);
+            e.preventDefault();
+            e.stopPropagation();
             if (photoInput) {
                 photoInput.click();
             }
@@ -2766,18 +2784,89 @@
     function handleFileSelect(e) {
         const files = e.target.files;
         if (files.length > 0) {
+            // Show feedback that file is being processed
+            const progressFeedback = document.getElementById('uploadProgressFeedback');
+            const progressFeedbackText = document.getElementById('progressFeedbackText');
+            if (progressFeedback && progressFeedbackText) {
+                progressFeedback.style.display = 'block';
+                progressFeedbackText.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Processing image...';
+            }
             handleFile(files[0]);
+        } else {
+            // Reset feedback if no file selected
+            const progressFeedback = document.getElementById('uploadProgressFeedback');
+            if (progressFeedback) {
+                progressFeedback.style.display = 'none';
+            }
         }
     }
 
+    // Compress image function
+    async function compressImage(file, maxWidth = 1280, maxHeight = 1280, quality = 0.6) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const img = new Image();
+                img.onload = () => {
+                    const canvas = document.createElement('canvas');
+                    let width = img.width;
+                    let height = img.height;
+                    
+                    // Calculate new dimensions
+                    if (width > maxWidth || height > maxHeight) {
+                        const ratio = Math.min(maxWidth / width, maxHeight / height);
+                        width = Math.round(width * ratio);
+                        height = Math.round(height * ratio);
+                    }
+                    
+                    canvas.width = width;
+                    canvas.height = height;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(img, 0, 0, width, height);
+                    
+                    // Convert to blob with compression
+                    canvas.toBlob((blob) => {
+                        if (blob) {
+                            const compressedFile = new File([blob], file.name, { type: 'image/jpeg' });
+                            resolve(compressedFile);
+                        } else {
+                            reject(new Error('Compression failed'));
+                        }
+                    }, 'image/jpeg', quality);
+                };
+                img.onerror = reject;
+                img.src = e.target.result;
+            };
+            reader.onerror = reject;
+            reader.readAsDataURL(file);
+        });
+    }
+
     // Handle file
-    function handleFile(file) {
+    async function handleFile(file) {
         if (!file || !file.type.startsWith('image/')) {
             alert('Please select an image file');
             return;
         }
 
-        selectedFile = file;
+        // Compress image if it's large
+        try {
+            if (file.size > 500 * 1024) { // Compress if > 500KB
+                const progressFeedback = document.getElementById('uploadProgressFeedback');
+                const progressFeedbackText = document.getElementById('progressFeedbackText');
+                if (progressFeedback && progressFeedbackText) {
+                    progressFeedback.style.display = 'block';
+                    progressFeedbackText.textContent = 'Compressing image...';
+                }
+                selectedFile = await compressImage(file);
+            } else {
+                selectedFile = file;
+            }
+        } catch (error) {
+            console.error('Error compressing image:', error);
+            selectedFile = file; // Fallback to original
+        }
+        
         const reader = new FileReader();
         reader.onload = (e) => {
             // Hide placeholder and show image preview
@@ -3049,7 +3138,26 @@
                 // Stop camera immediately after capture
                 stopCamera();
                 
-                // Convert to blob
+                // Compress and convert to blob
+                // Resize if too large (max 1280px width/height)
+                const MAX_SIZE = 1280;
+                let finalWidth = canvas.width;
+                let finalHeight = canvas.height;
+                
+                if (finalWidth > MAX_SIZE || finalHeight > MAX_SIZE) {
+                    const ratio = Math.min(MAX_SIZE / finalWidth, MAX_SIZE / finalHeight);
+                    finalWidth = Math.round(finalWidth * ratio);
+                    finalHeight = Math.round(finalHeight * ratio);
+                    
+                    const resizedCanvas = document.createElement('canvas');
+                    resizedCanvas.width = finalWidth;
+                    resizedCanvas.height = finalHeight;
+                    const resizedCtx = resizedCanvas.getContext('2d');
+                    resizedCtx.drawImage(canvas, 0, 0, finalWidth, finalHeight);
+                    canvas = resizedCanvas;
+                }
+                
+                // Convert to blob with compression (quality: 0.6 for smaller file size)
                 canvas.toBlob((blob) => {
                     if (!blob) {
                         showCameraError('Capture Failed', 'Could not capture photo. Please try again.');
@@ -3123,6 +3231,12 @@
             } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
                 errorTitle = 'No Camera Found';
                 errorMessage = 'No camera detected on this device.\n\nPlease connect a camera or use "Browse Files" to upload a photo instead.';
+            } else if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {
+                errorTitle = 'Camera In Use';
+                errorMessage = 'Camera is being used by another application (Zoom, Meet, Discord, etc.).\n\nPlease close other apps using the camera and try again.';
+            } else if (err.name === 'SecurityError' || err.name === 'NotAllowedError') {
+                errorTitle = 'Camera Permission Denied';
+                errorMessage = 'Camera permission is required to take a photo.\n\nPlease:\n1. Click the camera icon in your browser\'s address bar\n2. Allow camera access\n3. Refresh the page and try again\n\nOr use "Browse Files" to upload a photo instead.';
             } else if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {
                 errorTitle = 'Camera In Use';
                 errorMessage = 'Camera is being used by another application (Zoom, Meet, Discord, etc.).\n\nPlease close other apps using the camera and try again.';
@@ -3252,8 +3366,26 @@
                 // Draw video frame to canvas
                 ctx.drawImage(cameraStreamVideo, 0, 0);
                 
-                // Convert to blob
-        canvas.toBlob((blob) => {
+                // Compress image before converting to blob
+                const MAX_SIZE = 1280;
+                let finalWidth = canvas.width;
+                let finalHeight = canvas.height;
+                
+                if (finalWidth > MAX_SIZE || finalHeight > MAX_SIZE) {
+                    const ratio = Math.min(MAX_SIZE / finalWidth, MAX_SIZE / finalHeight);
+                    finalWidth = Math.round(finalWidth * ratio);
+                    finalHeight = Math.round(finalHeight * ratio);
+                    
+                    const resizedCanvas = document.createElement('canvas');
+                    resizedCanvas.width = finalWidth;
+                    resizedCanvas.height = finalHeight;
+                    const resizedCtx = resizedCanvas.getContext('2d');
+                    resizedCtx.drawImage(canvas, 0, 0, finalWidth, finalHeight);
+                    canvas = resizedCanvas;
+                }
+                
+                // Convert to blob with compression (quality: 0.6)
+                canvas.toBlob((blob) => {
                     if (!blob) {
                         showCameraError('Capture Failed', 'Could not capture photo. Please try again.');
                         return;
@@ -3597,21 +3729,17 @@
                             resetPhotoUploadState();
                         }
                     } else {
-                        // HTML redirect response (fallback)
+                        // HTML redirect response (fallback) - shouldn't happen with AJAX
                         const uploadFeedback = document.getElementById('uploadFeedback');
                         if (uploadFeedback) {
                             uploadFeedback.className = 'feedback-message success';
-                            uploadFeedback.innerHTML = '<i class="bi bi-check-circle-fill me-2"></i>Photo analyzed! Items added to pantry.';
+                            uploadFeedback.innerHTML = '<i class="bi bi-check-circle-fill me-2"></i>Photo analyzed! Please wait for verification window...';
                             uploadFeedback.style.display = 'flex';
                         }
                         
-                        setTimeout(() => {
-                            closePhotoModal();
-                            resetPhotoUploadState();
-                            setTimeout(async () => {
-                                await reloadPantryItems();
-                            }, 300);
-                        }, 1500);
+                        // Don't close photo modal immediately - wait for user to verify items
+                        // The confidence modal will handle closing when done
+                        console.warn('Received HTML response instead of JSON - this should not happen with AJAX upload');
                     }
                 } else {
                     // Handle error response
@@ -3679,40 +3807,11 @@
         });
     }
     
-    // Helper function to close photo modal
+    // Helper function to close photo modal (uses consistent helper)
     function closePhotoModal() {
-        if (!photoModal) return;
-        
-        // Try Bootstrap modal API first
-        try {
-            if (typeof bootstrap !== 'undefined' && bootstrap.Modal) {
-                const bootstrapModal = bootstrap.Modal.getInstance(photoModal);
-                if (bootstrapModal) {
-                    bootstrapModal.hide();
-                    return;
-                }
-            }
-        } catch (e) {
-            console.log('Bootstrap modal API not available:', e);
-        }
-        
-        // Fallback: Use close button
-        const closeBtn = photoModal.querySelector('[data-bs-dismiss="modal"]');
-        if (closeBtn) {
-            closeBtn.click();
-        } else {
-            // Last resort: Manual close
-            photoModal.classList.remove('show');
-            photoModal.style.display = 'none';
-            photoModal.setAttribute('aria-hidden', 'true');
-            
-            // Remove backdrop
-            const backdrops = document.querySelectorAll('.modal-backdrop');
-            backdrops.forEach(backdrop => backdrop.remove());
-            document.body.classList.remove('modal-open');
-            document.body.style.overflow = '';
-            document.body.style.paddingRight = '';
-        }
+        closeModalSafely('photoModal');
+        // Also ensure photo upload state is reset
+        resetPhotoUploadState();
     }
     
     // Show photo analysis results with confidence scores
@@ -3859,7 +3958,11 @@
                                 if (modalInstance) modalInstance.hide();
                             }
                             setTimeout(async () => {
-                                await reloadPantryItems();
+                                try {
+                                    await reloadPantryItems();
+                                } catch (reloadError) {
+                                    console.error('Error reloading pantry after photo upload:', reloadError);
+                                }
                             }, 300);
                         } else {
                             showFeedback(data.error || 'Failed to add items', 'danger');
@@ -4008,7 +4111,9 @@
         
         // Create or get AI confidence modal
         let confidenceModal = document.getElementById('aiConfidenceModal');
+        let modalNeedsSetup = false;
         if (!confidenceModal) {
+            modalNeedsSetup = true;
             confidenceModal = document.createElement('div');
             confidenceModal.id = 'aiConfidenceModal';
             confidenceModal.className = 'modal fade';
@@ -4017,11 +4122,11 @@
             confidenceModal.innerHTML = `
                 <div class="modal-dialog modal-dialog-centered modal-xl">
                     <div class="modal-content" style="border-radius: 16px; max-height: 90vh; display: flex; flex-direction: column;">
-                        <div class="modal-header" style="background: linear-gradient(135deg, #10B981 0%, #3B82F6 50%, #F59E0B 100%); color: white; border-radius: 16px 16px 0 0; border-bottom: none;">
-                            <h5 class="modal-title" id="aiConfidenceModalLabel">
-                                <i class="bi bi-robot me-2"></i>AI Photo Analysis Results
+                        <div class="modal-header" style="background: linear-gradient(135deg, #10B981 0%, #3B82F6 50%, #F59E0B 100%); color: white; border-radius: 16px 16px 0 0; border-bottom: none; padding: 20px 24px;">
+                            <h5 class="modal-title" id="aiConfidenceModalLabel" style="font-weight: 700; font-size: 1.25rem;">
+                                <i class="bi bi-robot me-2"></i>Review Detected Items
                             </h5>
-                            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close" style="font-size: 1.2rem;"></button>
                         </div>
                         <div class="modal-body p-4" style="background: #f8f9fa; overflow-y: auto; flex: 1;">
                             <!-- Info Banner -->
@@ -4076,13 +4181,13 @@
                             </div>
                             
                             <!-- Items Lists -->
-                            <div id="aiConfidenceItemsList"></div>
+                            <div id="aiConfidenceItemsList" style="max-height: 60vh; overflow-y: auto; padding-right: 8px;"></div>
                         </div>
-                        <div class="modal-footer" style="background: #f8f9fa; border-top: 1px solid #e2e8f0; border-radius: 0 0 16px 16px;">
-                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                        <div class="modal-footer" style="background: #f8f9fa; border-top: 1px solid #e2e8f0; border-radius: 0 0 16px 16px; padding: 16px 24px;">
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" style="border-radius: 10px; padding: 10px 20px;">
                                 <i class="bi bi-x-circle me-2"></i>Close
                             </button>
-                            <button type="button" class="btn btn-primary" id="addSelectedItemsBtn">
+                            <button type="button" class="btn btn-primary" id="addSelectedItemsBtn" style="background: linear-gradient(135deg, #10B981 0%, #059669 100%); border: none; border-radius: 10px; padding: 10px 24px; font-weight: 600; box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);">
                                 <i class="bi bi-plus-circle-fill me-2"></i>Add Selected Items (<span id="selectedCount">0</span>)
                             </button>
                         </div>
@@ -4162,15 +4267,23 @@
                                                 await reloadPantryItems();
                                                 // Double-check: reload again after a delay to ensure items appear
                                                 setTimeout(async () => {
-                                                    await reloadPantryItems();
-                                                    // Final check: if items still not visible, do full reload
-                                                    setTimeout(() => {
-                                                        const container = document.getElementById('pantryItemsContainer');
-                                                        if (container && container.children.length === 0 && data.items_added > 0) {
-                                                            console.warn('Items not appearing after reload, doing full page reload');
-                                                            window.location.reload();
-                                                        }
-                                                    }, 1000);
+                                                    try {
+                                                        await reloadPantryItems();
+                                                        // Final check: if items still not visible, do full reload
+                                                        setTimeout(() => {
+                                                            try {
+                                                                const container = document.getElementById('pantryItemsContainer');
+                                                                if (container && container.children.length === 0 && data.items_added > 0) {
+                                                                    console.warn('Items not appearing after reload, doing full page reload');
+                                                                    window.location.reload();
+                                                                }
+                                                            } catch (checkError) {
+                                                                console.error('Error checking items:', checkError);
+                                                            }
+                                                        }, 1000);
+                                                    } catch (reloadError) {
+                                                        console.error('Error in second reload:', reloadError);
+                                                    }
                                                 }, 800);
                                             } catch (error) {
                                                 console.error('Error reloading pantry:', error);
@@ -4191,10 +4304,18 @@
                                     resetPhotoUploadState();
                                     
                                     setTimeout(async () => {
-                                        await reloadPantryItems();
-                                        setTimeout(async () => {
+                                        try {
                                             await reloadPantryItems();
-                                        }, 800);
+                                            setTimeout(async () => {
+                                                try {
+                                                    await reloadPantryItems();
+                                                } catch (retryError) {
+                                                    console.error('Error in reload retry:', retryError);
+                                                }
+                                            }, 800);
+                                        } catch (reloadError) {
+                                            console.error('Error reloading pantry:', reloadError);
+                                        }
                                     }, 1000);
                                 }
                             } else {
@@ -4209,10 +4330,18 @@
                                 resetPhotoUploadState();
                                 
                                 setTimeout(async () => {
-                                    await reloadPantryItems();
-                                    setTimeout(async () => {
+                                    try {
                                         await reloadPantryItems();
-                                    }, 800);
+                                        setTimeout(async () => {
+                                            try {
+                                                await reloadPantryItems();
+                                            } catch (retryError) {
+                                                console.error('Error in reload retry:', retryError);
+                                            }
+                                        }, 800);
+                                    } catch (reloadError) {
+                                        console.error('Error reloading pantry:', reloadError);
+                                    }
                                 }, 1000);
                             }
                         } else {
@@ -4227,51 +4356,75 @@
                     }
                 } else {
                     showFeedback('Please select at least one item to add', 'warning');
+                    // Don't close modal or reset if no items selected - let user try again
                 }
+            });
+        }
+        
+        // Always attach event listeners (even if modal already exists)
+        // Update selected count on checkbox change
+        confidenceModal.addEventListener('change', (e) => {
+            if (e.target.type === 'checkbox') {
+                const checked = confidenceModal.querySelectorAll('input[type="checkbox"]:checked').length;
+                const selectedCountEl = document.getElementById('selectedCount');
+                if (selectedCountEl) {
+                    selectedCountEl.textContent = checked;
+                }
+            }
+        });
+        
+        // Show the modal if it wasn't just created
+        if (!modalNeedsSetup) {
+            if (typeof bootstrap !== 'undefined' && bootstrap.Modal) {
+                let modalInstance = bootstrap.Modal.getInstance(confidenceModal);
+                if (!modalInstance) {
+                    modalInstance = new bootstrap.Modal(confidenceModal, {
+                        backdrop: 'static',
+                        keyboard: false
+                    });
+                }
+                modalInstance.show();
                 
-                // Close photo modal and reset
-                closePhotoModal();
-                resetPhotoUploadState();
-            });
-            
-            // Update selected count on checkbox change
-            confidenceModal.addEventListener('change', (e) => {
-                if (e.target.type === 'checkbox') {
-                    const checked = confidenceModal.querySelectorAll('input[type="checkbox"]:checked').length;
-                    const selectedCountEl = document.getElementById('selectedCount');
-                    if (selectedCountEl) {
-                        selectedCountEl.textContent = checked;
-                    }
+                // Ensure modal stays on top
+                confidenceModal.style.zIndex = '1060';
+                
+                // Make sure photo modal doesn't interfere
+                const photoModal = document.getElementById('photoModal');
+                if (photoModal) {
+                    photoModal.style.zIndex = '1050';
                 }
-            });
+            }
         }
         
         // Populate items list
         const itemsList = confidenceModal.querySelector('#aiConfidenceItemsList');
         itemsList.innerHTML = '';
         
-        // Helper function to create item card
+        // Helper function to create item card - Improved UI matching mobile design
         function createItemCard(item, confidenceLevel) {
             const conf = item.confidence || 0;
             const confPercent = Math.round(conf * 100);
             
             // Determine colors based on confidence level
-            let confColor, confLabel, borderColor, bgColor;
+            let confColor, confLabel, borderColor, bgColor, buttonBgColor;
             if (confidenceLevel === 'high') {
                 confColor = '#10B981'; // Green
                 confLabel = 'High Confidence';
                 borderColor = '#10B981';
                 bgColor = 'rgba(16, 185, 129, 0.05)';
+                buttonBgColor = 'linear-gradient(135deg, #10B981 0%, #059669 100%)';
             } else if (confidenceLevel === 'medium') {
-                confColor = '#F59E0B'; // Yellow
+                confColor = '#F59E0B'; // Orange/Yellow
                 confLabel = 'Needs Confirmation';
                 borderColor = '#F59E0B';
                 bgColor = 'rgba(245, 158, 11, 0.05)';
+                buttonBgColor = 'linear-gradient(135deg, #F59E0B 0%, #D97706 100%)';
             } else {
                 confColor = '#EF4444'; // Red
                 confLabel = 'Uncertain';
                 borderColor = '#EF4444';
                 bgColor = 'rgba(239, 68, 68, 0.05)';
+                buttonBgColor = 'linear-gradient(135deg, #EF4444 0%, #DC2626 100%)';
             }
             
             const isPartial = item.is_partial || false;
@@ -4314,57 +4467,96 @@
             
             const itemDiv = document.createElement('div');
             itemDiv.className = 'card mb-3';
-            itemDiv.style.border = `2px solid ${borderColor}`;
-            itemDiv.style.borderLeft = `4px solid ${borderColor}`;
-            itemDiv.style.background = bgColor;
-            itemDiv.style.borderRadius = '12px';
+            itemDiv.style.border = '1px solid #E2E8F0';
+            itemDiv.style.background = '#FFFFFF';
+            itemDiv.style.borderRadius = '16px';
             itemDiv.style.transition = 'all 0.2s ease';
+            itemDiv.style.boxShadow = '0 2px 8px rgba(0, 0, 0, 0.04)';
+            itemDiv.style.position = 'relative';
             
             // Add hover effect
             itemDiv.onmouseenter = () => {
                 itemDiv.style.transform = 'translateY(-2px)';
-                itemDiv.style.boxShadow = `0 4px 12px ${confColor}40`;
+                itemDiv.style.boxShadow = '0 4px 16px rgba(0, 0, 0, 0.08)';
             };
             itemDiv.onmouseleave = () => {
                 itemDiv.style.transform = 'translateY(0)';
-                itemDiv.style.boxShadow = 'none';
+                itemDiv.style.boxShadow = '0 2px 8px rgba(0, 0, 0, 0.04)';
             };
+            
+            // Add click handler to toggle checkbox when card is clicked
+            itemDiv.style.cursor = wasAutoAdded ? 'default' : 'pointer';
+            if (!wasAutoAdded) {
+                itemDiv.addEventListener('click', (e) => {
+                    // Don't toggle if clicking the button
+                    if (e.target.tagName === 'BUTTON' || e.target.closest('button')) {
+                        return;
+                    }
+                    const checkbox = itemDiv.querySelector('input[type="checkbox"]');
+                    if (checkbox && !checkbox.disabled) {
+                        checkbox.checked = !checkbox.checked;
+                        checkbox.dispatchEvent(new Event('change', { bubbles: true }));
+                    }
+                });
+            }
+            
+            // Format quantity display
+            const quantity = item.quantity || '1';
+            const quantityDisplay = quantity.includes(' ') ? quantity : `# ${quantity} ${quantity === '1' ? 'item' : 'items'}`;
+            
+            // Category display
+            const categoryName = (item.category || 'other').charAt(0).toUpperCase() + (item.category || 'other').slice(1);
             
             itemDiv.innerHTML = `
                 <div class="card-body p-3">
-                    <div class="form-check d-flex align-items-center">
-                        <input class="form-check-input me-3" type="checkbox" 
+                    <div class="d-flex align-items-center gap-3">
+                        <!-- Image Placeholder (matching mobile design) -->
+                        <div style="width: 60px; height: 60px; background: linear-gradient(135deg, #E2E8F0 0%, #CBD5E1 100%); border-radius: 12px; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+                            <i class="bi bi-image" style="font-size: 1.5rem; color: #94A3B8;"></i>
+                        </div>
+                        
+                        <!-- Item Info -->
+                        <div class="flex-grow-1" style="min-width: 0;">
+                            <div class="d-flex align-items-start justify-content-between gap-2 mb-2">
+                                <div style="flex: 1; min-width: 0;">
+                                    <h6 class="mb-1 fw-bold" style="font-size: 1rem; color: #1e293b; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                                        ${item.name}
+                                    </h6>
+                                    <div class="d-flex align-items-center gap-2 flex-wrap">
+                                        <small class="text-muted" style="font-size: 0.85rem;">
+                                            ${quantityDisplay}
+                                        </small>
+                                        <span class="badge" style="background: rgba(139, 92, 246, 0.1); color: #6D28D9; border: 1px solid rgba(139, 92, 246, 0.2); font-size: 0.75rem; padding: 4px 8px; border-radius: 6px; font-weight: 500;">
+                                            ${categoryName}
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Progress Bar and Confirmation Button -->
+                            <div class="d-flex align-items-center justify-content-between gap-2 mt-2">
+                                <div class="flex-grow-1">
+                                    <div style="background: #E2E8F0; border-radius: 8px; height: 6px; overflow: hidden; position: relative;">
+                                        <div style="background: ${buttonBgColor}; height: 100%; width: ${confPercent}%; border-radius: 8px; transition: width 0.3s ease;"></div>
+                                    </div>
+                                    <small class="text-muted" style="font-size: 0.75rem; margin-top: 2px; display: block;">${confPercent}%</small>
+                                </div>
+                                <button type="button" class="btn btn-sm" 
+                                        style="background: ${buttonBgColor}; color: white; border: none; border-radius: 10px; padding: 8px 18px; font-size: 0.85rem; font-weight: 600; white-space: nowrap; flex-shrink: 0; box-shadow: 0 2px 4px rgba(0,0,0,0.1); transition: all 0.2s ease;"
+                                        onclick="event.stopPropagation(); const card = this.closest('.card'); const checkbox = card.querySelector('input[type=\'checkbox\']'); if (checkbox && !checkbox.disabled) { checkbox.checked = !checkbox.checked; checkbox.dispatchEvent(new Event('change', { bubbles: true })); }"
+                                        onmouseenter="this.style.transform = 'scale(1.05)'; this.style.boxShadow = '0 4px 8px rgba(0,0,0,0.15)';"
+                                        onmouseleave="this.style.transform = 'scale(1)'; this.style.boxShadow = '0 2px 4px rgba(0,0,0,0.1)';">
+                                    ${confLabel}
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <!-- Hidden Checkbox -->
+                        <input class="form-check-input" type="checkbox" 
                                ${wasAutoAdded ? 'disabled' : 'checked'}
                                data-item='${JSON.stringify(item).replace(/'/g, "&#39;")}' 
                                id="ai_item_${item.id || item.name.replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_]/g, '')}"
-                               style="width: 1.25rem; height: 1.25rem; cursor: pointer;">
-                        <label class="form-check-label flex-grow-1" for="ai_item_${item.id || item.name.replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_]/g, '')}" style="cursor: pointer;">
-                            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
-                                <div style="flex: 1;">
-                                    <div class="d-flex align-items-center gap-2 flex-wrap">
-                                        <strong style="font-size: 1.05rem; color: #1e293b;">${item.name}</strong>
-                                        ${partialBadge}
-                                        ${autoAddedBadge}
-                                    </div>
-                                    <div class="mt-1">
-                                        <small class="text-muted">
-                                            <i class="bi bi-box-seam me-1"></i>${item.quantity || '1'} 
-                                            <i class="bi bi-tag-fill ms-2 me-1"></i>${item.category || 'other'}
-                                        </small>
-                                        ${expRiskBadge}
-                                    </div>
-                                </div>
-                                <div class="d-flex align-items-center gap-2">
-                                    <span class="badge" style="background: ${confColor}; color: white; font-size: 0.875rem; padding: 6px 12px; border-radius: 8px;">
-                                        <i class="bi ${confidenceLevel === 'high' ? 'bi-shield-check' : confidenceLevel === 'medium' ? 'bi-exclamation-triangle' : 'bi-question-circle'} me-1"></i>
-                                        ${confLabel}
-                                    </span>
-                                    <span class="badge" style="background: rgba(0,0,0,0.1); color: #475569; font-size: 0.875rem; padding: 6px 10px; border-radius: 6px; font-weight: 600;">
-                                        ${confPercent}%
-                                    </span>
-                                </div>
-                            </div>
-                        </label>
+                               style="position: absolute; opacity: 0; pointer-events: none; width: 0; height: 0;">
                     </div>
                 </div>
             `;
@@ -4753,7 +4945,44 @@
         const expiringDaysSelect = document.getElementById('expiringDays');
         
         if (recipeBtn && expiringDaysSelect) {
+            // Update recipe button state based on pantry items
+            function updateRecipeButtonState() {
+                const items = document.querySelectorAll('.pantry-item-wrapper');
+                const hasItems = items.length > 0;
+                
+                if (hasItems) {
+                    recipeBtn.disabled = false;
+                    recipeBtn.style.opacity = '1';
+                    recipeBtn.style.cursor = 'pointer';
+                    recipeBtn.title = 'Get recipe suggestions based on your pantry items';
+                } else {
+                    recipeBtn.disabled = true;
+                    recipeBtn.style.opacity = '0.6';
+                    recipeBtn.style.cursor = 'not-allowed';
+                    recipeBtn.title = 'Add items to your pantry first to get recipe suggestions';
+                }
+            }
+            
+            // Check state on load and when items change
+            updateRecipeButtonState();
+            
+            // Monitor for pantry changes
+            const observer = new MutationObserver(() => {
+                updateRecipeButtonState();
+            });
+            const pantryContainer = document.getElementById('pantryItemsContainer');
+            if (pantryContainer) {
+                observer.observe(pantryContainer, { childList: true, subtree: true });
+            }
+            
             recipeBtn.addEventListener('click', (e) => {
+                const items = document.querySelectorAll('.pantry-item-wrapper');
+                if (items.length === 0) {
+                    e.preventDefault();
+                    showFeedback('Please add items to your pantry first to get recipe suggestions!', 'warning');
+                    return false;
+                }
+                
                 const expiringDays = expiringDaysSelect.value;
                 if (expiringDays && expiringDays.trim() !== '') {
                     // If expiring days is selected, add it to the URL
@@ -5439,15 +5668,54 @@
             formData.set('expiration_date', expirationDateValue);
         }
         
-        // Validate input
+        // Validate input - Enhanced validation
         if (!itemName || !itemName.trim()) {
             if (feedback) {
-                showFeedback('Please enter an item name', 'danger');
+                showFeedback('⚠️ Please enter an item name', 'danger');
+            } else {
+                alert('Please enter an item name');
             }
             if (itemInput) {
                 itemInput.focus();
+                itemInput.classList.add('is-invalid');
+                setTimeout(() => itemInput.classList.remove('is-invalid'), 3000);
             }
+            isSubmitting = false; // Reset flag on validation failure
             return false;
+        }
+        
+        // Validate item name length
+        if (itemName.trim().length > 100) {
+            if (feedback) {
+                showFeedback('⚠️ Item name is too long (max 100 characters)', 'danger');
+            }
+            if (itemInput) {
+                itemInput.focus();
+                itemInput.select();
+                itemInput.classList.add('is-invalid');
+                setTimeout(() => itemInput.classList.remove('is-invalid'), 3000);
+            }
+            isSubmitting = false;
+            return false;
+        }
+        
+        // Validate expiration date format if provided
+        if (expirationDateInput && expirationDateInput.value) {
+            const expDate = expirationDateInput.value.trim();
+            // Basic date format validation (YYYY-MM-DD)
+            const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+            if (!dateRegex.test(expDate)) {
+                if (feedback) {
+                    showFeedback('⚠️ Invalid date format. Please use YYYY-MM-DD', 'danger');
+                }
+                if (expirationDateInput) {
+                    expirationDateInput.focus();
+                    expirationDateInput.classList.add('is-invalid');
+                    setTimeout(() => expirationDateInput.classList.remove('is-invalid'), 3000);
+                }
+                isSubmitting = false;
+                return false;
+            }
         }
         
         // Set submitting flag and disable button
@@ -5509,24 +5777,9 @@
                         resetButton();
                         // Close modal if it's the modal form
                         if (isModal) {
-                            const addItemModal = document.getElementById('addItemModal');
-                            if (addItemModal && typeof bootstrap !== 'undefined' && bootstrap.Modal) {
-                                const modalInstance = bootstrap.Modal.getInstance(addItemModal) || new bootstrap.Modal(addItemModal);
-                                setTimeout(() => {
-                                    modalInstance.hide();
-                                    // Clean up backdrop after modal closes
-                                    setTimeout(() => {
-                                        cleanupStuckBackdrops();
-                                    }, 300);
-                                }, 1500); // Close after showing success message
-                            } else {
-                                // Fallback: manually hide modal
-                                addItemModal.classList.remove('show');
-                                addItemModal.style.display = 'none';
-                                addItemModal.setAttribute('aria-hidden', 'true');
-                                addItemModal.removeAttribute('aria-modal');
-                                cleanupStuckBackdrops();
-                            }
+                            setTimeout(() => {
+                                closeModalSafely('addItemModal');
+                            }, 1500); // Close after showing success message
                         }
                         // Optimistic UI update - show item count immediately
                         const statsCountElement = document.getElementById('pantryStatsCount');
@@ -5536,10 +5789,53 @@
                         }
                         
                         // Update pantry items without reloading page
-                        // Add small delay to ensure server has finished saving
+                        // Increase delay for Firebase to ensure data is saved
+                        // Firebase writes can take longer than file-based storage
                         setTimeout(async () => {
-                            await reloadPantryItems();
-                        }, 300);
+                            try {
+                                await reloadPantryItems();
+                                // Update empty state and progress after reload
+                                if (typeof updateEmptyState === 'function') {
+                                    updateEmptyState();
+                                }
+                                if (typeof updateProgressIndicator === 'function') {
+                                    updateProgressIndicator();
+                                }
+                                if (typeof updateSmartSuggestions === 'function') {
+                                    updateSmartSuggestions();
+                                }
+                                
+                                // Retry once more after a longer delay if Firebase might be slow
+                                setTimeout(async () => {
+                                    try {
+                                        const container = document.getElementById('pantryItemsContainer');
+                                        const expectedItems = data.items_added || 1;
+                                        const currentItems = container ? container.children.length : 0;
+                                        // Only retry if items are still not showing
+                                        if (currentItems === 0) {
+                                            console.log('Retrying reload after Firebase save delay...');
+                                            await reloadPantryItems();
+                                            // Update again after retry
+                                            if (typeof updateEmptyState === 'function') {
+                                                updateEmptyState();
+                                            }
+                                            if (typeof updateProgressIndicator === 'function') {
+                                                updateProgressIndicator();
+                                            }
+                                        }
+                                    } catch (retryError) {
+                                        console.error('Error in reload retry:', retryError);
+                                    }
+                                }, 800);
+                            } catch (reloadError) {
+                                console.error('Error reloading pantry items:', reloadError);
+                                // Show user-friendly error
+                                const feedback = document.getElementById('addItemFeedback') || document.getElementById('addItemModalFeedback');
+                                if (feedback) {
+                                    showFeedback('Items added but failed to refresh. Please refresh the page.', 'warning');
+                                }
+                            }
+                        }, 500);
                 } else {
                     // Error from server
                     if (feedback) {
@@ -5564,21 +5860,57 @@
                     resetButton();
                     // Close modal if it's the modal form
                     if (isModal) {
-                        const addItemModal = document.getElementById('addItemModal');
-                        if (addItemModal && typeof bootstrap !== 'undefined' && bootstrap.Modal) {
-                            const modalInstance = bootstrap.Modal.getInstance(addItemModal);
-                            if (modalInstance) {
-                                setTimeout(() => {
-                                    modalInstance.hide();
-                                }, 1500); // Close after showing success message
-                            }
-                        }
+                        setTimeout(() => {
+                            closeModalSafely('addItemModal');
+                        }, 1500); // Close after showing success message
                     }
                     // Update pantry items without reloading page
-                    // Add small delay to ensure server has finished saving
+                    // Increase delay for Firebase to ensure data is saved
+                    // Firebase writes can take longer than file-based storage
                     setTimeout(async () => {
-                        await reloadPantryItems();
-                    }, 300);
+                        try {
+                            await reloadPantryItems();
+                            // Update empty state and progress after reload
+                            if (typeof updateEmptyState === 'function') {
+                                updateEmptyState();
+                            }
+                            if (typeof updateProgressIndicator === 'function') {
+                                updateProgressIndicator();
+                            }
+                            if (typeof updateSmartSuggestions === 'function') {
+                                updateSmartSuggestions();
+                            }
+                            
+                            // Retry once more after a longer delay if Firebase might be slow
+                            setTimeout(async () => {
+                                try {
+                                    const container = document.getElementById('pantryItemsContainer');
+                                    const currentItems = container ? container.children.length : 0;
+                                    // Only retry if items are still not showing
+                                    if (currentItems === 0) {
+                                        console.log('Retrying reload after Firebase save delay...');
+                                        await reloadPantryItems();
+                                        // Update again after retry
+                                        if (typeof updateEmptyState === 'function') {
+                                            updateEmptyState();
+                                        }
+                                        if (typeof updateProgressIndicator === 'function') {
+                                            updateProgressIndicator();
+                                        }
+                                    }
+                                } catch (retryError) {
+                                    console.error('Error in reload retry:', retryError);
+                                }
+                            }, 800);
+                        } catch (reloadError) {
+                            console.error('Error reloading pantry items:', reloadError);
+                            // Show user-friendly error
+                            const feedback = document.getElementById('addItemFeedback') || document.getElementById('addItemModalFeedback');
+                            if (feedback) {
+                                showFeedback('Items added but failed to refresh. Please refresh the page.', 'warning');
+                            }
+                        }
+                    }, 500);
                 } else {
                     // Error response
                     return response.text().then(text => {
@@ -5678,6 +6010,14 @@
         }
         reloadInProgress = true;
         
+        // Ensure we have a valid container before proceeding
+        const container = document.getElementById('pantryItemsContainer');
+        if (!container) {
+            console.warn('Pantry items container not found, cannot reload');
+            reloadInProgress = false;
+            return;
+        }
+        
         // Store scroll position before reload
         const scrollPosition = window.pageYOffset || document.documentElement.scrollTop;
         
@@ -5687,7 +6027,9 @@
             const response = await fetchWithTimeout(url, {
                 method: 'GET',
                 headers: {
-                    'X-Requested-With': 'XMLHttpRequest'
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'Cache-Control': 'no-cache',
+                    'Pragma': 'no-cache'
                 },
                 cache: 'no-cache'  // Prevent browser caching
             });
@@ -5965,9 +6307,13 @@
                 console.warn('Reload request timed out');
             }
             // Don't reload page - just show error message
-            const feedback = document.getElementById('addItemFeedback');
+            const feedback = document.getElementById('addItemFeedback') || document.getElementById('addItemModalFeedback');
             if (feedback) {
-                showFeedback('Failed to reload items. Please refresh the page.', 'warning');
+                try {
+                    showFeedback('Failed to reload items. Please refresh the page.', 'warning');
+                } catch (feedbackError) {
+                    console.error('Error showing feedback:', feedbackError);
+                }
             }
         } finally {
             // Always reset the reload flag
@@ -6027,12 +6373,21 @@
                 await new Promise(resolve => setTimeout(resolve, 300));
                 
                 // Reload items (this will restore scroll position internally)
-                await reloadPantryItems();
-                
-                // Restore scroll position after reload
-                setTimeout(() => {
-                    window.scrollTo(0, scrollPosition);
-                }, 100);
+                try {
+                    await reloadPantryItems();
+                    
+                    // Restore scroll position after reload
+                    setTimeout(() => {
+                        try {
+                            window.scrollTo(0, scrollPosition);
+                        } catch (scrollError) {
+                            console.error('Error restoring scroll position:', scrollError);
+                        }
+                    }, 100);
+                } catch (reloadError) {
+                    console.error('Error reloading after delete:', reloadError);
+                    // Still show success message even if reload fails
+                }
                 
                 // Show success feedback
                 const feedback = document.getElementById('addItemFeedback');
@@ -6175,7 +6530,16 @@
                     }
                     
                     // Reload pantry items to reflect the change
-                    await reloadPantryItems();
+                    try {
+                        await reloadPantryItems();
+                    } catch (reloadError) {
+                        console.error('Error reloading after update:', reloadError);
+                        // Show warning but don't fail completely
+                        const feedback = document.getElementById('addItemFeedback');
+                        if (feedback) {
+                            showFeedback('Item updated but failed to refresh. Please refresh the page.', 'warning');
+                        }
+                    }
                 } else {
                     throw new Error(data.error || 'Failed to update item');
                 }
@@ -6606,6 +6970,7 @@
         const items = document.querySelectorAll('.pantry-item-wrapper');
         if (items.length === 0) {
             banner.style.display = 'none';
+            suggestionText.textContent = 'Add items to get smart suggestions!';
             return;
         }
         
@@ -6628,8 +6993,41 @@
             banner.style.display = 'block';
             suggestionText.textContent = `You have ${expiringCount} item${expiringCount > 1 ? 's' : ''} expiring this week. Consider using them in recipes!`;
         } else {
-            banner.style.display = 'none';
+            banner.style.display = 'block';
+            suggestionText.textContent = `You have ${items.length} item${items.length > 1 ? 's' : ''} in your pantry. Ready to cook!`;
         }
+    }
+    
+    // Initialize suggestions with timeout
+    let suggestionTimeout;
+    function initializeSuggestions() {
+        const suggestionText = document.getElementById('suggestionText');
+        if (!suggestionText) return;
+        
+        // Clear any existing timeout
+        if (suggestionTimeout) {
+            clearTimeout(suggestionTimeout);
+        }
+        
+        // Set loading state
+        suggestionText.textContent = 'Loading suggestions...';
+        
+        // Update after a short delay (allows DOM to be ready)
+        suggestionTimeout = setTimeout(() => {
+            updateSmartSuggestions();
+        }, 500);
+        
+        // Fallback timeout - if still loading after 3 seconds, show default
+        setTimeout(() => {
+            if (suggestionText.textContent === 'Loading suggestions...') {
+                const items = document.querySelectorAll('.pantry-item-wrapper');
+                if (items.length === 0) {
+                    suggestionText.textContent = 'Add items to get smart suggestions!';
+                } else {
+                    suggestionText.textContent = `You have ${items.length} item${items.length > 1 ? 's' : ''} in your pantry.`;
+                }
+            }
+        }, 3000);
     }
     
     // Progress Indicator
@@ -6655,7 +7053,7 @@
             const expirationBadge = item.querySelector('.expiration-badge[data-exp-date]');
             if (expirationBadge) {
                 const expDate = expirationBadge.getAttribute('data-exp-date');
-                if (expDate && expDate !== '9999-12-31' && expDate !== 'None' && expDate !== '') {
+                if (expDate && expDate !== '9999-12-31' && expDate !== 'None' && expDate !== '' && expDate !== 'null') {
                     itemsWithDates++;
                 }
             }
@@ -6667,6 +7065,42 @@
         progressText.textContent = `${totalItems} item${totalItems > 1 ? 's' : ''} tracked`;
         progressPercent.textContent = `${completeness}%`;
         progressBar.style.width = `${completeness}%`;
+        progressBar.style.background = completeness >= 50 
+            ? 'linear-gradient(90deg, #10B981 0%, #059669 100%)' 
+            : completeness >= 25 
+            ? 'linear-gradient(90deg, #F59E0B 0%, #D97706 100%)'
+            : 'linear-gradient(90deg, #EF4444 0%, #DC2626 100%)';
+    }
+    
+    // Monitor pantry changes to update progress and empty state
+    let progressObserver;
+    function setupProgressObserver() {
+        const pantryContainer = document.getElementById('pantryItemsContainer');
+        if (pantryContainer && !progressObserver) {
+            progressObserver = new MutationObserver(() => {
+                updateProgressIndicator();
+                updateSmartSuggestions();
+                updateEmptyState();
+            });
+            progressObserver.observe(pantryContainer, { childList: true, subtree: true });
+        }
+    }
+    
+    // Update empty state visibility
+    function updateEmptyState() {
+        const emptyState = document.querySelector('.empty-state');
+        const pantryContainer = document.getElementById('pantryItemsContainer');
+        
+        if (!emptyState || !pantryContainer) return;
+        
+        const items = pantryContainer.querySelectorAll('.pantry-item-wrapper');
+        const hasItems = items.length > 0;
+        
+        if (hasItems) {
+            emptyState.style.display = 'none';
+        } else {
+            emptyState.style.display = 'block';
+        }
     }
     
     // Filter functionality
@@ -6849,18 +7283,60 @@
     
     // Cleanup stuck backdrops function - ALWAYS remove backdrops
     function cleanupStuckBackdrops() {
-        // Always remove all backdrops - we don't want them at all
-        const backdrops = document.querySelectorAll('.modal-backdrop');
-        backdrops.forEach(backdrop => {
-            backdrop.style.display = 'none';
-            backdrop.remove();
-        });
-        // Don't remove modal-open class if modals are actually open
-        const openModals = document.querySelectorAll('.modal.show');
-        if (openModals.length === 0) {
-            document.body.classList.remove('modal-open');
-            document.body.style.overflow = '';
-            document.body.style.paddingRight = '';
+        try {
+            // Always remove all backdrops - we don't want them at all
+            const backdrops = document.querySelectorAll('.modal-backdrop');
+            backdrops.forEach(backdrop => {
+                try {
+                    backdrop.style.display = 'none';
+                    backdrop.remove();
+                } catch (e) {
+                    console.warn('Error removing backdrop:', e);
+                }
+            });
+            // Don't remove modal-open class if modals are actually open
+            const openModals = document.querySelectorAll('.modal.show');
+            if (openModals.length === 0) {
+                document.body.classList.remove('modal-open');
+                document.body.style.overflow = '';
+                document.body.style.paddingRight = '';
+            }
+        } catch (error) {
+            console.error('Error in cleanupStuckBackdrops:', error);
+        }
+    }
+    
+    // Consistent modal close helper
+    function closeModalSafely(modalId) {
+        try {
+            const modal = document.getElementById(modalId);
+            if (!modal) return;
+            
+            if (typeof bootstrap !== 'undefined' && bootstrap.Modal) {
+                const modalInstance = bootstrap.Modal.getInstance(modal);
+                if (modalInstance) {
+                    modalInstance.hide();
+                } else {
+                    // Fallback: manually hide
+                    modal.classList.remove('show');
+                    modal.style.display = 'none';
+                    modal.setAttribute('aria-hidden', 'true');
+                    modal.removeAttribute('aria-modal');
+                }
+            } else {
+                // Fallback: manually hide
+                modal.classList.remove('show');
+                modal.style.display = 'none';
+                modal.setAttribute('aria-hidden', 'true');
+                modal.removeAttribute('aria-modal');
+            }
+            
+            // Always cleanup backdrops after closing
+            setTimeout(() => {
+                cleanupStuckBackdrops();
+            }, 100);
+        } catch (error) {
+            console.error(`Error closing modal ${modalId}:`, error);
         }
     }
     
@@ -6928,13 +7404,22 @@
                 });
             }
             
-            // Ensure functions are available
+            // Initialize all UI updates
+            if (typeof initializeSuggestions === 'function') {
+                initializeSuggestions();
+            }
             if (typeof updateSmartSuggestions === 'function') {
                 setTimeout(() => {
                     try {
                         updateSmartSuggestions();
                         if (typeof updateProgressIndicator === 'function') {
                             updateProgressIndicator();
+                        }
+                        if (typeof setupProgressObserver === 'function') {
+                            setupProgressObserver();
+                        }
+                        if (typeof updateEmptyState === 'function') {
+                            updateEmptyState();
                         }
                         console.log('Smart suggestions and progress indicator updated');
                     } catch (error) {
@@ -6943,6 +7428,28 @@
                 }, 500);
             } else {
                 console.error('updateSmartSuggestions function not found!');
+            }
+            
+            // Ensure handleAddItem is properly attached to forms
+            const addItemForm = document.getElementById('addItemForm');
+            const addItemModalForm = document.getElementById('addItemModalForm');
+            
+            if (addItemForm && !addItemForm.hasAttribute('data-handler-attached')) {
+                addItemForm.addEventListener('submit', function(e) {
+                    if (typeof window.handleAddItem === 'function') {
+                        window.handleAddItem(e);
+                    }
+                });
+                addItemForm.setAttribute('data-handler-attached', 'true');
+            }
+            
+            if (addItemModalForm && !addItemModalForm.hasAttribute('data-handler-attached')) {
+                addItemModalForm.addEventListener('submit', function(e) {
+                    if (typeof window.handleAddItem === 'function') {
+                        window.handleAddItem(e);
+                    }
+                });
+                addItemModalForm.setAttribute('data-handler-attached', 'true');
             }
             
             // Verify critical functions exist

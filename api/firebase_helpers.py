@@ -112,8 +112,21 @@ def create_user_in_firestore(username, email, password, client_type='web'):
     import uuid
     
     try:
+        print(f"\n{'='*60}")
+        print(f"🔥 CREATING USER IN FIRESTORE")
+        print(f"{'='*60}")
+        print(f"Username: {username}")
+        print(f"Email: {email}")
+        print(f"Client Type: {client_type}")
+        
+        # Get database connection
         db = get_db()
+        if not db:
+            print(f"❌ ERROR: Failed to get Firestore database connection")
+            return None, "Firebase database connection failed"
+        
         users_ref = db.collection('users')
+        print(f"✅ Got Firestore users collection reference")
         
         # Normalize inputs
         username_normalized = username.strip().lower() if username else ""
@@ -126,16 +139,23 @@ def create_user_in_firestore(username, email, password, client_type='web'):
             return None, "Email cannot be empty"
         
         # Check if username or email already exists
+        print(f"🔍 Checking for existing users...")
         existing_users = users_ref.stream()
+        existing_count = 0
         for user_doc in existing_users:
+            existing_count += 1
             user_data = user_doc.to_dict()
             stored_username = user_data.get('username', '').strip().lower()
             stored_email = user_data.get('email', '').strip().lower()
             
             if stored_username == username_normalized:
+                print(f"❌ Username '{username}' already exists")
                 return None, f"Username '{username}' already exists"
             if stored_email == email_normalized:
+                print(f"❌ Email '{email}' already exists")
                 return None, f"Email '{email}' already exists"
+        
+        print(f"✅ No duplicate found. Checked {existing_count} existing users")
         
         # Create new user
         user_id = str(uuid.uuid4())
@@ -150,12 +170,47 @@ def create_user_in_firestore(username, email, password, client_type='web'):
             'last_login': None
         }
         
-        # Save to Firestore
-        users_ref.document(user_id).set(user_data)
+        print(f"💾 Saving user to Firestore...")
+        print(f"   User ID: {user_id}")
+        print(f"   Document path: users/{user_id}")
         
-        return user_id, None
+        # Save to Firestore with explicit error handling
+        try:
+            users_ref.document(user_id).set(user_data)
+            print(f"✅ User document.set() completed without exception")
+        except Exception as set_error:
+            print(f"❌ ERROR in document.set(): {set_error}")
+            import traceback
+            traceback.print_exc()
+            return None, f"Failed to save user to Firestore: {str(set_error)}"
+        
+        # Verify the user was saved by reading it back immediately
+        print(f"🔍 Verifying user was saved...")
+        try:
+            verify_doc = users_ref.document(user_id).get()
+            if verify_doc.exists:
+                verify_data = verify_doc.to_dict()
+                print(f"✅ Verified user exists in Firestore: {verify_data.get('username')}")
+                print(f"   Verified email: {verify_data.get('email')}")
+                print(f"   Verified client_type: {verify_data.get('client_type')}")
+                print(f"{'='*60}\n")
+                return user_id, None
+            else:
+                print(f"❌ ERROR: User {user_id} was not found in Firestore after creation!")
+                print(f"   Document.exists = False")
+                return None, "Failed to save user to Firebase - user not found after creation"
+        except Exception as verify_error:
+            print(f"❌ ERROR verifying user: {verify_error}")
+            import traceback
+            traceback.print_exc()
+            # Still return success if set() worked, but log the verification error
+            print(f"⚠️ WARNING: Could not verify user, but set() completed. User may still be saved.")
+            return user_id, None
+            
     except Exception as e:
-        print(f"Error creating user in Firestore: {e}")
+        print(f"❌ Error creating user in Firestore: {e}")
+        import traceback
+        traceback.print_exc()
         return None, str(e)
 
 

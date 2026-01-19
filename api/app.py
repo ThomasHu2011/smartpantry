@@ -11,21 +11,42 @@ from dotenv import load_dotenv
 USE_FIREBASE = os.getenv('USE_FIREBASE', 'false').lower() == 'true'
 if USE_FIREBASE:
     try:
-        from firebase_config import get_db, initialize_firebase
-        from firebase_helpers import (
-            load_users as firebase_load_users,
-            save_users as firebase_save_users,
-            create_user_in_firestore,
-            get_user_by_id as firebase_get_user_by_id,
-            update_user as firebase_update_user,
-            get_user_pantry as firebase_get_user_pantry,
-            update_user_pantry as firebase_update_user_pantry
-        )
-        # Initialize Firebase on import
-        initialize_firebase()
-        print("✅ Firebase enabled and initialized")
+        # Import with explicit path handling for different environments
+        import sys
+        import importlib.util
+        
+        # Get the directory where app.py is located
+        _app_file_dir = os.path.dirname(os.path.abspath(__file__))
+        
+        # Try to load firebase_config module
+        firebase_config_path = os.path.join(_app_file_dir, 'firebase_config.py')
+        firebase_helpers_path = os.path.join(_app_file_dir, 'firebase_helpers.py')
+        
+        if os.path.exists(firebase_config_path) and os.path.exists(firebase_helpers_path):
+            # Add the directory to sys.path if not already there
+            if _app_file_dir not in sys.path:
+                sys.path.insert(0, _app_file_dir)
+            
+            # Import modules
+            from firebase_config import get_db, initialize_firebase
+            from firebase_helpers import (
+                load_users as firebase_load_users,
+                save_users as firebase_save_users,
+                create_user_in_firestore,
+                get_user_by_id as firebase_get_user_by_id,
+                update_user as firebase_update_user,
+                get_user_pantry as firebase_get_user_pantry,
+                update_user_pantry as firebase_update_user_pantry
+            )
+            # Initialize Firebase on import
+            initialize_firebase()
+            print("✅ Firebase enabled and initialized")
+        else:
+            raise ImportError(f"Firebase config files not found. Expected: {firebase_config_path}, {firebase_helpers_path}")
     except Exception as e:
         print(f"⚠️ Warning: Firebase enabled but initialization failed: {e}")
+        import traceback
+        traceback.print_exc()
         print("   Falling back to file-based storage")
         USE_FIREBASE = False
 
@@ -37,6 +58,9 @@ IS_RENDER = os.getenv('RENDER') == 'true' or 'render.com' in os.getenv('RENDER_E
 # CORS will be handled via manual headers (no flask-cors dependency needed)
 # This approach works perfectly for all use cases and doesn't require additional packages
 CORS_AVAILABLE = False
+
+# Get the directory where app.py is located (needed for imports and paths)
+_app_file_dir = os.path.dirname(os.path.abspath(__file__))  # api/ directory
 
 # Load environment variables from .env file (optional - safe for serverless)
 # In Vercel, environment variables are set directly, so .env file is optional
@@ -57,7 +81,6 @@ except Exception as e:
 # Initialize Flask app with explicit configuration for serverless
 # Use absolute paths for templates and static files to work in serverless
 # Templates and static are now in api/ directory (copied from SmartPantryWeb)
-_app_file_dir = os.path.dirname(os.path.abspath(__file__))  # api/ directory
 _template_folder = os.path.join(_app_file_dir, 'templates')
 _static_folder = os.path.join(_app_file_dir, 'static')
 
@@ -496,6 +519,131 @@ def load_ml_models():
             _ml_models_loaded = True
             return False
 
+def compute_image_quality_score(img):
+    """
+    Compute image quality score (0.0-1.0) based on:
+    - Blur score (Laplacian variance)
+    - Brightness
+    - Contrast
+    - Glare/reflection detection
+    
+    Returns:
+        quality_score: float in [0.0, 1.0], where 1.0 is perfect quality
+        quality_metrics: dict with individual scores
+    """
+    try:
+        import numpy as np
+        from PIL import Image
+        import cv2
+        
+        # Convert PIL to numpy array
+        if isinstance(img, Image.Image):
+            img_array = np.array(img)
+        else:
+            img_array = img
+        
+        # Convert to grayscale for analysis
+        if len(img_array.shape) == 3:
+            gray = cv2.cvtColor(img_array, cv2.COLOR_RGB2GRAY)
+        else:
+            gray = img_array
+        
+        metrics = {}
+        
+        # 1. Blur score using Laplacian variance (higher = sharper)
+        laplacian_var = cv2.Laplacian(gray, cv2.CV_64F).var()
+        # Normalize: good images typically have variance > 100, poor < 50
+        blur_score = min(1.0, laplacian_var / 200.0)  # Cap at 1.0 for variance > 200
+        metrics['blur_score'] = blur_score
+        
+        # 2. Brightness score (optimal range: 100-200)
+        try:
+            mean_brightness = np.mean(gray)
+            if not np.isfinite(mean_brightness):
+                mean_brightness = 128.0  # Default to middle
+            
+            # Penalize too dark (< 50) or too bright (> 230)
+            if mean_brightness < 50:
+                brightness_score = max(0.0, mean_brightness / 50.0)
+            elif mean_brightness > 230:
+                brightness_score = max(0.0, (255 - mean_brightness) / 25.0)
+            else:
+                brightness_score = 1.0  # Optimal range
+            brightness_score = max(0.0, min(1.0, brightness_score))
+        except Exception as e:
+            if VERBOSE_LOGGING:
+                print(f"Warning: Brightness detection failed: {e}")
+            brightness_score = 0.8  # Default to good score
+        
+        metrics['brightness_score'] = brightness_score
+        
+        # 3. Contrast score (standard deviation of pixel values)
+        try:
+            contrast_std = np.std(gray)
+            if not np.isfinite(contrast_std) or contrast_std < 0:
+                contrast_std = 30.0  # Default to medium contrast
+            # Good contrast typically has std > 30, poor < 15
+            contrast_score = min(1.0, max(0.0, contrast_std / 50.0))
+        except Exception as e:
+            if VERBOSE_LOGGING:
+                print(f"Warning: Contrast detection failed: {e}")
+            contrast_score = 0.7  # Default to medium score
+        
+        metrics['contrast_score'] = contrast_score
+        
+        # 4. Glare/reflection detection (high brightness variance in small regions)
+        # Divide image into blocks and check for high variance (indicates glare)
+        try:
+            h, w = gray.shape
+            if h <= 0 or w <= 0:
+                glare_score = 1.0
+            else:
+                block_size = min(32, max(1, h // 4), max(1, w // 4))  # Ensure at least 1
+                if block_size > 0:
+                    block_vars = []
+                    for y in range(0, h, block_size):
+                        for x in range(0, w, block_size):
+                            try:
+                                block = gray[y:y+block_size, x:x+block_size]
+                                if block.size > 0:
+                                    block_vars.append(np.var(block))
+                            except (IndexError, ValueError):
+                                continue
+                    
+                    if block_vars and len(block_vars) > 0:
+                        # High variance in many blocks suggests glare/reflection
+                        high_var_blocks = sum(1 for v in block_vars if v > 1000)
+                        glare_ratio = high_var_blocks / len(block_vars)  # Safe division (len > 0)
+                        # Penalize if > 20% of blocks have high variance (glare)
+                        glare_score = max(0.0, 1.0 - (glare_ratio - 0.2) * 2.0)
+                    else:
+                        glare_score = 1.0
+                else:
+                    glare_score = 1.0
+        except (AttributeError, IndexError, ValueError) as e:
+            if VERBOSE_LOGGING:
+                print(f"Warning: Glare detection failed: {e}")
+            glare_score = 1.0  # Default to good score if analysis fails
+        
+        metrics['glare_score'] = glare_score
+        
+        # Combined quality score (weighted average)
+        quality_score = (
+            blur_score * 0.35 +      # Most important: sharpness
+            brightness_score * 0.25 + # Important: proper exposure
+            contrast_score * 0.25 +   # Important: good contrast
+            glare_score * 0.15         # Less critical: glare detection
+        )
+        
+        metrics['overall_quality'] = quality_score
+        return quality_score, metrics
+        
+    except Exception as e:
+        if VERBOSE_LOGGING:
+            print(f"Warning: Image quality scoring failed: {e}")
+        # Return default good score if analysis fails
+        return 0.8, {'error': str(e)}
+
 def preprocess_image_for_ml(img_bytes, angle=None, apply_perspective_correction=False):
     """
     Enhanced preprocessing: resize + enhance + sharpen + rotation correction for better accuracy.
@@ -795,15 +943,20 @@ def classify_food_hierarchical(img_crop, classification_pred=None):
     
     return None
 
-def apply_context_fusion(items, user_pantry=None):
+def apply_context_fusion(items, user_pantry=None, img_height=None):
     """
-    Boost confidence based on context:
+    Enhanced context fusion with shelf-aware spatial context:
         - Items already in pantry are more likely
-    - Common items are more likely
-    - Location hints (if bbox available)
+        - Common items are more likely
+        - Shelf-aware location hints (door shelves → beverages/condiments, crisper → produce, etc.)
+    
+    Args:
+        items: List of detected items with bounding boxes
+        user_pantry: Optional user's current pantry for context fusion
+        img_height: Optional image height for spatial context (Y-position normalization)
     """
     if not user_pantry:
-        return items
+        user_pantry = []
     
     existing_items = set()
     if isinstance(user_pantry, list):
@@ -815,21 +968,76 @@ def apply_context_fusion(items, user_pantry=None):
     
     common_items = {"milk", "eggs", "bread", "cheese", "chicken", "yogurt", "butter", "apple", "banana", "tomato"}
     
+    # Shelf-aware categories (typical fridge/pantry organization)
+    DOOR_SHELF_ITEMS = {"beverages", "condiments", "juice", "soda", "water", "ketchup", "mustard", "mayonnaise", "sauce", "dressing"}
+    CRISPER_ITEMS = {"produce", "apple", "banana", "orange", "tomato", "lettuce", "carrot", "onion", "potato", "broccoli"}
+    BOTTOM_SHELF_ITEMS = {"meat", "dairy", "chicken", "beef", "pork", "fish", "milk", "cheese", "yogurt", "butter"}
+    TOP_SHELF_ITEMS = {"bakery", "snacks", "bread", "bagel", "muffin", "crackers", "cookies"}
+    
     for item in items:
         name_lower = item.get("name", "").lower().strip()
         if not name_lower:
             continue
         
         base_confidence = item.get("confidence", 0)
+        boosts = []
         
-        # Boost if already in pantry
+        # 1. Boost if already in pantry
         if name_lower in existing_items:
             item["confidence"] = min(1.0, base_confidence + 0.15)
-            item["context_boost"] = "already_in_pantry"
-        # Boost if common item
+            boosts.append("already_in_pantry")
+        
+        # 2. Boost if common item
         elif name_lower in common_items:
             item["confidence"] = min(1.0, base_confidence + 0.1)
-            item["context_boost"] = "common_item"
+            boosts.append("common_item")
+        
+        # 3. Shelf-aware spatial context (if bounding box available)
+        if img_height and img_height > 0 and 'bbox' in item and item.get('bbox'):
+            try:
+                bbox = item['bbox']
+                if len(bbox) >= 4 and isinstance(bbox[1], (int, float)) and isinstance(bbox[3], (int, float)):
+                    # Get Y position (normalized: 0.0 = top, 1.0 = bottom)
+                    # Prevent division by zero
+                    if img_height > 0:
+                        y_center = (bbox[1] + bbox[3]) / 2.0 / img_height
+                    else:
+                        continue  # Skip if invalid img_height
+                    
+                    # Get item category
+                    category = item.get('category', 'other').lower()
+                    item_name = name_lower
+                    
+                    # Door shelves (typically on sides, but we use Y-position as proxy for top-middle)
+                    # In fridges, door items are often in middle Y-range (0.3-0.7)
+                    if 0.3 <= y_center <= 0.7:
+                        if any(door_item in item_name or door_item in category for door_item in DOOR_SHELF_ITEMS):
+                            item["confidence"] = min(1.0, item.get("confidence", base_confidence) + 0.1)
+                            boosts.append("door_shelf_match")
+                    
+                    # Crisper drawer (bottom: y > 0.75)
+                    if y_center > 0.75:
+                        if any(crisper_item in item_name or crisper_item in category for crisper_item in CRISPER_ITEMS):
+                            item["confidence"] = min(1.0, item.get("confidence", base_confidence) + 0.1)
+                            boosts.append("crisper_match")
+                    
+                    # Bottom shelf (y > 0.65)
+                    if y_center > 0.65:
+                        if any(bottom_item in item_name or bottom_item in category for bottom_item in BOTTOM_SHELF_ITEMS):
+                            item["confidence"] = min(1.0, item.get("confidence", base_confidence) + 0.08)
+                            boosts.append("bottom_shelf_match")
+                    
+                    # Top shelf (y < 0.35)
+                    if y_center < 0.35:
+                        if any(top_item in item_name or top_item in category for top_item in TOP_SHELF_ITEMS):
+                            item["confidence"] = min(1.0, item.get("confidence", base_confidence) + 0.08)
+                            boosts.append("top_shelf_match")
+            except Exception as e:
+                if VERBOSE_LOGGING:
+                    print(f"Warning: Shelf-aware context fusion error: {e}")
+        
+        if boosts:
+            item["context_boost"] = "+".join(boosts)
     
     return items
 
@@ -976,21 +1184,46 @@ def calibrate_confidence(items):
 
 def categorize_by_confidence(items):
     """
-    Categorize items by confidence for user confirmation:
-        - High confidence (≥0.8): Auto-add
-    - Medium confidence (0.5-0.8): Ask user
+    Categorize items by adaptive confidence thresholds for user confirmation:
+        - High confidence (≥adaptive threshold): Auto-add
+    - Medium confidence (0.5-adaptive threshold): Ask user
     - Low confidence (<0.5): Ignore or mark uncertain
+    
+    Uses item-aware thresholds: some items need higher confidence to auto-add.
     """
-    HIGH_CONF = 0.8
-    MEDIUM_CONF = 0.5
+    MEDIUM_CONF = 0.5  # Minimum for consideration
     
     high_conf = []
     medium_conf = []
     low_conf = []
     
     for item in items:
+        if not isinstance(item, dict):
+            continue
+        
+        # Safely get confidence with validation
         conf = item.get("confidence", 0)
-        if conf >= HIGH_CONF:
+        try:
+            conf = float(conf) if conf is not None else 0.0
+            conf = max(0.0, min(1.0, conf))  # Clamp to [0.0, 1.0]
+        except (ValueError, TypeError):
+            conf = 0.0
+        
+        item_name = item.get("name", "") or ""
+        category = item.get("category", "other") or "other"
+        
+        # Get adaptive threshold for this item
+        try:
+            adaptive_threshold = get_adaptive_confidence_threshold(item_name, category)
+            adaptive_threshold = max(0.0, min(1.0, float(adaptive_threshold)))  # Validate threshold
+        except Exception as e:
+            if VERBOSE_LOGGING:
+                print(f"Warning: Error getting adaptive threshold: {e}")
+            adaptive_threshold = 0.7  # Fallback to default
+        
+        item["auto_add_threshold"] = adaptive_threshold
+        
+        if conf >= adaptive_threshold:
             high_conf.append(item)
         elif conf >= MEDIUM_CONF:
             medium_conf.append(item)
@@ -1003,17 +1236,64 @@ def categorize_by_confidence(items):
         "low_confidence": low_conf
     }
 
+def get_adaptive_confidence_threshold(item_name, category):
+    """
+    Get item-aware confidence threshold for auto-adding.
+    Some item types are naturally noisier and need higher thresholds.
+    
+    Returns:
+        threshold: float in [0.0, 1.0] - confidence needed for auto-add
+    """
+    name_lower = item_name.lower() if item_name else ""
+    category_lower = category.lower() if category else ""
+    
+    # High-reliability items (common, distinctive) - lower threshold
+    high_reliability = {
+        "milk", "eggs", "bread", "apple", "banana", "orange", "tomato",
+        "chicken", "beef", "cheese", "yogurt", "butter"
+    }
+    
+    # Medium-reliability items - standard threshold
+    medium_reliability = {
+        "pasta", "rice", "cereal", "soup", "juice", "water", "soda",
+        "carrot", "lettuce", "onion", "potato"
+    }
+    
+    # Low-reliability items (packaged, similar-looking) - higher threshold
+    low_reliability = {
+        "sauce", "dressing", "condiment", "spice", "herb", "oil", "vinegar",
+        "crackers", "cookies", "chips", "snacks"
+    }
+    
+    # Check item name
+    if any(hr in name_lower for hr in high_reliability):
+        return 0.6  # Lower threshold for reliable items
+    elif any(mr in name_lower for mr in medium_reliability):
+        return 0.7  # Standard threshold
+    elif any(lr in name_lower for lr in low_reliability):
+        return 0.8  # Higher threshold for noisy items
+    elif category_lower in ["condiments", "snacks"]:
+        return 0.8  # Category-based threshold
+    elif category_lower in ["produce", "dairy", "meat"]:
+        return 0.65  # Slightly lower for fresh items
+    else:
+        return 0.7  # Default threshold
+
 def detect_food_items_with_ml(img_bytes, user_pantry=None, skip_preprocessing=False, use_multi_angle=True):
     """
-    Clear pipeline: Image → Object Detection → Classification → Metadata → Context Fusion → Confidence Categorization
+    Enhanced ML pipeline v2: 
+    Image → Quality Scoring → Preprocessing → Object Detection → Classification → 
+    OCR (gated) → Shelf-Aware Context Fusion → Confidence Calibration → Adaptive Thresholding → Results
     
     Improved hybrid ML approach with better accuracy, especially for bad angle photos:
+        0. Image Quality Scoring - reject/weight poor quality images
         1. Multi-angle ensemble (optional) - try multiple orientations for consistency
-    2. Object Detection (primary method) - finds bounding boxes
-    3. Classify each detection hierarchically (category → item)
-    4. Extract metadata (quantity, expiration)
-    5. Apply context fusion (boost confidence for items in pantry)
-    6. Categorize by confidence for user confirmation
+        2. Object Detection (primary method) - finds bounding boxes
+        3. Classify each detection hierarchically (category → item)
+        4. Extract metadata (quantity, expiration)
+        5. Apply shelf-aware context fusion (boost confidence for items in pantry + spatial context)
+        6. Apply quality-weighted confidence
+        7. Categorize by adaptive confidence thresholds for user confirmation
     
     Args:
         img_bytes: Raw image bytes
@@ -1047,13 +1327,48 @@ def detect_food_items_with_ml(img_bytes, user_pantry=None, skip_preprocessing=Fa
             print(f"Warning: Failed to load ML models: {e}")
         return []  # Return empty list if models can't be loaded
     
+    # STEP 0.5: Image Quality Scoring (NEW)
+    quality_score = 1.0
+    quality_metrics = {}
+    try:
+        from PIL import Image
+        import io
+        temp_img = Image.open(io.BytesIO(img_bytes))
+        quality_score, quality_metrics = compute_image_quality_score(temp_img)
+        
+        if VERBOSE_LOGGING:
+            print(f"📊 Image Quality Score: {quality_score:.2f} (blur={quality_metrics.get('blur_score', 0):.2f}, "
+                  f"brightness={quality_metrics.get('brightness_score', 0):.2f}, "
+                  f"contrast={quality_metrics.get('contrast_score', 0):.2f}, "
+                  f"glare={quality_metrics.get('glare_score', 0):.2f})")
+        
+        # Reject very poor quality images early
+        if quality_score < 0.3:
+            if VERBOSE_LOGGING:
+                print(f"⚠️ Image quality too low ({quality_score:.2f}), rejecting scan")
+            return []  # Reject poor quality images
+        
+        # Warn about poor quality but continue
+        if quality_score < 0.5:
+            if VERBOSE_LOGGING:
+                print(f"⚠️ Warning: Poor image quality ({quality_score:.2f}), results may be less accurate")
+    except Exception as e:
+        if VERBOSE_LOGGING:
+            print(f"Warning: Image quality scoring failed: {e}")
+        # Continue with default quality score if analysis fails
+        quality_score = 0.8
+    
     # STEP 0: Multi-angle ensemble (if enabled and not already preprocessed)
     if use_multi_angle and not skip_preprocessing:
         try:
             # Try multi-angle detection for better consistency with bad angles
             multi_angle_items = detect_with_multiple_angles(img_bytes, user_pantry=user_pantry)
             if multi_angle_items and len(multi_angle_items) > 0:
-                # Use multi-angle results if they found items
+                # Apply quality score to multi-angle results before returning
+                for item in multi_angle_items:
+                    base_conf = item.get("confidence", 0)
+                    item["confidence"] = base_conf * quality_score
+                    item["quality_score"] = quality_score
                 return multi_angle_items
             pass
         except Exception as e:
@@ -1186,10 +1501,19 @@ def detect_food_items_with_ml(img_bytes, user_pantry=None, skip_preprocessing=Fa
                     except (ValueError, TypeError):
                         pass
                     
-                    if conf > 0.3:  # OCR confidence threshold
+                    # OCR Confidence Gating: Require higher confidence (0.5 instead of 0.3)
+                    # This reduces false positives from random packaging text
+                    ocr_min_confidence = 0.5
+                    
+                    if conf > ocr_min_confidence:
                         text_lower = text.lower().strip()
                         if not text_lower or len(text_lower) < 2:
-                            pass
+                            continue
+                        
+                        # OCR Confidence Gating: Check if text box overlaps with detected objects
+                        # For now, we assume text is aligned if we have a valid bbox
+                        # In future, could check actual overlap with detected item bounding boxes
+                        text_aligned = True  # Assume aligned for now (can be enhanced with actual overlap checking)
                         
                         # Look for food-related keywords in OCR text
                         # Common food words that might indicate rare items
@@ -1221,14 +1545,24 @@ def detect_food_items_with_ml(img_bytes, user_pantry=None, skip_preprocessing=Fa
                                             if len(potential_name) > 2 and len(potential_name) < 100:  # Length limit
                                                 normalized = normalize_item_name(potential_name)
                                                 if normalized and normalized.lower() not in item_confidence:
+                                                    # OCR Confidence Gating: Only add if text is aligned with image content
+                                                    # Apply stricter confidence weighting for OCR-only detections
+                                                    ocr_confidence = float(conf * 0.5)  # Reduced from 0.6 for stricter gating
+                                                    
+                                                    # Additional penalty if text doesn't align with detected objects
+                                                    if not text_aligned:
+                                                        ocr_confidence *= 0.7  # 30% penalty for unaligned text
+                                                    
                                                     items.append({
                                                         "name": normalized,
                                                         "quantity": "1",
                                                         "expirationDate": exp_date,
                                                         "category": validate_category(normalized, "other"),
-                                                        "confidence": float(conf * 0.6)  # OCR-based confidence (lower weight)
+                                                        "confidence": ocr_confidence,  # OCR-based confidence (stricter gating)
+                                                        "detection_method": "ocr",
+                                                        "ocr_aligned": text_aligned
                                                     })
-                                                    item_confidence[normalized.lower()] = float(conf * 0.6)
+                                                    item_confidence[normalized.lower()] = ocr_confidence
                                                 break  # Only process first match per text
                                     pass
                                 except Exception as word_error:
@@ -1339,14 +1673,28 @@ def detect_food_items_with_ml(img_bytes, user_pantry=None, skip_preprocessing=Fa
                                     # Skip non-food items
                                     continue
                             
-                            # Ensure valid crop coordinates
-                            x1, y1, x2, y2 = int(x1), int(y1), int(x2), int(y2)
-                            x1 = max(0, min(x1, img.size[0] - 1))
-                            y1 = max(0, min(y1, img.size[1] - 1))
-                            x2 = max(x1 + 1, min(x2, img.size[0]))
-                            y2 = max(y1 + 1, min(y2, img.size[1]))
-                            
-                            if x2 <= x1 or y2 <= y1:
+                            # Ensure valid crop coordinates with safety checks
+                            try:
+                                x1, y1, x2, y2 = int(x1), int(y1), int(x2), int(y2)
+                                
+                                # Validate img.size exists and has valid dimensions
+                                if not hasattr(img, 'size') or not img.size or len(img.size) < 2:
+                                    continue
+                                
+                                img_width, img_height = int(img.size[0]), int(img.size[1])
+                                if img_width <= 0 or img_height <= 0:
+                                    continue
+                                
+                                x1 = max(0, min(x1, img_width - 1))
+                                y1 = max(0, min(y1, img_height - 1))
+                                x2 = max(x1 + 1, min(x2, img_width))
+                                y2 = max(y1 + 1, min(y2, img_height))
+                                
+                                if x2 <= x1 or y2 <= y1:
+                                    continue
+                            except (ValueError, TypeError, AttributeError, IndexError) as coord_error:
+                                if VERBOSE_LOGGING:
+                                    print(f"Warning: Invalid coordinates: {coord_error}")
                                 continue
                             
                             # Crop the detected region
@@ -1539,11 +1887,18 @@ def detect_food_items_with_ml(img_bytes, user_pantry=None, skip_preprocessing=Fa
                             if x1 <= x0 or y1 <= y0:
                                 pass
                             
-                            # Ensure coordinates are within image bounds
-                            if x0 < 0 or y0 < 0 or x1 > img.size[0] or y1 > img.size[1]:
+                            # Ensure coordinates are within image bounds with validation
+                            if not hasattr(img, 'size') or not img.size or len(img.size) < 2:
+                                continue
+                            
+                            img_width, img_height = int(img.size[0]), int(img.size[1])
+                            if img_width <= 0 or img_height <= 0:
+                                continue
+                            
+                            if x0 < 0 or y0 < 0 or x1 > img_width or y1 > img_height:
                                 # Clamp to image bounds
-                                x0 = max(0, min(x0, img.size[0] - 1))
-                                y0 = max(0, min(y0, img.size[1] - 1))
+                                x0 = max(0, min(x0, img_width - 1))
+                                y0 = max(0, min(y0, img_height - 1))
                                 x1 = max(x0 + 1, min(x1, img.size[0]))
                                 y1 = max(y0 + 1, min(y1, img.size[1]))
                             
@@ -1722,9 +2077,40 @@ def detect_food_items_with_ml(img_bytes, user_pantry=None, skip_preprocessing=Fa
     # STEP 6: Apply ensemble confidence boosting (if multiple methods detected same item)
     result = apply_ensemble_boosting(result, items)
     
-    # STEP 7: Apply context fusion (boost confidence for items in pantry)
+    # STEP 7: Apply shelf-aware context fusion (boost confidence for items in pantry + spatial context)
     if user_pantry:
-        result = apply_context_fusion(result, user_pantry)
+        # Safely get image height with validation
+        img_height_value = None
+        try:
+            if hasattr(img, 'size') and img.size and len(img.size) >= 2:
+                img_height_value = int(img.size[1])
+                if img_height_value <= 0:
+                    img_height_value = None
+        except (AttributeError, TypeError, IndexError):
+            img_height_value = None
+        
+        result = apply_context_fusion(result, user_pantry, img_height=img_height_value)
+    
+    # STEP 7.5: Apply quality score weighting to all confidences
+    # Poor quality images should have lower confidence scores
+    # Ensure quality_score is valid (0.0-1.0)
+    quality_score = max(0.0, min(1.0, quality_score)) if quality_score is not None else 1.0
+    
+    for item in result:
+        if not isinstance(item, dict):
+            continue
+        base_conf = item.get("confidence", 0)
+        # Validate base_conf is numeric
+        try:
+            base_conf = float(base_conf) if base_conf is not None else 0.0
+        except (ValueError, TypeError):
+            base_conf = 0.0
+        
+        # Weight confidence by image quality
+        item["confidence"] = max(0.0, min(1.0, base_conf * quality_score))
+        item["quality_score"] = quality_score
+        if VERBOSE_LOGGING and quality_score < 0.7:
+            print(f"  ⚠️ Quality-adjusted confidence for '{item.get('name')}': {base_conf:.2f} → {item['confidence']:.2f}")
     
     # STEP 8: Calibrate confidence based on historical accuracy
     result = calibrate_confidence(result)
@@ -2076,9 +2462,23 @@ def create_user(username, email, password, client_type='web'):
                 return None, error
             if user_id:
                 print(f"✅ User created in Firebase: '{username}' (ID: {user_id})")
+                # Invalidate cache to ensure fresh data on next load
+                global _users_cache, _users_cache_timestamp
+                if '_all_users' in _users_cache:
+                    del _users_cache['_all_users']
+                if '_all_users' in _users_cache_timestamp:
+                    del _users_cache_timestamp['_all_users']
+                # Verify user was saved by loading from Firebase
+                verify_user = firebase_get_user_by_id(user_id)
+                if verify_user:
+                    print(f"✅ Verified user exists in Firebase: {verify_user.get('username')}")
+                else:
+                    print(f"⚠️ Warning: User {user_id} not found in Firebase after creation")
                 return user_id, None
         except Exception as e:
             print(f"⚠️ Error creating user in Firebase: {e}, falling back to file storage")
+            import traceback
+            traceback.print_exc()
             # Fall through to file-based storage
     
     # File-based storage (original implementation)
@@ -2184,7 +2584,8 @@ def create_user(username, email, password, client_type='web'):
 
 def authenticate_user(username, password, client_type='web'):
     """Authenticate user and return user data"""
-    users = load_users()
+    # Force fresh load from Firebase/file storage (disable cache to ensure we get latest data)
+    users = load_users(use_cache=False)
     
     # Normalize input (strip whitespace and convert to lowercase for comparison)
     username_normalized = username.strip().lower() if username else ""
@@ -2192,6 +2593,8 @@ def authenticate_user(username, password, client_type='web'):
     
     # Debug: print number of users loaded
     print(f"Authenticating user '{username}' (normalized: '{username_normalized}') against {len(users)} users")
+    if USE_FIREBASE:
+        print(f"   Using Firebase for authentication")
     
     if not users:
         print("ERROR: No users found in database!")
@@ -2234,7 +2637,16 @@ def authenticate_user(username, password, client_type='web'):
         if (username_match or email_match) and password_match:
             # Update last login
             user_data['last_login'] = datetime.now().isoformat()
-            save_users(users)
+            
+            # Update in Firebase if enabled, otherwise use file storage
+            if USE_FIREBASE:
+                try:
+                    firebase_update_user(user_id, {'last_login': user_data['last_login']})
+                    print(f"✅ Updated last_login in Firebase for user {user_id}")
+                except Exception as e:
+                    print(f"⚠️ Error updating last_login in Firebase: {e}")
+            else:
+                save_users(users)
             
             print(f"✅ Authentication successful for user '{username}' (ID: {user_id})")
             return user_data, None
@@ -2986,11 +3398,24 @@ def signup():
         else:
             user_id, error = create_user(username, email, password, 'web')
             if user_id:
+                # Clear any existing session data to start fresh
+                session.clear()
                 session.permanent = True  # Make session permanent
                 session['user_id'] = user_id
                 session['username'] = username
+                # Ensure pantry is empty for new user (clear any session pantry data)
+                if 'web_pantry' in session:
+                    del session['web_pantry']
                 print(f"Signup successful - User ID: {user_id}, Username: {username}")
                 print(f"Session after signup: user_id={session.get('user_id')}, username={session.get('username')}")
+                if USE_FIREBASE:
+                    # Verify user exists in Firebase
+                    verify_user = firebase_get_user_by_id(user_id)
+                    if verify_user:
+                        print(f"✅ Verified new user exists in Firebase: {verify_user.get('username')}")
+                        print(f"   User pantry items: {len(verify_user.get('pantry', []))}")
+                    else:
+                        print(f"⚠️ Warning: New user {user_id} not found in Firebase after creation")
                 flash(f"Account created successfully! Welcome, {username}!", "success")
                 return redirect(url_for("index"))
             else:
@@ -3155,7 +3580,8 @@ def add_items():
         # Add to user's pantry
         user_id = session['user_id']
         print(f"Adding item '{item}' to pantry for user {user_id}")
-        user_pantry = get_user_pantry(user_id)
+        # Force fresh data by disabling cache to ensure we get the latest pantry items
+        user_pantry = get_user_pantry(user_id, use_cache=False)
         print(f"Current pantry before add: {user_pantry} (type: {type(user_pantry)})")
         
         # Ensure pantry is a list
@@ -3465,7 +3891,7 @@ def suggest_recipe():
             else:
                 if pantry_item:
                     pantry_items_list.append(str(pantry_item))
-                    pantry_items_full.append({'name': str(pantry_item), 'expirationDate': None})
+                    pantry_items_full.append({'name': str(pantry_item), 'expirationDate': None, 'quantity': '1'})
         
         flash("Showing your current recipes. Click 'Generate New Recipes' for fresh ideas!", "info")
         return render_template("suggest_recipe.html", recipes=existing_recipes, pantry_items=pantry_items_list, pantry_items_full=pantry_items_full)
@@ -3497,16 +3923,37 @@ def suggest_recipe():
     pantry_items_list = []
     # Also keep full pantry data for expiration checking
     pantry_items_full = []
+    # Build pantry with quantities for AI prompt
+    pantry_with_quantities = []
+    expiring_items = []
+    
+    from datetime import datetime
+    today = datetime.now().date()
+    
     for pantry_item in current_pantry:
         if isinstance(pantry_item, dict):
             name = pantry_item.get('name', '')
+            quantity = pantry_item.get('quantity', '1')
             if name:
                 pantry_items_list.append(name)
                 pantry_items_full.append(pantry_item)  # Keep full item data
+                pantry_with_quantities.append(f"{name} ({quantity})")
+                
+                # Check if expiring soon
+                exp_date_str = pantry_item.get('expirationDate')
+                if exp_date_str:
+                    try:
+                        exp_date = datetime.fromisoformat(exp_date_str.replace('Z', '+00:00')).date()
+                        days_left = (exp_date - today).days
+                        if 0 <= days_left <= 7:
+                            expiring_items.append(f"{name} ({quantity})")
+                    except:
+                        pass
         else:
             if pantry_item:
                 pantry_items_list.append(str(pantry_item))
-                pantry_items_full.append({'name': str(pantry_item), 'expirationDate': None})
+                pantry_items_full.append({'name': str(pantry_item), 'expirationDate': None, 'quantity': '1'})
+                pantry_with_quantities.append(f"{pantry_item} (1)")
     
     # Check if pantry is empty (handle both None and empty list)
     if not pantry_items_list or len(pantry_items_list) == 0:
@@ -3514,46 +3961,70 @@ def suggest_recipe():
         return redirect(url_for("index"))
 
     # Generate AI-powered recipes based on pantry items (only if no existing recipes)
-    pantry_items = ", ".join(pantry_items_list)
+    pantry_items = ", ".join(pantry_with_quantities)
     pantry = pantry_items_list  # Use string list for compatibility with existing code
-    prompt = f"""Based on the following pantry items: {pantry_items}
+    
+    # Add priority note for expiring items
+    priority_note = ""
+    if expiring_items:
+        priority_note = f"\n\nIMPORTANT: Prioritize using these items that are expiring soon (within 7 days): {', '.join(expiring_items)}. Try to include at least one of these in each recipe."
+    
+    prompt = f"""Based on the following pantry items WITH QUANTITIES: {pantry_items}
+{priority_note}
 
 Generate 3 creative and practical recipes that use AT LEAST 50% of these pantry ingredients. For each recipe, provide:
 1. Recipe name
-2. List of ingredients (prioritizing pantry items - at least half must be from pantry)
+2. List of ingredients with EXACT quantities from pantry (prioritizing pantry items - at least half must be from pantry)
 3. Step-by-step cooking instructions
 4. Estimated cooking time
-5. Health assessment (Healthy/Moderately Healthy/Unhealthy)
-6. Health explanation (brief reason for the health rating)
+5. Number of servings (calculated based on available quantities)
+6. Health assessment (Healthy/Moderately Healthy/Unhealthy)
+7. Health explanation (brief reason for the health rating)
 
-CRITICAL REQUIREMENT: Each recipe MUST use at least 50% of ingredients from the pantry list above.
+CRITICAL REQUIREMENTS:
+- Each recipe MUST use at least 50% of ingredients from the pantry list above
+- Each recipe MUST use the EXACT quantities available from the pantry items listed above
+- Calculate serving sizes based on the available quantities (e.g., if you have "2 bottles of milk", create a recipe that uses 2 bottles and adjust servings accordingly)
+- Scale all other ingredients proportionally to match the serving size
+- If a recipe normally serves 4 but you have "2 bottles of milk" (which might be 1 liter each), adjust the recipe to use both bottles and calculate appropriate servings (e.g., 6-8 servings)
+- Use the full quantity of pantry items when possible to minimize waste
+- Include basic pantry staples (salt, pepper, oil, butter) as needed, scaled appropriately
+
+QUANTITY AND SERVING CALCULATION EXAMPLES:
+- If pantry has "2 bottles of milk (500ml each)" → Recipe should use 1 liter total, calculate servings based on typical milk usage (e.g., 4-6 servings for a milk-based dish)
+- If pantry has "3 cans of soup (400g each)" → Recipe should use all 3 cans (1200g total), adjust servings to 6-8 people
+- If pantry has "5 slices of pizza" → Recipe should use all 5 slices, serving size is 5 servings
+- Always scale non-pantry ingredients (spices, oil, etc.) proportionally to match the serving size
 
 Format as JSON:
 {{
     "recipes": [
         {{
             "name": "Recipe Name",
-            "ingredients": ["pantry_item1", "pantry_item2", "additional_item"],
+            "ingredients": ["2 cups pantry_item1 (from pantry)", "1 bottle pantry_item2 (from pantry)", "1 tsp salt", "2 tbsp oil"],
             "instructions": ["step1", "step2", "step3"],
             "cooking_time": "X minutes",
+            "servings": "X servings (based on available quantities)",
             "difficulty": "Easy",
             "health_rating": "Healthy",
             "health_explanation": "This dish is healthy because it contains fresh vegetables, lean proteins, and minimal processed ingredients."
         }},
         {{
             "name": "Recipe Name 2",
-            "ingredients": ["pantry_item1", "pantry_item3", "additional_item"],
+            "ingredients": ["3 cans pantry_item1 (from pantry)", "1 cup pantry_item3 (from pantry)", "1 tsp pepper", "1 tbsp butter"],
             "instructions": ["step1", "step2", "step3"],
             "cooking_time": "X minutes",
+            "servings": "X servings (based on available quantities)",
             "difficulty": "Medium",
             "health_rating": "Moderately Healthy",
             "health_explanation": "This dish is moderately healthy with some nutritious ingredients but may contain higher sodium or fat content."
         }},
         {{
             "name": "Recipe Name 3",
-            "ingredients": ["pantry_item2", "pantry_item3", "additional_item"],
+            "ingredients": ["5 slices pantry_item2 (from pantry)", "2 cups pantry_item3 (from pantry)", "1 tsp salt", "1 tbsp olive oil"],
             "instructions": ["step1", "step2", "step3"],
             "cooking_time": "X minutes",
+            "servings": "X servings (based on available quantities)",
             "difficulty": "Hard",
             "health_rating": "Healthy",
             "health_explanation": "This dish is healthy as it focuses on whole foods and balanced nutrition."
@@ -3569,10 +4040,10 @@ Format as JSON:
         response = client.chat.completions.create(
             model="gpt-4o",
             messages=[
-                {"role": "system", "content": "You are a creative chef and recipe developer. Create practical, delicious recipes using available ingredients. Always return valid JSON."},
+                {"role": "system", "content": "You are a creative chef and recipe developer. Create practical, delicious recipes using available ingredients WITH EXACT QUANTITIES. Calculate serving sizes based on available quantities and scale all ingredients proportionally. Always return valid JSON."},
                 {"role": "user", "content": prompt}
             ],
-            max_tokens=2000,
+            max_tokens=3000,  # Increased to allow for quantity details
             temperature=0.7
         )
         
@@ -3760,7 +4231,7 @@ Format as JSON:
         # Store fallback recipes in session
         session['current_recipes'] = recipes
 
-    return render_template("suggest_recipe.html", recipes=recipes, pantry_items=pantry_items_list)
+    return render_template("suggest_recipe.html", recipes=recipes, pantry_items=pantry_items_list, pantry_items_full=pantry_items_full)
 
 # Generate new recipes (force refresh)
 @app.route("/generate_new_recipes")
@@ -3843,12 +4314,12 @@ def upload_photo():
     user_pantry = None
     if 'user_id' in session:
         try:
-            # Load user's pantry from file (same method used in index route)
+            # Load user's pantry using get_user_pantry (same method used in index route)
             user_id = session['user_id']
-            users = load_users()
-            if user_id in users:
-                user_data = users[user_id]
-                user_pantry = user_data.get('pantry', {}).get('items', [])
+            user_pantry = get_user_pantry(user_id, use_cache=False)
+            # Ensure user_pantry is a list
+            if not isinstance(user_pantry, list):
+                user_pantry = []
         except Exception as e:
             if VERBOSE_LOGGING:
                 print(f"Error loading user pantry: {e}")
@@ -3857,19 +4328,28 @@ def upload_photo():
         # For anonymous users, use session pantry
         user_pantry = session.get('web_pantry', [])
     
-    # Try ML vision first (if enabled), fallback to OpenAI
+    # Try ML vision FIRST (if enabled), fallback to OpenAI only if ML fails or is disabled
     detected_items_data = []
     use_ml = ML_VISION_ENABLED
+    
     if use_ml:
         try:
+            print(f"🔍 Using ML model for detection (ML_VISION_ENABLED={ML_VISION_ENABLED})")
             detected_items_data = detect_food_items_with_ml(img_bytes, user_pantry=user_pantry)
-            if not detected_items_data and client:
-                if VERBOSE_LOGGING:
-                    print("ML vision found no items, falling back to OpenAI")
+            
+            if detected_items_data and len(detected_items_data) > 0:
+                print(f"✅ ML model detected {len(detected_items_data)} items")
+                # ML model succeeded - use its results
+                use_ml = True
+            else:
+                # ML returned empty results - fall back to OpenAI if available
+                print(f"⚠️ ML model found no items, falling back to OpenAI")
                 use_ml = False
         except Exception as e:
+            print(f"❌ ML vision failed: {e}")
+            import traceback
             if VERBOSE_LOGGING:
-                print(f"ML vision failed: {e}")
+                traceback.print_exc()
             use_ml = False
 
     if not use_ml:
@@ -3877,13 +4357,16 @@ def upload_photo():
         import base64
         img_b64 = base64.b64encode(img_bytes).decode('utf-8')
         
-        prompt = """You are an expert food recognition system analyzing a pantry/fridge photo. Identify EVERY food item with maximum accuracy.
+        prompt = """You are an expert food recognition system analyzing a pantry/fridge photo. Identify EVERY food item with maximum accuracy. BE AGGRESSIVE - include items even if you're slightly uncertain.
 
 SCAN THE ENTIRE IMAGE SYSTEMATICALLY:
-    - Look at ALL areas: foreground, background, shelves, containers, bags, boxes
-- Check items that are partially visible, stacked, or overlapping
-- Read labels and packaging text carefully
+    - Look at ALL areas: foreground, background, shelves, containers, bags, boxes, drawers, doors
+- Check items that are partially visible, stacked, overlapping, or in shadows
+- Read labels and packaging text carefully - even small text matters
 - Count multiple units of the same item
+- Include items in the background, corners, and edges
+- Look for items behind other items, in containers, or wrapped
+- When in doubt, INCLUDE the item rather than exclude it
 
 CRITICAL NAMING RULES:
     ✅ CORRECT: "milk", "chicken", "tomato", "bread", "pasta", "cheese", "eggs", "yogurt"
@@ -3941,12 +4424,15 @@ CRITICAL NAMING RULES:
    - Specialty vinegars: balsamic, rice vinegar, apple cider vinegar, white wine vinegar
    - Preserves/spreads: tahini, hummus, pesto, tapenade, bruschetta, guacamole
 
-6. **Accuracy Requirements**:
-   - Include ALL clearly visible food items, ESPECIALLY rare/uncommon ones
-   - Don't skip items just because they're in background or you don't recognize them
-   - If you see packaging/labels, read them carefully to identify rare foods
-   - When in doubt about a rare food, include it with a descriptive name based on the label
-   - Only skip if completely unidentifiable or clearly not food
+6. **Accuracy Requirements** (CRITICAL - BE AGGRESSIVE):
+   - Include ALL visible food items, even if partially hidden or unclear
+   - Include items in background, shadows, or corners
+   - Include items you're only 60% sure about - better to include than miss
+   - Don't skip items just because they're in background, partially visible, or you don't recognize them
+   - If you see ANY packaging/labels/text, read them and include the item
+   - When in doubt about ANY food item, INCLUDE IT with a descriptive name
+   - Only skip if it's clearly NOT food (e.g., a plate, fork, or non-food object)
+   - If you see something that MIGHT be food, include it - let the user decide
 
 FEW-SHOT EXAMPLES:
     Example 1: Image shows milk carton, bread bag, and eggs
@@ -3968,14 +4454,14 @@ Return ONLY valid JSON (no markdown, no code blocks, no explanations):
                 response = client.chat.completions.create(
                     model="gpt-4o",
                     messages=[
-                        {"role": "system", "content": "You are an expert food recognition system with exceptional attention to detail. Your task is to accurately identify all food items in images, extract quantities, read expiration dates from packaging labels, and classify items into appropriate categories. Always return results in valid JSON format with no additional text."},
+                        {"role": "system", "content": "You are an expert food recognition system with exceptional attention to detail. Your task is to identify ALL food items in images - be aggressive and include items even if you're slightly uncertain. Extract quantities, read expiration dates from packaging labels, and classify items into appropriate categories. When in doubt, INCLUDE the item rather than exclude it. Always return results in valid JSON format with no additional text."},
                         {"role": "user", "content": [
                             {"type": "text", "text": prompt},
                             {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img_b64}", "detail": "high"}}
                         ]}
                     ],
-                    max_tokens=2000,
-                    temperature=0.1,
+                    max_tokens=3000,  # Increased to allow more items
+                    temperature=0.2,  # Slightly higher for more creative detection
                     response_format={"type": "json_object"},
                     timeout=60.0  # 60 second timeout to prevent hanging
                 )
@@ -4006,7 +4492,76 @@ Return ONLY valid JSON (no markdown, no code blocks, no explanations):
             detected_items_data = parse_api_response_with_retry(food_response)
         
         # Normalize and validate all items with partial recognition and expiration risk
-            pantry_items = []
+        # If ML model was used, preserve confidence values from ML model
+        pantry_items = []
+        
+        # If ML model was used, process ML results with confidence preservation
+        if use_ml and detected_items_data:
+            for item in detected_items_data:
+                try:
+                    raw_name = item.get('name', '').strip()
+                    if not raw_name:
+                        continue
+                    
+                    raw_quantity = item.get('quantity', '1')
+                    expiration_date = item.get('expirationDate')
+                    raw_category = item.get('category', 'other')
+                    
+                    # Get confidence - preserve actual value from ML model (0.0-1.0)
+                    # Only default to 0.5 if confidence is None or missing, not if it's 0
+                    confidence = item.get('confidence')
+                    if confidence is None or confidence == '':
+                        # If confidence is truly missing, use 0.5 as default
+                        confidence = 0.5
+                        if VERBOSE_LOGGING:
+                            print(f"⚠️ Item '{raw_name}' missing confidence, defaulting to 0.5")
+                    else:
+                        # Convert to float and ensure it's in valid range
+                        try:
+                            confidence = float(confidence)
+                            # Clamp to valid range [0.0, 1.0]
+                            confidence = max(0.0, min(1.0, confidence))
+                        except (ValueError, TypeError):
+                            confidence = 0.5
+                            if VERBOSE_LOGGING:
+                                print(f"⚠️ Item '{raw_name}' has invalid confidence value, defaulting to 0.5")
+                    
+                    # Normalize and validate
+                    normalized_name = normalize_item_name(raw_name)
+                    if not normalized_name or not normalized_name.strip():
+                        if VERBOSE_LOGGING:
+                            print(f"Skipping item with invalid name: {raw_name}")
+                        continue
+                    
+                    normalized_quantity = parse_quantity(raw_quantity)
+                    validated_category = validate_category(normalized_name, raw_category)
+                    
+                    # Normalize expiration date
+                    normalized_exp_date = None
+                    if expiration_date:
+                        if isinstance(expiration_date, str):
+                            normalized_exp_date = normalize_expiration_date(expiration_date)
+                        else:
+                            normalized_exp_date = None
+                    
+                    pantry_items.append({
+                        'id': str(uuid.uuid4()),
+                        'name': normalized_name,
+                        'quantity': normalized_quantity,
+                        'expirationDate': normalized_exp_date,
+                        'category': validated_category,
+                        'confidence': confidence,  # Use actual confidence value from ML model
+                        'addedDate': datetime.now().isoformat()
+                    })
+                    
+                    if VERBOSE_LOGGING:
+                        print(f"  ✓ {normalized_name}: confidence={confidence:.2f} ({confidence*100:.0f}%)")
+                except (AttributeError, TypeError, KeyError) as item_error:
+                    if VERBOSE_LOGGING:
+                        print(f"Warning: Error processing ML detection item: {item_error}")
+                    continue
+        else:
+            # Process OpenAI results (with default confidence values)
             for item in detected_items_data:
                 raw_name = item.get('name', '').strip()
                 raw_quantity = item.get('quantity', '1')
@@ -4051,7 +4606,10 @@ Return ONLY valid JSON (no markdown, no code blocks, no explanations):
                 else:
                     # Normalize and validate
                     normalized_name = normalize_item_name(raw_name)
-                    if not normalized_name or len(normalized_name) < 2:
+                    # Be less strict - only skip if name is completely empty or just whitespace
+                    if not normalized_name or not normalized_name.strip():
+                        if VERBOSE_LOGGING:
+                            print(f"Skipping item with invalid name: {raw_name}")
                         continue  # Skip invalid items
                     is_partial = False
                 
@@ -4397,24 +4955,47 @@ def nutrition_info(recipe_name):
         flash("Your pantry is empty. Cannot generate nutrition recipes.", "warning")
         return redirect(url_for("index"))
     
-    pantry_items = ", ".join(current_pantry)
-    prompt = f"""Based on the pantry items: {pantry_items}
+    # Build pantry with quantities
+    pantry_with_quantities = []
+    # Ensure current_pantry is iterable
+    if not isinstance(current_pantry, (list, tuple)):
+        current_pantry = []
+    for pantry_item in current_pantry:
+        if isinstance(pantry_item, dict):
+            name = pantry_item.get('name', '')
+            quantity = pantry_item.get('quantity', '1')
+            if name:
+                pantry_with_quantities.append(f"{name} ({quantity})")
+        else:
+            if pantry_item:
+                pantry_with_quantities.append(f"{pantry_item} (1)")
+    
+    pantry_items = ", ".join(pantry_with_quantities)
+    prompt = f"""Based on the pantry items WITH QUANTITIES: {pantry_items}
 
-Generate 3 creative recipes that use AT LEAST 50% of the pantry ingredients. For each recipe, provide:
+Generate 3 creative recipes that use AT LEAST 50% of the pantry ingredients WITH EXACT QUANTITIES. For each recipe, provide:
 1. Recipe name
-2. List of ingredients (prioritizing pantry items - at least half must be from pantry)
+2. List of ingredients with EXACT quantities from pantry (prioritizing pantry items - at least half must be from pantry)
 3. Step-by-step cooking instructions
 4. Estimated cooking time
-5. Detailed nutrition facts (calories, carbs, protein, fat, fiber per serving)
+5. Number of servings (calculated based on available quantities)
+6. Detailed nutrition facts (calories, carbs, protein, fat, fiber per serving) - calculate based on exact quantities used
+
+CRITICAL REQUIREMENTS:
+- Each recipe MUST use the EXACT quantities available from the pantry items listed above
+- Calculate serving sizes based on the available quantities
+- Scale all other ingredients proportionally to match the serving size
+- Use the full quantity of pantry items when possible to minimize waste
 
 Format as JSON:
 {{
     "recipes": [
         {{
             "name": "Recipe Name",
-            "ingredients": ["ingredient1", "ingredient2"],
+            "ingredients": ["2 cups pantry_item1 (from pantry)", "1 bottle pantry_item2 (from pantry)", "1 tsp salt"],
             "instructions": ["step1", "step2", "step3"],
             "cooking_time": "X minutes",
+            "servings": "X servings (based on available quantities)",
             "difficulty": "Easy",
             "nutrition": {{
                 "calories": "X kcal",
@@ -4436,7 +5017,7 @@ Format as JSON:
             response = client.chat.completions.create(
                 model="gpt-4o",
                 messages=[
-                    {"role": "system", "content": "You are a nutritionist and chef. Create recipes that use at least 50% pantry ingredients and provide accurate nutrition information."},
+                    {"role": "system", "content": "You are a nutritionist and chef. Create recipes that use at least 50% pantry ingredients WITH EXACT QUANTITIES. Calculate serving sizes based on available quantities and provide accurate nutrition information based on the exact quantities used."},
                     {"role": "user", "content": prompt}
                 ],
                 max_tokens=1000,
@@ -4791,9 +5372,25 @@ def api_signup():
         return jsonify({'success': False, 'error': 'Password must be at least 6 characters'}), 400
     
     print(f"💾 Calling create_user()...")
+    print(f"   USE_FIREBASE: {USE_FIREBASE}")
+    if USE_FIREBASE:
+        print(f"   Firebase is enabled - user will be saved to Firestore")
+    else:
+        print(f"   ⚠️ Firebase is NOT enabled - user will be saved to file storage")
+    
     user_id, error = create_user(username, email, password, client_type)
     if user_id:
         print(f"✅ User created successfully: {user_id}")
+        
+        # Verify user exists in Firebase if Firebase is enabled
+        if USE_FIREBASE:
+            verify_user = firebase_get_user_by_id(user_id)
+            if verify_user:
+                print(f"✅ Verified user exists in Firebase: {verify_user.get('username')}")
+            else:
+                print(f"⚠️ WARNING: User {user_id} not found in Firebase after creation!")
+                print(f"   This might indicate a Firebase connection issue")
+        
         print(f"{'='*60}\n")
         return jsonify({
             'success': True,
@@ -5792,7 +6389,7 @@ def api_suggest_recipe():
     item_names = []
     expiring_items = []
     
-    if pantry_items and isinstance(pantry_items[0], dict):
+    if pantry_items and len(pantry_items) > 0 and isinstance(pantry_items[0], dict):
         # Sort by expiration: expiring soon first
         sorted_items = sorted(pantry_items, key=lambda x: (
             x.get('expirationDate') is None,  # Items without dates go last
@@ -6098,96 +6695,141 @@ def api_upload_photo():
         # Get user's current pantry for context fusion
         user_pantry = None
         client_type = request.headers.get('X-Client-Type', 'web')
-        if client_type == 'mobile':
-            # For mobile, use mobile_pantry global or session
+        
+        # Get user_id from header (mobile) or session (web) for pantry loading
+        user_id_for_pantry = request.headers.get('X-User-ID')
+        if not user_id_for_pantry and 'user_id' in session:
+            user_id_for_pantry = session['user_id']
+        
+        if user_id_for_pantry:
+            # For authenticated users, get pantry from database
+            try:
+                user_pantry = get_user_pantry(user_id_for_pantry, use_cache=False)
+                if not isinstance(user_pantry, list):
+                    user_pantry = []
+            except Exception as e:
+                if VERBOSE_LOGGING:
+                    print(f"Error loading user pantry for context: {e}")
+                user_pantry = []
+        elif client_type == 'mobile':
+            # For mobile anonymous users, use mobile_pantry global
             user_pantry = mobile_pantry
         else:
-            # For web, use session pantry
+            # For web anonymous users, use session pantry
             user_pantry = session.get('web_pantry', [])
         
-        # Try ML vision first (if enabled), fallback to OpenAI
+        # Try ML vision FIRST (if enabled), fallback to OpenAI only if ML fails or is disabled
         detected_items_data = []
         pantry_items = []  # Initialize pantry_items early
         use_ml = ML_VISION_ENABLED
+        
         if use_ml:
             try:
+                print(f"🔍 Using ML model for detection (ML_VISION_ENABLED={ML_VISION_ENABLED})")
                 detected_items_data = detect_food_items_with_ml(img_bytes, user_pantry=user_pantry)
-                if not detected_items_data and client:
-                    if VERBOSE_LOGGING:
-
-                        print("ML vision found no items, falling back to OpenAI")
-                    use_ml = False
-                else:
+                
+                if detected_items_data and len(detected_items_data) > 0:
+                    print(f"✅ ML model detected {len(detected_items_data)} items")
                     # Process ML detection results into pantry_items format
-                    if detected_items_data:
-                        for item in detected_items_data:
-                            try:
-                                raw_name = item.get('name', '').strip()
-                                if not raw_name:
-                                    continue
-                                
-                                raw_quantity = item.get('quantity', '1')
-                                expiration_date = item.get('expirationDate')
-                                raw_category = item.get('category', 'other')
-                                confidence = item.get('confidence', 0.5)
-                                
-                                # Normalize and validate
-                                normalized_name = normalize_item_name(raw_name)
-                                if not normalized_name or len(normalized_name) < 2:
-                                    continue  # Skip invalid items
-                                
-                                normalized_quantity = parse_quantity(raw_quantity)
-                                validated_category = validate_category(normalized_name, raw_category)
-                                
-                                # Normalize expiration date
-                                normalized_exp_date = None
-                                if expiration_date:
-                                    if isinstance(expiration_date, str):
-                                        normalized_exp_date = normalize_expiration_date(expiration_date)
-                                    else:
-                                        normalized_exp_date = None
-                                
-                                pantry_items.append({
-                                    'id': str(uuid.uuid4()),
-                                    'name': normalized_name,
-                                    'quantity': normalized_quantity,
-                                    'expirationDate': normalized_exp_date,
-                                    'category': validated_category,
-                                    'confidence': float(confidence) if confidence else 0.5,
-                                    'addedDate': datetime.now().isoformat()
-                                })
-                            except (AttributeError, TypeError, KeyError) as item_error:
+                    for item in detected_items_data:
+                        try:
+                            raw_name = item.get('name', '').strip()
+                            if not raw_name:
+                                continue
+                            
+                            raw_quantity = item.get('quantity', '1')
+                            expiration_date = item.get('expirationDate')
+                            raw_category = item.get('category', 'other')
+                            
+                            # Get confidence - preserve actual value from ML model (0.0-1.0)
+                            # Only default to 0.5 if confidence is None or missing, not if it's 0
+                            confidence = item.get('confidence')
+                            if confidence is None or confidence == '':
+                                # If confidence is truly missing, use 0.5 as default
+                                confidence = 0.5
                                 if VERBOSE_LOGGING:
-                                    print(f"Warning: Error processing ML detection item: {item_error}")
-                                continue
-                        
-                        # Remove duplicates (case-insensitive) and ensure all items have required fields
-                        seen_names = set()
-                        unique_items = []
-                        for item in pantry_items:
-                            try:
-                                name_lower = item.get('name', '').lower()
-                                if name_lower and name_lower not in seen_names:
-                                    # Ensure all required fields are present
-                                    if 'id' not in item or not item['id']:
-                                        item['id'] = str(uuid.uuid4())
-                                    if 'confidence' not in item:
-                                        item['confidence'] = 0.5
-                                    if 'addedDate' not in item:
-                                        item['addedDate'] = datetime.now().isoformat()
-                                    seen_names.add(name_lower)
-                                    unique_items.append(item)
-                            except (AttributeError, TypeError):
-                                continue
-                        
-                        pantry_items = unique_items
-                        if VERBOSE_LOGGING:
-                            print(f"✅ ML detection found {len(pantry_items)} items")
-                pass
+                                    print(f"⚠️ Item '{raw_name}' missing confidence, defaulting to 0.5")
+                            else:
+                                # Convert to float and ensure it's in valid range
+                                try:
+                                    confidence = float(confidence)
+                                    # Clamp to valid range [0.0, 1.0]
+                                    confidence = max(0.0, min(1.0, confidence))
+                                except (ValueError, TypeError):
+                                    confidence = 0.5
+                                    if VERBOSE_LOGGING:
+                                        print(f"⚠️ Item '{raw_name}' has invalid confidence value, defaulting to 0.5")
+                            
+                            # Normalize and validate
+                            normalized_name = normalize_item_name(raw_name)
+                            # Be less strict - only skip if name is completely empty or just whitespace
+                            if not normalized_name or not normalized_name.strip():
+                                if VERBOSE_LOGGING:
+                                    print(f"Skipping item with invalid name: {raw_name}")
+                                continue  # Skip invalid items
+                            
+                            normalized_quantity = parse_quantity(raw_quantity)
+                            validated_category = validate_category(normalized_name, raw_category)
+                            
+                            # Normalize expiration date
+                            normalized_exp_date = None
+                            if expiration_date:
+                                if isinstance(expiration_date, str):
+                                    normalized_exp_date = normalize_expiration_date(expiration_date)
+                                else:
+                                    normalized_exp_date = None
+                            
+                            pantry_items.append({
+                                'id': str(uuid.uuid4()),
+                                'name': normalized_name,
+                                'quantity': normalized_quantity,
+                                'expirationDate': normalized_exp_date,
+                                'category': validated_category,
+                                'confidence': confidence,  # Use actual confidence value from ML model
+                                'addedDate': datetime.now().isoformat()
+                            })
+                            
+                            if VERBOSE_LOGGING:
+                                print(f"  ✓ {normalized_name}: confidence={confidence:.2f} ({confidence*100:.0f}%)")
+                        except (AttributeError, TypeError, KeyError) as item_error:
+                            if VERBOSE_LOGGING:
+                                print(f"Warning: Error processing ML detection item: {item_error}")
+                            continue
+                    
+                    # Remove duplicates (case-insensitive) and ensure all items have required fields
+                    seen_names = set()
+                    unique_items = []
+                    for item in pantry_items:
+                        try:
+                            name_lower = item.get('name', '').lower()
+                            if name_lower and name_lower not in seen_names:
+                                # Ensure all required fields are present
+                                if 'id' not in item or not item['id']:
+                                    item['id'] = str(uuid.uuid4())
+                                # Confidence should already be set, but ensure it exists
+                                if 'confidence' not in item or item['confidence'] is None:
+                                    item['confidence'] = 0.5
+                                    if VERBOSE_LOGGING:
+                                        print(f"⚠️ Item '{item.get('name')}' missing confidence after processing")
+                                if 'addedDate' not in item:
+                                    item['addedDate'] = datetime.now().isoformat()
+                                seen_names.add(name_lower)
+                                unique_items.append(item)
+                        except (AttributeError, TypeError):
+                            continue
+                    
+                    pantry_items = unique_items
+                    print(f"✅ ML detection processed: {len(pantry_items)} unique items")
+                    use_ml = True  # Keep ML enabled since it worked
+                else:
+                    # ML returned empty results - fall back to OpenAI if available
+                    print(f"⚠️ ML model found no items, falling back to OpenAI")
+                    use_ml = False
             except Exception as e:
+                print(f"❌ ML vision failed: {e}")
+                import traceback
                 if VERBOSE_LOGGING:
-
-                    print(f"ML vision failed: {e}")
+                    traceback.print_exc()
                 use_ml = False
 
         if not use_ml:
@@ -6195,13 +6837,16 @@ def api_upload_photo():
             import base64
             img_b64 = base64.b64encode(img_bytes).decode('utf-8')
             
-            prompt = """You are an expert food recognition system analyzing a pantry/fridge photo. Identify EVERY food item with maximum accuracy.
+            prompt = """You are an expert food recognition system analyzing a pantry/fridge photo. Identify EVERY food item with maximum accuracy. BE AGGRESSIVE - include items even if you're slightly uncertain.
 
 SCAN THE ENTIRE IMAGE SYSTEMATICALLY:
-- Look at ALL areas: foreground, background, shelves, containers, bags, boxes
-- Check items that are partially visible, stacked, or overlapping
-- Read labels and packaging text carefully
+- Look at ALL areas: foreground, background, shelves, containers, bags, boxes, drawers, doors
+- Check items that are partially visible, stacked, overlapping, or in shadows
+- Read labels and packaging text carefully - even small text matters
 - Count multiple units of the same item
+- Include items in the background, corners, and edges
+- Look for items behind other items, in containers, or wrapped
+- When in doubt, INCLUDE the item rather than exclude it
 
 CRITICAL NAMING RULES:
 ✅ CORRECT: "milk", "chicken", "tomato", "bread", "pasta", "cheese", "eggs", "yogurt"
@@ -6259,12 +6904,15 @@ CRITICAL NAMING RULES:
    - Specialty vinegars: balsamic, rice vinegar, apple cider vinegar, white wine vinegar
    - Preserves/spreads: tahini, hummus, pesto, tapenade, bruschetta, guacamole
 
-6. **Accuracy Requirements**:
-   - Include ALL clearly visible food items, ESPECIALLY rare/uncommon ones
-   - Don't skip items just because they're in background or you don't recognize them
-   - If you see packaging/labels, read them carefully to identify rare foods
-   - When in doubt about a rare food, include it with a descriptive name based on the label
-   - Only skip if completely unidentifiable or clearly not food
+6. **Accuracy Requirements** (CRITICAL - BE AGGRESSIVE):
+   - Include ALL visible food items, even if partially hidden or unclear
+   - Include items in background, shadows, or corners
+   - Include items you're only 60% sure about - better to include than miss
+   - Don't skip items just because they're in background, partially visible, or you don't recognize them
+   - If you see ANY packaging/labels/text, read them and include the item
+   - When in doubt about ANY food item, INCLUDE IT with a descriptive name
+   - Only skip if it's clearly NOT food (e.g., a plate, fork, or non-food object)
+   - If you see something that MIGHT be food, include it - let the user decide
 
 FEW-SHOT EXAMPLES:
     Example 1: Image shows milk carton, bread bag, and eggs
@@ -6288,14 +6936,14 @@ Return ONLY valid JSON (no markdown, no code blocks, no explanations):
                 response = client.chat.completions.create(
                     model="gpt-4o",
                     messages=[
-                        {"role": "system", "content": "You are an expert food recognition system with exceptional attention to detail. Your task is to accurately identify all food items in images, extract quantities, read expiration dates from packaging labels, and classify items into appropriate categories. Always return results in valid JSON format with no additional text."},
+                        {"role": "system", "content": "You are an expert food recognition system with exceptional attention to detail. Your task is to identify ALL food items in images - be aggressive and include items even if you're slightly uncertain. Extract quantities, read expiration dates from packaging labels, and classify items into appropriate categories. When in doubt, INCLUDE the item rather than exclude it. Always return results in valid JSON format with no additional text."},
                         {"role": "user", "content": [
                             {"type": "text", "text": prompt},
                             {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img_b64}", "detail": "high"}}
                         ]}
                     ],
-                    max_tokens=2000,
-                    temperature=0.1,
+                    max_tokens=3000,  # Increased to allow more items
+                    temperature=0.2,  # Slightly higher for more creative detection
                     response_format={"type": "json_object"},
                     timeout=60.0  # 60 second timeout to prevent hanging
                 )
@@ -6350,7 +6998,10 @@ Return ONLY valid JSON (no markdown, no code blocks, no explanations):
                 
                 # Normalize and validate
                 normalized_name = normalize_item_name(raw_name)
-                if not normalized_name or len(normalized_name) < 2:
+                # Be less strict - only skip if name is completely empty or just whitespace
+                if not normalized_name or not normalized_name.strip():
+                    if VERBOSE_LOGGING:
+                        print(f"Skipping item with invalid name: {raw_name}")
                     continue  # Skip invalid items
                 
                 normalized_quantity = parse_quantity(raw_quantity)
@@ -6383,7 +7034,30 @@ Return ONLY valid JSON (no markdown, no code blocks, no explanations):
         
         # Add to appropriate pantry based on client type and user authentication
         client_type = request.headers.get('X-Client-Type', 'web')
+        
+        # Get user_id from header (mobile) or session (web)
         user_id = request.headers.get('X-User-ID')
+        if not user_id and 'user_id' in session:
+            user_id = session['user_id']
+        
+        # Get username for logging
+        username = 'unknown'
+        if user_id:
+            try:
+                if USE_FIREBASE:
+                    user_data = firebase_get_user_by_id(user_id)
+                    if user_data:
+                        username = user_data.get('username', 'unknown')
+                else:
+                    users = load_users()
+                    if user_id in users:
+                        username = users[user_id].get('username', 'unknown')
+            except Exception as e:
+                if VERBOSE_LOGGING:
+                    print(f"Error getting username for logging: {e}")
+        
+        if VERBOSE_LOGGING:
+            print(f"📸 Photo upload - User ID: {user_id}, Username: {username}, Client Type: {client_type}")
         
         total_items = 0
         if user_id:
