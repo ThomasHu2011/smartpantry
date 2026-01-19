@@ -220,11 +220,20 @@ def update_user(user_id, updates):
         db = get_db()
         user_ref = db.collection('users').document(user_id)
         
-        # Update only provided fields
-        user_ref.update(updates)
+        # Check if document exists first
+        user_doc = user_ref.get()
+        if not user_doc.exists:
+            print(f"Warning: User document {user_id} does not exist, creating it...")
+            # Create document with updates (merge=True to preserve any existing fields)
+            user_ref.set(updates, merge=True)
+        else:
+            # Update only provided fields
+            user_ref.update(updates)
         return True
     except Exception as e:
         print(f"Error updating user {user_id} in Firestore: {e}")
+        import traceback
+        traceback.print_exc()
         return False
 
 
@@ -253,8 +262,30 @@ def update_user_pantry(user_id, pantry_items):
         if not isinstance(pantry_items, list):
             pantry_items = []
         
-        # Update pantry in Firestore
-        user_ref.update({'pantry': pantry_items})
+        # Check if document exists first
+        user_doc = user_ref.get()
+        if not user_doc.exists:
+            print(f"Warning: User document {user_id} does not exist in Firestore, creating it with pantry...")
+            # Create document with pantry (merge=True to preserve any existing fields if document gets created elsewhere)
+            user_ref.set({
+                'pantry': pantry_items,
+                'created_at': datetime.now().isoformat() if pantry_items else None
+            }, merge=True)
+            print(f"✅ Created user document {user_id} with {len(pantry_items)} pantry items")
+        else:
+            # Document exists, update pantry field
+            try:
+                user_ref.update({'pantry': pantry_items})
+                print(f"✅ Updated pantry for existing user {user_id}: {len(pantry_items)} items")
+            except Exception as update_error:
+                # If update fails (e.g., document was deleted between check and update), try set with merge as fallback
+                print(f"Warning: Update failed ({update_error}), trying set with merge as fallback...")
+                try:
+                    user_ref.set({'pantry': pantry_items}, merge=True)
+                    print(f"✅ Successfully saved pantry using set(merge=True) fallback")
+                except Exception as set_error:
+                    print(f"Error: Both update and set(merge) failed: {set_error}")
+                    raise
         
         return True
     except Exception as e:

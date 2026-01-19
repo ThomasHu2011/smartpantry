@@ -2860,26 +2860,36 @@ def validate_category(item_name, category):
     if not name_lower:
         return category or 'other'
     
-    # Category mapping based on keywords
+    # Category mapping based on keywords (comprehensive list)
     category_keywords = {
-        'dairy': ['milk', 'cheese', 'yogurt', 'butter', 'cream', 'sour cream', 'cottage cheese', 'milk product'],
-        'produce': ['apple', 'banana', 'orange', 'tomato', 'lettuce', 'carrot', 'onion', 'potato', 'vegetable', 'fruit', 'pepper', 'cucumber', 'broccoli', 'spinach'],
-        'meat': ['chicken', 'beef', 'pork', 'fish', 'turkey', 'bacon', 'sausage', 'ham', 'steak', 'ground beef', 'salmon', 'tuna'],
-        'beverages': ['juice', 'soda', 'water', 'coffee', 'tea', 'beer', 'wine', 'cola', 'drink'],
-        'bakery': ['bread', 'bagel', 'muffin', 'croissant', 'roll', 'bun', 'pastry'],
-        'canned goods': ['can', 'canned', 'soup', 'tuna', 'beans', 'corn'],
-        'snacks': ['chip', 'cracker', 'cookie', 'nut', 'popcorn', 'pretzel', 'candy'],
-        'condiments': ['sauce', 'ketchup', 'mustard', 'mayo', 'mayonnaise', 'dressing', 'spice', 'oil', 'vinegar', 'salt', 'pepper'],
-        'grains': ['rice', 'pasta', 'cereal', 'flour', 'oat', 'quinoa', 'barley'],
-        'frozen': ['frozen', 'ice cream']
+        'dairy': ['milk', 'cheese', 'yogurt', 'butter', 'cream', 'sour cream', 'cottage cheese', 'milk product', 'egg', 'eggs', 'yoghurt', 'mozzarella', 'cheddar', 'swiss', 'gouda', 'brie', 'feta', 'parmesan', 'ricotta', 'cream cheese', 'heavy cream', 'half and half', 'buttermilk', 'sour cream', 'greek yogurt'],
+        'produce': ['apple', 'banana', 'orange', 'tomato', 'lettuce', 'carrot', 'onion', 'potato', 'vegetable', 'fruit', 'pepper', 'cucumber', 'broccoli', 'spinach', 'celery', 'garlic', 'ginger', 'avocado', 'lemon', 'lime', 'grape', 'strawberry', 'blueberry', 'raspberry', 'blackberry', 'peach', 'pear', 'plum', 'cherry', 'mango', 'pineapple', 'watermelon', 'cantaloupe', 'zucchini', 'squash', 'eggplant', 'corn', 'peas', 'green bean', 'asparagus', 'cauliflower', 'cabbage', 'kale', 'arugula', 'radish', 'beet', 'turnip', 'sweet potato', 'yam'],
+        'meat': ['chicken', 'beef', 'pork', 'fish', 'turkey', 'bacon', 'sausage', 'ham', 'steak', 'ground beef', 'salmon', 'tuna', 'cod', 'tilapia', 'shrimp', 'prawn', 'crab', 'lobster', 'lamb', 'duck', 'veal', 'venison', 'bison', 'ribeye', 'sirloin', 'chicken breast', 'chicken thigh', 'ground turkey', 'ground pork', 'chorizo', 'pepperoni', 'salami', 'prosciutto', 'hot dog', 'burger', 'meatball'],
+        'beverages': ['juice', 'soda', 'water', 'coffee', 'tea', 'beer', 'wine', 'cola', 'drink', 'lemonade', 'iced tea', 'sports drink', 'energy drink', 'smoothie', 'milkshake', 'hot chocolate', 'cocoa', 'espresso', 'latte', 'cappuccino', 'soda pop', 'soft drink', 'sparkling water', 'seltzer'],
+        'bakery': ['bread', 'bagel', 'muffin', 'croissant', 'roll', 'bun', 'pastry', 'donut', 'doughnut', 'cake', 'pie', 'cookie', 'biscuit', 'scone', 'pita', 'tortilla', 'naan', 'baguette', 'sourdough', 'rye bread', 'wheat bread', 'white bread', 'whole grain'],
+        'canned goods': ['can', 'canned', 'soup', 'tuna', 'beans', 'corn', 'tomato', 'sardine', 'anchovy', 'salmon', 'chicken', 'broth', 'stock', 'vegetable', 'fruit', 'peach', 'pear', 'pineapple'],
+        'snacks': ['chip', 'cracker', 'cookie', 'nut', 'popcorn', 'pretzel', 'candy', 'chocolate', 'granola bar', 'trail mix', 'nuts', 'almond', 'peanut', 'cashew', 'walnut', 'pistachio', 'sunflower seed', 'pumpkin seed', 'chips', 'doritos', 'lays', 'cheetos', 'goldfish', 'ritz', 'oreo', 'chips ahoy'],
+        'condiments': ['sauce', 'ketchup', 'mustard', 'mayo', 'mayonnaise', 'dressing', 'spice', 'oil', 'vinegar', 'salt', 'pepper', 'soy sauce', 'worcestershire', 'hot sauce', 'sriracha', 'bbq sauce', 'ranch', 'italian dressing', 'caesar dressing', 'honey', 'maple syrup', 'jam', 'jelly', 'preserves', 'peanut butter', 'almond butter', 'tahini', 'pesto', 'salsa', 'guacamole', 'hummus', 'relish', 'pickle', 'olive oil', 'vegetable oil', 'canola oil', 'sesame oil'],
+        'grains': ['rice', 'pasta', 'cereal', 'flour', 'oat', 'quinoa', 'barley', 'oats', 'oatmeal', 'wheat', 'bread', 'noodle', 'spaghetti', 'penne', 'macaroni', 'fettuccine', 'linguine', 'couscous', 'bulgur', 'farro', 'millet', 'brown rice', 'white rice', 'wild rice', 'basmati', 'jasmine rice'],
+        'frozen': ['frozen', 'ice cream', 'frozen vegetable', 'frozen fruit', 'frozen meal', 'frozen pizza', 'frozen dinner', 'ice', 'frozen yogurt', 'sorbet', 'gelato', 'frozen berries', 'frozen peas', 'frozen corn']
     }
     
-    # Check if category matches item name
+    # Check if category matches item name (case-insensitive, partial match)
     for correct_cat, keywords in category_keywords.items():
         if any(keyword in name_lower for keyword in keywords):
             return correct_cat
     
-    return category  # Return original if no match
+    # If no match found and original category is 'other', try to infer from common patterns
+    if category == 'other' or not category:
+        # Additional heuristics for common items
+        if 'egg' in name_lower:
+            return 'dairy'
+        elif any(word in name_lower for word in ['fresh', 'organic', 'ripe']):
+            # Likely produce if it has freshness indicators
+            if any(word in name_lower for word in ['fruit', 'vegetable', 'berry', 'leaf', 'green']):
+                return 'produce'
+    
+    return category if category and category != 'other' else 'other'  # Return original if valid, otherwise 'other'
 
 def parse_quantity(quantity_str):
     """Parse and normalize quantity strings with defensive validation"""
@@ -3123,6 +3133,20 @@ def normalize_pantry_item(item):
             else:
                 normalized_item['expirationDate'] = str(normalized_item['expirationDate']).strip()
         
+        # Ensure category exists and is validated
+        if 'category' not in normalized_item or not normalized_item['category'] or normalized_item['category'] == 'other':
+            # Auto-detect category from item name if not set or is 'other'
+            item_name = normalized_item.get('name', '')
+            if item_name:
+                normalized_item['category'] = validate_category(item_name, 'other')
+            else:
+                normalized_item['category'] = 'other'
+        else:
+            # Validate existing category
+            item_name = normalized_item.get('name', '')
+            if item_name:
+                normalized_item['category'] = validate_category(item_name, normalized_item['category'])
+        
         # Validate that name is not empty after normalization
         if not normalized_item.get('name'):
             normalized_item['name'] = 'Unnamed Item'
@@ -3222,6 +3246,26 @@ def update_user_pantry(user_id, pantry_items):
     # Validate user_id
     if not user_id or not isinstance(user_id, str):
         print(f"Error: Invalid user_id in update_user_pantry: {user_id}")
+        return False
+    
+    # CRITICAL: Validate that user exists before saving to Firebase
+    # This prevents anonymous users or invalid user_ids from saving to database
+    user_exists = False
+    try:
+        if USE_FIREBASE:
+            user_data = firebase_get_user_by_id(user_id)
+            if user_data:
+                user_exists = True
+        else:
+            users = load_users()
+            if user_id in users:
+                user_exists = True
+    except Exception as e:
+        print(f"Error checking if user {user_id} exists: {e}")
+    
+    if not user_exists:
+        print(f"❌ ERROR: Cannot save pantry items - user {user_id} does not exist in database!")
+        print(f"   This prevents anonymous users or invalid sessions from saving to Firebase.")
         return False
     
     if VERBOSE_LOGGING:
@@ -3481,21 +3525,50 @@ def profile():
 # Home page (pantry list)
 @app.route("/")
 def index():
-    # Check if user is logged in
+    # Check if user is logged in AND validate user exists
     if 'user_id' in session:
-        # get_user_pantry already normalizes items, so no need to normalize again
-        user_pantry = get_user_pantry(session['user_id'])
-        # Ensure user_pantry is a list
-        if not isinstance(user_pantry, list):
-            user_pantry = []
+        user_id = session.get('user_id')
         
-        if VERBOSE_LOGGING:
-            print(f"DEBUG: Rendering index with {len(user_pantry)} items for user {session.get('username')}")
-            print(f"DEBUG: Items: {[item.get('name', 'NO_NAME') for item in user_pantry[:3]]}")
+        # Validate that user actually exists in database
+        user_exists = False
+        username = None
+        try:
+            if USE_FIREBASE:
+                user_data = firebase_get_user_by_id(user_id)
+                if user_data:
+                    user_exists = True
+                    username = user_data.get('username')
+            else:
+                users = load_users()
+                if user_id in users:
+                    user_exists = True
+                    username = users[user_id].get('username')
+        except Exception as e:
+            if VERBOSE_LOGGING:
+                print(f"Error validating user {user_id}: {e}")
         
-        # Ensure items is always a list, never None
-        items_to_render = user_pantry if user_pantry else []
-        return render_template("index.html", items=items_to_render, username=session.get('username'))
+        # If user doesn't exist, clear session and treat as anonymous
+        if not user_exists:
+            print(f"⚠️ Session has invalid user_id {user_id}, clearing session")
+            session.clear()
+            # Fall through to anonymous user handling below
+        else:
+            # User exists and is logged in
+            # get_user_pantry already normalizes items, so no need to normalize again
+            user_pantry = get_user_pantry(user_id)
+            # Ensure user_pantry is a list
+            if not isinstance(user_pantry, list):
+                user_pantry = []
+            
+            if VERBOSE_LOGGING:
+                print(f"DEBUG: Rendering index with {len(user_pantry)} items for user {username}")
+                print(f"DEBUG: Items: {[item.get('name', 'NO_NAME') for item in user_pantry[:3]]}")
+            
+            # Ensure items is always a list, never None
+            items_to_render = user_pantry if user_pantry else []
+            return render_template("index.html", items=items_to_render, username=username)
+    
+    # Anonymous user or invalid session - use session-based pantry
     else:
         # Use session-based pantry for anonymous users (consistent with add_items and delete_item)
         if 'web_pantry' not in session:
@@ -3577,9 +3650,33 @@ def add_items():
         quantity = "1"
     
     if 'user_id' in session:
-        # Add to user's pantry
-        user_id = session['user_id']
-        print(f"Adding item '{item}' to pantry for user {user_id}")
+        candidate_user_id = session['user_id']
+        
+        # Validate user exists before saving
+        user_exists = False
+        try:
+            if USE_FIREBASE:
+                user_data = firebase_get_user_by_id(candidate_user_id)
+                if user_data:
+                    user_exists = True
+            else:
+                users = load_users()
+                if candidate_user_id in users:
+                    user_exists = True
+        except Exception as e:
+            if VERBOSE_LOGGING:
+                print(f"Error validating user {candidate_user_id}: {e}")
+        
+        if not user_exists:
+            # Invalid user_id in session, clear it and treat as anonymous
+            print(f"⚠️ Session has invalid user_id {candidate_user_id}, clearing session")
+            session.pop('user_id', None)
+            session.pop('username', None)
+            # Fall through to anonymous user handling below
+        else:
+            # User exists and is valid
+            user_id = candidate_user_id
+            print(f"Adding item '{item}' to pantry for user {user_id}")
         # Force fresh data by disabling cache to ensure we get the latest pantry items
         user_pantry = get_user_pantry(user_id, use_cache=False)
         print(f"Current pantry before add: {user_pantry} (type: {type(user_pantry)})")
@@ -3612,12 +3709,16 @@ def add_items():
                     item_exists = True
         
         if not item_exists:
+            # Detect category based on item name
+            detected_category = validate_category(item, 'other')
+            
             # Add new item with quantity and expiration date
             new_item = {
                 'id': str(uuid.uuid4()),
                 'name': item,
                 'quantity': quantity,
                 'expirationDate': normalized_expiration,
+                'category': detected_category,
                 'addedDate': datetime.now().isoformat()
             }
             pantry_list.append(new_item)
@@ -3649,12 +3750,16 @@ def add_items():
                     break
         
         if not item_exists:
+            # Detect category based on item name
+            detected_category = validate_category(item, 'other')
+            
             # Add new item as dictionary with quantity and expiration date
             new_item = {
                 'id': str(uuid.uuid4()),
                 'name': item,
                 'quantity': quantity,
                 'expirationDate': normalized_expiration,
+                'category': detected_category,
                 'addedDate': datetime.now().isoformat()
             }
             web_pantry.append(new_item)
@@ -4332,14 +4437,15 @@ def upload_photo():
     detected_items_data = []
     use_ml = ML_VISION_ENABLED
     
+    # ALWAYS try ML first if enabled (priority over OpenAI)
     if use_ml:
         try:
-            print(f"🔍 Using ML model for detection (ML_VISION_ENABLED={ML_VISION_ENABLED})")
+            print(f"🔍 Using ML model FIRST for detection (ML_VISION_ENABLED={ML_VISION_ENABLED})")
             detected_items_data = detect_food_items_with_ml(img_bytes, user_pantry=user_pantry)
             
             if detected_items_data and len(detected_items_data) > 0:
-                print(f"✅ ML model detected {len(detected_items_data)} items")
-                # ML model succeeded - use its results
+                print(f"✅ ML model detected {len(detected_items_data)} items - using ML results")
+                # ML model succeeded - use its results, don't fall back to OpenAI
                 use_ml = True
             else:
                 # ML returned empty results - fall back to OpenAI if available
@@ -4350,6 +4456,7 @@ def upload_photo():
             import traceback
             if VERBOSE_LOGGING:
                 traceback.print_exc()
+            print(f"⚠️ Falling back to OpenAI after ML failure")
             use_ml = False
 
     if not use_ml:
@@ -4899,14 +5006,32 @@ Return ONLY valid JSON (no markdown, no code blocks, no explanations):
         
     except ValueError as e:
         # Specific error for missing API key
-        flash(f"⚠️ {str(e)} Please configure OPENAI_API_KEY in your Render environment variables.", "danger")
+        error_msg = str(e)
+        print(f"ValueError analyzing photo: {error_msg}")
+        # Return JSON for AJAX requests
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest' or request.headers.get('Content-Type', '').startswith('application/json'):
+            return jsonify({
+                'success': False,
+                'error': f"{error_msg} Please configure OPENAI_API_KEY in your environment variables.",
+                'items': []
+            }), 400
+        flash(f"⚠️ {error_msg} Please configure OPENAI_API_KEY in your Render environment variables.", "danger")
+        return redirect(url_for("index"))
     except Exception as e:
         # Generic error handler
         error_msg = str(e)
         print(f"Error analyzing photo: {error_msg}")
+        import traceback
+        traceback.print_exc()
+        # Return JSON for AJAX requests
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest' or request.headers.get('Content-Type', '').startswith('application/json'):
+            return jsonify({
+                'success': False,
+                'error': f"Error analyzing photo: {error_msg}",
+                'items': []
+            }), 500
         flash(f"Error analyzing photo: {error_msg}", "danger")
-    
-    return redirect(url_for("index"))
+        return redirect(url_for("index"))
 
 # Get Nutrition Info (AI powered)
 @app.route("/nutrition/<recipe_name>")
@@ -5594,11 +5719,15 @@ def api_add_item():
             quantity = data.get('quantity', '1')
             expiration_date = data.get('expirationDate')
             
+            # Detect category based on item name
+            detected_category = validate_category(item_name, 'other')
+            
             pantry_item = {
                 'id': str(uuid.uuid4()),
                 'name': item_name,
                 'quantity': quantity,
                 'expirationDate': expiration_date,
+                'category': detected_category,
                 'addedDate': datetime.now().isoformat()
             }
         elif 'name' in data:
@@ -5621,11 +5750,16 @@ def api_add_item():
         elif not isinstance(quantity, str):
             quantity = str(quantity)  # Convert to string if it's a number
         
+        # Get category from request or detect from name
+        raw_category = data.get('category', 'other')
+        detected_category = validate_category(item_name, raw_category)
+        
         pantry_item = {
             'id': data.get('id', str(uuid.uuid4())),
             'name': item_name,
             'quantity': quantity.strip() if isinstance(quantity, str) else str(quantity),
             'expirationDate': expiration_date,
+            'category': detected_category,
             'addedDate': data.get('addedDate', datetime.now().isoformat())
         }
         
@@ -5635,8 +5769,31 @@ def api_add_item():
                 client_type = request.headers.get('X-Client-Type', 'web')
         user_id = request.headers.get('X-User-ID')
         
-        # Check if user is authenticated
+        # Validate user_id exists if provided (prevent anonymous users from saving to Firebase)
         if user_id:
+            user_exists = False
+            try:
+                if USE_FIREBASE:
+                    user_data = firebase_get_user_by_id(user_id)
+                    if user_data:
+                        user_exists = True
+                else:
+                    users = load_users()
+                    if user_id in users:
+                        user_exists = True
+            except Exception as e:
+                if VERBOSE_LOGGING:
+                    print(f"Error validating user {user_id}: {e}")
+            
+            if not user_exists:
+                print(f"❌ ERROR: Cannot add item - user {user_id} does not exist in database!")
+                return jsonify({
+                    'success': False,
+                    'error': 'Invalid user. Please log in to add items to your pantry.'
+                }), 401
+        
+        # Check if user is authenticated and valid
+        if user_id and user_exists:
             pantry_to_use = get_user_pantry(user_id)
             # Convert to list of dicts if needed
             pantry_list = []
@@ -6231,6 +6388,9 @@ def api_update_item(item_id):
                     # Ensure the updated item retains its original ID
                     if not updated_item.get('id'):
                         updated_item['id'] = item_id_from_dict
+                    # Preserve category from original item if not provided in update
+                    if 'category' not in updated_item and 'category' in pantry_item:
+                        updated_item['category'] = pantry_item['category']
                     pantry_list[i] = updated_item
                     item_found = True
                     break
@@ -6241,6 +6401,9 @@ def api_update_item(item_id):
                     # Preserve existing ID if item has one, otherwise generate new ID
                     if not updated_item.get('id'):
                         updated_item['id'] = item_id_from_dict if item_id_from_dict else str(uuid.uuid4())
+                    # Preserve category from original item if not provided in update
+                    if 'category' not in updated_item and 'category' in pantry_item:
+                        updated_item['category'] = pantry_item['category']
                     pantry_list[i] = updated_item
                     item_found = True
                     break
@@ -6322,6 +6485,9 @@ def api_update_item(item_id):
                     # Ensure the updated item retains its original ID
                     if not updated_item.get('id'):
                         updated_item['id'] = item_id_from_dict
+                    # Preserve category from original item if not provided in update
+                    if 'category' not in updated_item and 'category' in pantry_item:
+                        updated_item['category'] = pantry_item['category']
                     pantry_list[i] = updated_item
                     item_found = True
                     break
@@ -6332,6 +6498,9 @@ def api_update_item(item_id):
                     # Preserve existing ID if item has one, otherwise generate new ID
                     if not updated_item.get('id'):
                         updated_item['id'] = item_id_from_dict if item_id_from_dict else str(uuid.uuid4())
+                    # Preserve category from original item if not provided in update
+                    if 'category' not in updated_item and 'category' in pantry_item:
+                        updated_item['category'] = pantry_item['category']
                     pantry_list[i] = updated_item
                     item_found = True
                     break
@@ -7038,7 +7207,29 @@ Return ONLY valid JSON (no markdown, no code blocks, no explanations):
         # Get user_id from header (mobile) or session (web)
         user_id = request.headers.get('X-User-ID')
         if not user_id and 'user_id' in session:
-            user_id = session['user_id']
+            candidate_user_id = session['user_id']
+            # Validate user exists
+            user_exists = False
+            try:
+                if USE_FIREBASE:
+                    user_data = firebase_get_user_by_id(candidate_user_id)
+                    if user_data:
+                        user_exists = True
+                else:
+                    users = load_users()
+                    if candidate_user_id in users:
+                        user_exists = True
+            except Exception as e:
+                if VERBOSE_LOGGING:
+                    print(f"Error validating user {candidate_user_id}: {e}")
+            
+            if user_exists:
+                user_id = candidate_user_id
+            else:
+                # Invalid user_id in session, clear it
+                print(f"⚠️ Session has invalid user_id {candidate_user_id}, clearing session")
+                session.pop('user_id', None)
+                session.pop('username', None)
         
         # Get username for logging
         username = 'unknown'
@@ -7058,6 +7249,30 @@ Return ONLY valid JSON (no markdown, no code blocks, no explanations):
         
         if VERBOSE_LOGGING:
             print(f"📸 Photo upload - User ID: {user_id}, Username: {username}, Client Type: {client_type}")
+        
+        # Validate user exists before saving (prevent anonymous users from saving to Firebase)
+        if user_id:
+            user_exists = False
+            try:
+                if USE_FIREBASE:
+                    user_data = firebase_get_user_by_id(user_id)
+                    if user_data:
+                        user_exists = True
+                else:
+                    users = load_users()
+                    if user_id in users:
+                        user_exists = True
+            except Exception as e:
+                if VERBOSE_LOGGING:
+                    print(f"Error validating user {user_id}: {e}")
+            
+            if not user_exists:
+                print(f"❌ ERROR: Cannot save photo items - user {user_id} does not exist in database!")
+                return jsonify({
+                    'success': False,
+                    'error': 'Invalid user. Please log in to add items from photos.',
+                    'items': []
+                }), 401
         
         total_items = 0
         if user_id:
@@ -7320,12 +7535,14 @@ def api_insights():
                         if days_until_exp < 0:
                             expired_items.append({
                                 'name': item.get('name', 'Unknown'),
-                                'expired_days': abs(days_until_exp)
+                                'expired_days': abs(days_until_exp),
+                                'category': item.get('category', 'other')
                             })
                         elif days_until_exp <= 7:
                             expiring_soon_items.append({
                                 'name': item.get('name', 'Unknown'),
-                                'days_remaining': days_until_exp
+                                'days_remaining': days_until_exp,
+                                'category': item.get('category', 'other')
                             })
                     pass
                 except Exception as e:
@@ -7336,7 +7553,16 @@ def api_insights():
         
         # Sort most common items
         most_common = sorted(item_counts.items(), key=lambda x: x[1], reverse=True)[:10]
-        most_common_items = [{'name': name, 'count': count} for name, count in most_common]
+        # Get category for each most common item
+        most_common_items = []
+        for name, count in most_common:
+            # Find the category for this item name
+            category = 'other'
+            for item in pantry_items:
+                if item.get('name', '').lower().strip() == name.lower().strip():
+                    category = item.get('category', 'other')
+                    break
+            most_common_items.append({'name': name, 'count': count, 'category': category})
         
         # Sort categories
         category_list = [{'category': cat, 'count': count} for cat, count in category_counts.items()]

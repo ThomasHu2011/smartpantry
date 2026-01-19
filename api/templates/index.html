@@ -1933,10 +1933,14 @@
                              style="position: relative; z-index: 10;">
                             <div class="pantry-item-card card border-0 bg-white h-100" 
                                  style="border-radius: 20px; transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); border: 1px solid #e2e8f0; cursor: pointer; overflow: hidden; position: relative;"
+                                 onclick="openEditItemModal('{{ item_id|default('')|replace("'", "\\'") }}', '{{ item_name|replace("'", "\\'")|replace('"', '&quot;') }}', '{{ quantity|default('1') }}', '{{ exp_date if exp_date and exp_date != "None" and exp_date != "" else "" }}', '{{ added_date if added_date else "" }}');"
                                  onmouseover="this.style.transform='translateY(-8px) scale(1.02)'; this.style.boxShadow='0 16px 32px rgba(139, 92, 246, 0.2)'; this.style.borderColor='#8B5CF6';"
                                  onmouseout="this.style.transform='translateY(0) scale(1)'; this.style.boxShadow='0 4px 12px rgba(0,0,0,0.08)'; this.style.borderColor='#e2e8f0';">
-                                <!-- Accent bar at top -->
-                                <div style="height: 4px; background: linear-gradient(90deg, #8B5CF6 0%, #3B82F6 100%); width: 100%;"></div>
+                                <!-- Accent bar at top - colored by category -->
+                                {% set item_category = (item.get('category', 'other') if item|is_dict else 'other')|lower|trim %}
+                                <div class="category-accent-bar" 
+                                     data-category="{{ item_category }}"
+                                     style="height: 4px; width: 100%; background: linear-gradient(90deg, #8B5CF6 0%, #3B82F6 100%);"></div>
                                 
                                 <div class="card-body p-4">
                                     <div class="d-flex justify-content-between align-items-start mb-3">
@@ -2067,6 +2071,7 @@
                                            style="border-radius: 12px; width: 40px; height: 40px; padding: 0; display: flex; align-items: center; justify-content: center; transition: all 0.3s ease; flex-shrink: 0; background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.2); color: #EF4444;"
                                            title="Remove item"
                                            data-item-name="{{ item_name }}"
+                                           onclick="event.stopPropagation();"
                                            onmouseover="this.style.background='#ef4444'; this.style.color='white'; this.style.transform='scale(1.1) rotate(90deg)'; this.style.borderColor='#ef4444';"
                                            onmouseout="this.style.background='rgba(239, 68, 68, 0.1)'; this.style.color='#EF4444'; this.style.transform='scale(1) rotate(0deg)'; this.style.borderColor='rgba(239, 68, 68, 0.2)';">
                                             <i class="bi bi-trash3-fill" style="font-size: 0.9rem;"></i>
@@ -2311,6 +2316,68 @@
                                 onmouseover="this.style.transform='translateY(-1px)'; this.style.boxShadow='0 6px 16px rgba(139, 92, 246, 0.4)';"
                                 onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 4px 12px rgba(139, 92, 246, 0.3)';">
                             <i class="bi bi-plus-circle-fill me-2"></i><span id="addItemModalBtnText">Add to Pantry</span>
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Edit Item Modal -->
+<div class="modal" id="editItemModal" tabindex="-1" aria-labelledby="editItemModalLabel" aria-hidden="true" data-bs-backdrop="false" data-bs-keyboard="true" role="dialog" aria-modal="true">
+    <div class="modal-dialog modal-dialog-centered" style="max-height: 90vh;">
+        <div class="modal-content" style="border-radius: 16px; border: none; position: relative; max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 50px rgba(0, 0, 0, 0.25);">
+            <div class="modal-header border-0">
+                <h5 class="modal-title fw-bold" id="editItemModalLabel">
+                    <i class="bi bi-pencil-square me-2"></i>Edit Item
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body p-4" style="background: #f8f9fa;">
+                <form id="editItemModalForm" onsubmit="return handleEditItemSubmit(event);">
+                    <input type="hidden" id="editItemId" name="item_id">
+                    <input type="hidden" id="editItemAddedDate" name="added_date">
+                    
+                    <div class="mb-4">
+                        <label class="form-label fw-semibold mb-2" style="color: #1e293b; font-size: 0.95rem;">
+                            <i class="bi bi-box-seam me-2" style="color: #8B5CF6;"></i>Item Name <span class="text-danger">*</span>
+                        </label>
+                        <input type="text" name="item_name" id="editItemName" class="form-control form-control-lg" 
+                               placeholder="e.g., Milk, Bread, Eggs" required autocomplete="off"
+                               style="border-radius: 12px; border: 2px solid #e2e8f0; padding: 14px 16px; font-size: 1rem; transition: all 0.2s ease;"
+                               onfocus="this.style.borderColor='#8B5CF6'; this.style.boxShadow='0 0 0 3px rgba(139, 92, 246, 0.1)';"
+                               onblur="this.style.borderColor='#e2e8f0'; this.style.boxShadow='none';">
+                    </div>
+                    <div class="row g-3 mb-4">
+                        <div class="col-6">
+                            <label class="form-label fw-semibold mb-2" style="color: #1e293b; font-size: 0.95rem;">
+                                <i class="bi bi-123 me-2" style="color: #8B5CF6;"></i>Quantity
+                            </label>
+                            <input type="number" name="quantity" id="editItemQuantity" class="form-control" 
+                                   placeholder="1" value="1" min="1" autocomplete="off"
+                                   style="border-radius: 12px; border: 2px solid #e2e8f0; padding: 12px 14px; transition: all 0.2s ease;"
+                                   onfocus="this.style.borderColor='#8B5CF6'; this.style.boxShadow='0 0 0 3px rgba(139, 92, 246, 0.1)';"
+                                   onblur="this.style.borderColor='#e2e8f0'; this.style.boxShadow='none';">
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label fw-semibold mb-2" style="color: #1e293b; font-size: 0.95rem;">
+                                <i class="bi bi-calendar-event me-2" style="color: #8B5CF6;"></i>Expires
+                                <span class="text-muted" style="font-weight: normal; font-size: 0.85rem;">(optional)</span>
+                            </label>
+                            <input type="date" name="expiration_date" id="editItemExpiration" class="form-control"
+                                   style="border-radius: 12px; border: 2px solid #e2e8f0; padding: 12px 14px; transition: all 0.2s ease;"
+                                   onfocus="this.style.borderColor='#8B5CF6'; this.style.boxShadow='0 0 0 3px rgba(139, 92, 246, 0.1)';"
+                                   onblur="this.style.borderColor='#e2e8f0'; this.style.boxShadow='none';">
+                        </div>
+                    </div>
+                    
+                    <div class="d-flex gap-2 mt-4">
+                        <button type="button" class="btn btn-secondary flex-fill" data-bs-dismiss="modal" style="border-radius: 12px; padding: 12px; font-weight: 600;">
+                            <i class="bi bi-x-circle me-2"></i>Cancel
+                        </button>
+                        <button type="submit" class="btn btn-primary flex-fill" id="editItemSaveBtn" style="background: linear-gradient(135deg, #8B5CF6 0%, #3B82F6 100%); border: none; border-radius: 12px; padding: 12px; font-weight: 600; box-shadow: 0 4px 12px rgba(139, 92, 246, 0.3);">
+                            <i class="bi bi-check-circle me-2"></i>Save Changes
                         </button>
                     </div>
                 </form>
@@ -2565,7 +2632,7 @@
     
     // Retry helper for failed requests
     async function fetchWithRetry(url, options = {}, maxRetries = 3, retryDelay = 1000) {
-        let lastError;
+        let lastError = null;
         for (let attempt = 1; attempt <= maxRetries; attempt++) {
             try {
                 const response = await fetchWithTimeout(url, options);
@@ -2582,7 +2649,7 @@
                 }
             }
         }
-        throw lastError;
+        throw lastError || new Error('All retry attempts failed');
     }
     
     // Safe DOM query helper
@@ -2676,19 +2743,24 @@
             browseBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Opening...';
             
             // Trigger file input
-            photoInput.click();
-            
-            // Reset button after a short delay
-            setTimeout(() => {
+            try {
+                photoInput.click();
+            } catch (error) {
+                console.error('Error triggering file input:', error);
+                // Reset button on error
                 browseBtn.disabled = false;
                 browseBtn.style.opacity = '1';
                 browseBtn.innerHTML = originalText;
-            }, 500);
-            e.preventDefault();
-            e.stopPropagation();
-            if (photoInput) {
-                photoInput.click();
             }
+            
+            // Reset button after a short delay
+            setTimeout(() => {
+                if (browseBtn) {
+                    browseBtn.disabled = false;
+                    browseBtn.style.opacity = '1';
+                    browseBtn.innerHTML = originalText;
+                }
+            }, 500);
         });
     }
 
@@ -2860,7 +2932,7 @@
                 }
                 selectedFile = await compressImage(file);
             } else {
-                selectedFile = file;
+        selectedFile = file;
             }
         } catch (error) {
             console.error('Error compressing image:', error);
@@ -3385,7 +3457,7 @@
                 }
                 
                 // Convert to blob with compression (quality: 0.6)
-                canvas.toBlob((blob) => {
+        canvas.toBlob((blob) => {
                     if (!blob) {
                         showCameraError('Capture Failed', 'Could not capture photo. Please try again.');
                         return;
@@ -3716,30 +3788,49 @@
                     }
                 }, UPLOAD_TIMEOUT_MS);
 
+                console.log('Upload response status:', response.status);
+                console.log('Upload response content-type:', response.headers.get('content-type'));
+
                 if (response.ok) {
-                    const contentType = response.headers.get('content-type');
-                    if (contentType && contentType.includes('application/json')) {
-                        // JSON response with confidence scores
-                        const data = await response.json();
+                    const contentType = response.headers.get('content-type') || '';
+                    let data;
+                    
+                    // Try to parse as JSON first
+                    try {
+                        data = await response.json();
+                        console.log('Parsed JSON response:', data);
+                        
                         if (data.success) {
                             // Show results with confidence
+                            console.log('Photo analysis successful, showing results modal...');
+                            console.log('Response data:', {
+                                items: data.items?.length || 0,
+                                high_confidence: data.high_confidence?.length || 0,
+                                low_confidence: data.low_confidence?.length || 0,
+                                auto_added: data.auto_added || 0
+                            });
                             showPhotoAnalysisResults(data);
                         } else {
-                            showFeedback(data.error || 'Photo analysis failed', 'danger');
+                            const errorMsg = data.error || 'Photo analysis failed';
+                            console.error('Photo analysis failed:', errorMsg);
+                            showFeedback(errorMsg, 'danger');
                             resetPhotoUploadState();
                         }
-                    } else {
+                    } catch (jsonError) {
+                        // If JSON parsing fails, try to get text response
+                        console.error('Failed to parse JSON response:', jsonError);
+                        const textResponse = await response.text();
+                        console.log('Text response:', textResponse.substring(0, 200));
+                        
                         // HTML redirect response (fallback) - shouldn't happen with AJAX
                         const uploadFeedback = document.getElementById('uploadFeedback');
                         if (uploadFeedback) {
-                            uploadFeedback.className = 'feedback-message success';
-                            uploadFeedback.innerHTML = '<i class="bi bi-check-circle-fill me-2"></i>Photo analyzed! Please wait for verification window...';
+                            uploadFeedback.className = 'feedback-message error';
+                            uploadFeedback.innerHTML = '<i class="bi bi-exclamation-triangle-fill me-2"></i>Unexpected response format. Please try again.';
                             uploadFeedback.style.display = 'flex';
                         }
-                        
-                        // Don't close photo modal immediately - wait for user to verify items
-                        // The confidence modal will handle closing when done
-                        console.warn('Received HTML response instead of JSON - this should not happen with AJAX upload');
+                        console.warn('Received non-JSON response instead of JSON - this should not happen with AJAX upload');
+                            resetPhotoUploadState();
                     }
                 } else {
                     // Handle error response
@@ -3816,12 +3907,14 @@
     
     // Show photo analysis results with confidence scores
     function showPhotoAnalysisResults(data) {
+        console.log('showPhotoAnalysisResults called with:', data);
         const uploadFeedback = document.getElementById('uploadFeedback');
         
-        if (!data.success) {
+        if (!data || !data.success) {
+            console.error('Photo analysis failed or invalid data:', data);
             if (uploadFeedback) {
                 uploadFeedback.className = 'feedback-message error';
-                uploadFeedback.innerHTML = '<i class="bi bi-exclamation-triangle-fill me-2"></i>' + (data.error || 'Analysis failed');
+                uploadFeedback.innerHTML = '<i class="bi bi-exclamation-triangle-fill me-2"></i>' + (data?.error || 'Analysis failed');
                 uploadFeedback.style.display = 'flex';
             }
             resetPhotoUploadState();
@@ -3843,6 +3936,12 @@
             needsConfirmation,
             items: allItems
         });
+        
+        // If items array is empty, check if we have items in high/low confidence arrays
+        if (allItems.length === 0 && (highConfItems.length > 0 || lowConfItems.length > 0)) {
+            console.log('Items array is empty, but found items in high/low confidence arrays. Combining...');
+            allItems = [...highConfItems, ...lowConfItems];
+        }
         
         // Ensure all items have confidence values
         // If items don't have confidence, assign default based on whether they're in high/low confidence arrays
@@ -3886,9 +3985,47 @@
         
         // Always show modal with all detected items and their confidence levels
         if (allItems.length > 0) {
+            console.log('Calling showAIConfidenceModal with', allItems.length, 'items');
+            console.log('Items breakdown:', {
+                total: allItems.length,
+                high: highConfItems.length,
+                low: lowConfItems.length,
+                autoAdded: autoAdded
+            });
+            try {
+                // Ensure modal is shown even if it already exists
             showAIConfidenceModal(allItems, autoAdded, highConfItems, lowConfItems);
+                console.log('showAIConfidenceModal called successfully');
+                
+                // Force show modal if Bootstrap didn't show it
+                setTimeout(() => {
+                    const confidenceModal = document.getElementById('aiConfidenceModal');
+                    if (confidenceModal) {
+                        const isVisible = confidenceModal.classList.contains('show') || confidenceModal.style.display === 'block';
+                        if (!isVisible) {
+                            console.warn('Modal not visible, forcing display...');
+                            if (typeof bootstrap !== 'undefined' && bootstrap.Modal) {
+                                const modalInstance = bootstrap.Modal.getInstance(confidenceModal) || new bootstrap.Modal(confidenceModal, {
+                                    backdrop: 'static',
+                                    keyboard: false
+                                });
+                                modalInstance.show();
+                            } else {
+                                confidenceModal.style.display = 'block';
+                                confidenceModal.classList.add('show');
+                            }
+                        }
+                    }
+                }, 100);
+            } catch (modalError) {
+                console.error('Error showing AI confidence modal:', modalError);
+                console.error('Modal error details:', modalError.stack);
+                showFeedback('Error displaying detected items. Please try again.', 'danger');
+                resetPhotoUploadState();
+            }
         } else {
             // Show message if no items detected
+            console.warn('No items detected in photo');
             showFeedback('No items were detected in the photo. Please try again with a clearer image.', 'warning');
             resetPhotoUploadState();
         }
@@ -3959,11 +4096,22 @@
                             }
                             setTimeout(async () => {
                                 try {
+                                    // Use API endpoint for more reliable reload
+                                    if (typeof reloadPantryItemsFromAPI === 'function') {
+                                        await reloadPantryItemsFromAPI();
+                                    } else {
                                     await reloadPantryItems();
+                                    }
                                 } catch (reloadError) {
                                     console.error('Error reloading pantry after photo upload:', reloadError);
+                                    // Fallback to HTML parsing method
+                                    try {
+                                        await reloadPantryItems();
+                                    } catch (fallbackError) {
+                                        console.error('Fallback reload also failed:', fallbackError);
                                 }
-                            }, 300);
+                                }
+                            }, 800);
                         } else {
                             showFeedback(data.error || 'Failed to add items', 'danger');
                         }
@@ -4260,7 +4408,7 @@
                                         closePhotoModal();
                                         resetPhotoUploadState();
                                         
-                                        // Force reload pantry items with longer delay to ensure backend saved
+                                        // Force reload pantry items with longer delay to ensure backend saved (especially for Firebase)
                                         setTimeout(async () => {
                                             console.log('Reloading pantry items after adding items...');
                                             try {
@@ -4269,28 +4417,45 @@
                                                 setTimeout(async () => {
                                                     try {
                                                         await reloadPantryItems();
-                                                        // Final check: if items still not visible, do full reload
-                                                        setTimeout(() => {
+                                                        // Final check: if items still not visible, try one more time
+                                                        setTimeout(async () => {
                                                             try {
                                                                 const container = document.getElementById('pantryItemsContainer');
                                                                 if (container && container.children.length === 0 && data.items_added > 0) {
-                                                                    console.warn('Items not appearing after reload, doing full page reload');
+                                                                    console.warn('Items not appearing, trying one more reload...');
+                                                                    await reloadPantryItems();
+                                                                    // Final check after last retry
+                                                                    setTimeout(() => {
+                                                                        const finalContainer = document.getElementById('pantryItemsContainer');
+                                                                        if (finalContainer && finalContainer.children.length === 0 && data.items_added > 0) {
+                                                                            console.warn('Items still not appearing after all retries, doing full page reload');
                                                                     window.location.reload();
+                                                                        }
+                                                                    }, 500);
                                                                 }
                                                             } catch (checkError) {
                                                                 console.error('Error checking items:', checkError);
                                                             }
-                                                        }, 1000);
+                                                        }, 1500);
                                                     } catch (reloadError) {
                                                         console.error('Error in second reload:', reloadError);
+                                                        // Don't reload page immediately, let the final check handle it
                                                     }
-                                                }, 800);
+                                                }, 1200); // Increased delay for Firebase
                                             } catch (error) {
                                                 console.error('Error reloading pantry:', error);
-                                                // Fallback: full page reload
+                                                // Try one more time before giving up
+                                                setTimeout(async () => {
+                                                    try {
+                                                        await reloadPantryItems();
+                                                    } catch (retryError) {
+                                                        console.error('Final retry also failed:', retryError);
+                                                        // Only reload page if all retries fail
                                                 window.location.reload();
                                             }
-                                        }, 1000);
+                                                }, 2000);
+                                            }
+                                        }, 1500); // Increased initial delay for Firebase sync
                                     }, { once: true });
                                 } else {
                                     // Bootstrap not available, close manually
@@ -4303,20 +4468,40 @@
                                     closePhotoModal();
                                     resetPhotoUploadState();
                                     
+                                    // Progressive retry with increasing delays for Firebase sync
                                     setTimeout(async () => {
-                                        try {
-                                            await reloadPantryItems();
+                                        let retryCount = 0;
+                                        const maxRetries = 3;
+                                        const retryDelays = [1200, 2000, 3000];
+                                        
+                                        const retryReload = async () => {
+                                            if (retryCount >= maxRetries) return;
+                                            
                                             setTimeout(async () => {
                                                 try {
+                                                    console.log(`Reloading pantry (attempt ${retryCount + 1}/${maxRetries})...`);
                                                     await reloadPantryItems();
-                                                } catch (retryError) {
-                                                    console.error('Error in reload retry:', retryError);
+                                                    
+                                                    // Check if successful
+                                                    const container = document.getElementById('pantryItemsContainer');
+                                                    if (container && container.children.length > 0) {
+                                                        console.log('✅ Reload successful');
+                                                        if (typeof updateEmptyState === 'function') updateEmptyState();
+                                                        return;
+                                                    }
+                                                    
+                                                    retryCount++;
+                                                    retryReload();
+                                                } catch (error) {
+                                                    console.error(`Reload attempt ${retryCount + 1} failed:`, error);
+                                                    retryCount++;
+                                                    retryReload();
                                                 }
-                                            }, 800);
-                                        } catch (reloadError) {
-                                            console.error('Error reloading pantry:', reloadError);
-                                        }
-                                    }, 1000);
+                                            }, retryDelays[retryCount] || 3000);
+                                        };
+                                        
+                                        retryReload();
+                                    }, 1500); // Initial delay for Firebase
                                 }
                             } else {
                                 // No Bootstrap, close manually and reload
@@ -4360,17 +4545,17 @@
                 }
             });
         }
-        
+            
         // Always attach event listeners (even if modal already exists)
-        // Update selected count on checkbox change
-        confidenceModal.addEventListener('change', (e) => {
-            if (e.target.type === 'checkbox') {
-                const checked = confidenceModal.querySelectorAll('input[type="checkbox"]:checked').length;
-                const selectedCountEl = document.getElementById('selectedCount');
-                if (selectedCountEl) {
-                    selectedCountEl.textContent = checked;
+            // Update selected count on checkbox change
+            confidenceModal.addEventListener('change', (e) => {
+                if (e.target.type === 'checkbox') {
+                    const checked = confidenceModal.querySelectorAll('input[type="checkbox"]:checked').length;
+                    const selectedCountEl = document.getElementById('selectedCount');
+                    if (selectedCountEl) {
+                        selectedCountEl.textContent = checked;
+                    }
                 }
-            }
         });
         
         // Show the modal if it wasn't just created
@@ -4513,7 +4698,7 @@
                         <!-- Image Placeholder (matching mobile design) -->
                         <div style="width: 60px; height: 60px; background: linear-gradient(135deg, #E2E8F0 0%, #CBD5E1 100%); border-radius: 12px; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
                             <i class="bi bi-image" style="font-size: 1.5rem; color: #94A3B8;"></i>
-                        </div>
+                                    </div>
                         
                         <!-- Item Info -->
                         <div class="flex-grow-1" style="min-width: 0;">
@@ -4546,10 +4731,10 @@
                                         onclick="event.stopPropagation(); const card = this.closest('.card'); const checkbox = card.querySelector('input[type=\'checkbox\']'); if (checkbox && !checkbox.disabled) { checkbox.checked = !checkbox.checked; checkbox.dispatchEvent(new Event('change', { bubbles: true })); }"
                                         onmouseenter="this.style.transform = 'scale(1.05)'; this.style.boxShadow = '0 4px 8px rgba(0,0,0,0.15)';"
                                         onmouseleave="this.style.transform = 'scale(1)'; this.style.boxShadow = '0 2px 4px rgba(0,0,0,0.1)';">
-                                    ${confLabel}
+                                        ${confLabel}
                                 </button>
+                                </div>
                             </div>
-                        </div>
                         
                         <!-- Hidden Checkbox -->
                         <input class="form-check-input" type="checkbox" 
@@ -4622,14 +4807,46 @@
             selectedCountEl.textContent = checked;
         }
         
-        // Show modal
+        // Show modal - ensure it's visible
         if (typeof bootstrap !== 'undefined' && bootstrap.Modal) {
-            const modalInstance = new bootstrap.Modal(confidenceModal);
+            let modalInstance = bootstrap.Modal.getInstance(confidenceModal);
+            if (!modalInstance) {
+                modalInstance = new bootstrap.Modal(confidenceModal, {
+                    backdrop: 'static',
+                    keyboard: false
+                });
+            }
             modalInstance.show();
+            
+            // Force show if not visible after a short delay
+            setTimeout(() => {
+                if (!confidenceModal.classList.contains('show')) {
+                    console.warn('Modal not showing, forcing display...');
+                    confidenceModal.classList.add('show');
+                    confidenceModal.style.display = 'block';
+                    document.body.classList.add('modal-open');
+                    const backdrop = document.createElement('div');
+                    backdrop.className = 'modal-backdrop fade show';
+                    backdrop.style.zIndex = '1055';
+                    document.body.appendChild(backdrop);
+                }
+            }, 200);
         } else {
             confidenceModal.style.display = 'block';
             confidenceModal.classList.add('show');
+            document.body.classList.add('modal-open');
+            const backdrop = document.createElement('div');
+            backdrop.className = 'modal-backdrop fade show';
+            backdrop.style.zIndex = '1055';
+            document.body.appendChild(backdrop);
         }
+        
+        console.log('Modal should now be visible. Items count:', {
+            high: highConf.length,
+            medium: mediumConf.length,
+            low: lowConf.length,
+            total: allItems.length
+        });
     }
     
     // Helper function to reset photo upload state
@@ -4930,14 +5147,18 @@
     window.addEventListener('DOMContentLoaded', () => {
         if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
             // Disable live camera button (getUserMedia not available)
-            openCameraBtn.disabled = true;
-            openCameraBtn.innerHTML = '<i class="bi bi-camera-video-off me-2"></i>HTTPS Only';
-            openCameraBtn.title = 'Live camera requires HTTPS or localhost. Use "Take Photo" button instead.';
-            openCameraBtn.classList.add('opacity-50');
+            if (openCameraBtn) {
+                openCameraBtn.disabled = true;
+                openCameraBtn.innerHTML = '<i class="bi bi-camera-video-off me-2"></i>HTTPS Only';
+                openCameraBtn.title = 'Live camera requires HTTPS or localhost. Use "Take Photo" button instead.';
+                openCameraBtn.classList.add('opacity-50');
+            }
             
             // Make "Take Photo" button more prominent
-            mobileCameraBtn.classList.remove('btn-success');
-            mobileCameraBtn.classList.add('btn-success', 'pulse');
+            if (mobileCameraBtn) {
+                mobileCameraBtn.classList.remove('btn-success');
+                mobileCameraBtn.classList.add('btn-success', 'pulse');
+            }
         }
 
         // Handle expiration days selector for recipe suggestions
@@ -5219,19 +5440,43 @@
         return 'other';
     }
     
-    // Get category display name and icon
+    // Get category display name, icon, and color (supports both frontend and backend category names)
     function getCategoryDisplay(category) {
+        if (!category) category = 'other';
+        category = category.toLowerCase().trim();
+        
         const categoryInfo = {
-            'proteins': { name: 'Proteins', icon: 'bi-droplet-fill', color: '#EF4444' },
-            'vegetables': { name: 'Vegetables', icon: 'bi-flower1', color: '#10B981' },
-            'fruits': { name: 'Fruits', icon: 'bi-apple', color: '#F59E0B' },
-            'dairy': { name: 'Dairy', icon: 'bi-cup-straw', color: '#3B82F6' },
-            'grains': { name: 'Grains', icon: 'bi-wheat', color: '#8B5CF6' },
-            'snacks': { name: 'Snacks', icon: 'bi-bag', color: '#EC4899' },
-            'beverages': { name: 'Beverages', icon: 'bi-cup', color: '#06B6D4' },
-            'other': { name: 'Other', icon: 'bi-box', color: '#64748B' }
+            'proteins': { name: 'Proteins', icon: 'bi-droplet-fill', color: '#EF4444', gradient: 'linear-gradient(90deg, #EF4444 0%, #DC2626 100%)' },
+            'meat': { name: 'Meat', icon: 'bi-droplet-fill', color: '#EF4444', gradient: 'linear-gradient(90deg, #EF4444 0%, #DC2626 100%)' },
+            'vegetables': { name: 'Vegetables', icon: 'bi-flower1', color: '#10B981', gradient: 'linear-gradient(90deg, #10B981 0%, #059669 100%)' },
+            'produce': { name: 'Produce', icon: 'bi-flower1', color: '#10B981', gradient: 'linear-gradient(90deg, #10B981 0%, #059669 100%)' },
+            'fruits': { name: 'Fruits', icon: 'bi-apple', color: '#F59E0B', gradient: 'linear-gradient(90deg, #F59E0B 0%, #D97706 100%)' },
+            'dairy': { name: 'Dairy', icon: 'bi-cup-straw', color: '#3B82F6', gradient: 'linear-gradient(90deg, #3B82F6 0%, #2563EB 100%)' },
+            'grains': { name: 'Grains', icon: 'bi-wheat', color: '#8B5CF6', gradient: 'linear-gradient(90deg, #8B5CF6 0%, #7C3AED 100%)' },
+            'snacks': { name: 'Snacks', icon: 'bi-bag', color: '#EC4899', gradient: 'linear-gradient(90deg, #EC4899 0%, #DB2777 100%)' },
+            'beverages': { name: 'Beverages', icon: 'bi-cup', color: '#06B6D4', gradient: 'linear-gradient(90deg, #06B6D4 0%, #0891B2 100%)' },
+            'bakery': { name: 'Bakery', icon: 'bi-bread-slice', color: '#F59E0B', gradient: 'linear-gradient(90deg, #F59E0B 0%, #D97706 100%)' },
+            'canned_goods': { name: 'Canned Goods', icon: 'bi-box-seam', color: '#F97316', gradient: 'linear-gradient(90deg, #F97316 0%, #EA580C 100%)' },
+            'canned goods': { name: 'Canned Goods', icon: 'bi-box-seam', color: '#F97316', gradient: 'linear-gradient(90deg, #F97316 0%, #EA580C 100%)' },
+            'condiments': { name: 'Condiments', icon: 'bi-droplet', color: '#8B5CF6', gradient: 'linear-gradient(90deg, #8B5CF6 0%, #7C3AED 100%)' },
+            'frozen': { name: 'Frozen', icon: 'bi-snow', color: '#06B6D4', gradient: 'linear-gradient(90deg, #06B6D4 0%, #0891B2 100%)' },
+            'other': { name: 'Other', icon: 'bi-box', color: '#64748B', gradient: 'linear-gradient(90deg, #64748B 0%, #475569 100%)' }
         };
         return categoryInfo[category] || categoryInfo['other'];
+    }
+    
+    // Update all category accent bars with their category colors
+    function updateCategoryAccentBars() {
+        const accentBars = document.querySelectorAll('.category-accent-bar');
+        accentBars.forEach(bar => {
+            const category = bar.getAttribute('data-category');
+            if (category && typeof getCategoryDisplay === 'function') {
+                const catInfo = getCategoryDisplay(category);
+                if (catInfo && catInfo.gradient) {
+                    bar.style.background = catInfo.gradient;
+                }
+            }
+        });
     }
     
     // Category order for sorting
@@ -5491,53 +5736,12 @@
         initializeQuantityEditing();
         initializeExpirationEditing();
         
-        // Re-apply filters after sorting to maintain filter state
-        document.querySelectorAll('.filter-chip.active').forEach(chip => {
-            const filter = chip.getAttribute('data-filter');
-            if (filter && filter !== 'category') {
-                // Re-apply filter logic
-                const allItems = Array.from(container.querySelectorAll('.pantry-item-wrapper'));
-                allItems.forEach(item => {
-                    let show = true;
-                    if (filter === 'expiring-soon') {
-                        const expirationBadge = item.querySelector('.expiration-badge[data-exp-date]');
-                        if (expirationBadge) {
-                            const expDate = expirationBadge.getAttribute('data-exp-date');
-                            if (expDate && expDate !== '9999-12-31') {
-                                const daysDiff = getDaysUntilExpiration(expDate);
-                                show = daysDiff >= 0 && daysDiff <= 7;
-                            } else {
-                                show = false;
-                            }
-                        } else {
-                            show = false;
-                        }
-                    } else if (filter === 'recent') {
-                        const addedDateAttr = item.getAttribute('data-added-date');
-                        if (addedDateAttr && addedDateAttr !== '') {
-                            try {
-                                let addedDate;
-                                if (addedDateAttr.includes('T')) {
-                                    addedDate = new Date(addedDateAttr);
-                                } else {
-                                    addedDate = new Date(addedDateAttr + 'T00:00:00');
-                                }
-                                const today = new Date();
-                                today.setHours(0, 0, 0, 0);
-                                addedDate.setHours(0, 0, 0, 0);
-                                const daysDiff = Math.floor((today - addedDate) / (1000 * 60 * 60 * 24));
-                                show = daysDiff >= 0 && daysDiff <= 7;
-                            } catch (e) {
-                                show = true;
-                            }
-                        } else {
-                            show = false;
-                        }
-                    }
-                    item.style.display = show ? '' : 'none';
-                });
-            }
-        });
+        // Re-apply all active filters after sorting to maintain filter state
+        if (typeof applyAllFilters === 'function') {
+            setTimeout(() => {
+                applyAllFilters();
+            }, 100);
+        }
         
         // Update expiration badges and card backgrounds after sorting
         setTimeout(() => {
@@ -5789,11 +5993,13 @@
                         }
                         
                         // Update pantry items without reloading page
+                        // Use API endpoint directly for more reliable reload
                         // Increase delay for Firebase to ensure data is saved
                         // Firebase writes can take longer than file-based storage
                         setTimeout(async () => {
                             try {
-                                await reloadPantryItems();
+                                // Try API endpoint first (more reliable than HTML parsing)
+                                await reloadPantryItemsFromAPI();
                                 // Update empty state and progress after reload
                                 if (typeof updateEmptyState === 'function') {
                                     updateEmptyState();
@@ -5810,11 +6016,11 @@
                                     try {
                                         const container = document.getElementById('pantryItemsContainer');
                                         const expectedItems = data.items_added || 1;
-                                        const currentItems = container ? container.children.length : 0;
+                                        const currentItems = container ? container.querySelectorAll('.pantry-item-wrapper').length : 0;
                                         // Only retry if items are still not showing
                                         if (currentItems === 0) {
                                             console.log('Retrying reload after Firebase save delay...');
-                                            await reloadPantryItems();
+                                            await reloadPantryItemsFromAPI();
                                             // Update again after retry
                                             if (typeof updateEmptyState === 'function') {
                                                 updateEmptyState();
@@ -5826,16 +6032,22 @@
                                     } catch (retryError) {
                                         console.error('Error in reload retry:', retryError);
                                     }
-                                }, 800);
+                                }, 1500);
                             } catch (reloadError) {
                                 console.error('Error reloading pantry items:', reloadError);
+                                // Fallback to HTML parsing method
+                                try {
+                                    await reloadPantryItems();
+                                } catch (fallbackError) {
+                                    console.error('Fallback reload also failed:', fallbackError);
                                 // Show user-friendly error
                                 const feedback = document.getElementById('addItemFeedback') || document.getElementById('addItemModalFeedback');
                                 if (feedback) {
                                     showFeedback('Items added but failed to refresh. Please refresh the page.', 'warning');
                                 }
                             }
-                        }, 500);
+                            }
+                        }, 800);
                 } else {
                     // Error from server
                     if (feedback) {
@@ -5904,11 +6116,53 @@
                             }, 800);
                         } catch (reloadError) {
                             console.error('Error reloading pantry items:', reloadError);
-                            // Show user-friendly error
+                            // Try to reload one more time with a longer delay
+                            // Progressive retry with increasing delays (for Firebase sync)
+                            let retryCount = 0;
+                            const maxRetries = 3;
+                            const retryDelays = [1500, 2500, 4000]; // Progressive delays for Firebase
+                            
+                            const retryReload = async () => {
+                                if (retryCount >= maxRetries) {
+                                    // All retries failed, show error message
                             const feedback = document.getElementById('addItemFeedback') || document.getElementById('addItemModalFeedback');
                             if (feedback) {
                                 showFeedback('Items added but failed to refresh. Please refresh the page.', 'warning');
                             }
+                                    return;
+                                }
+                                
+                                setTimeout(async () => {
+                                    try {
+                                        console.log(`Retrying reload (attempt ${retryCount + 1}/${maxRetries})...`);
+                                        await reloadPantryItems();
+                                        
+                                        // Check if items are now visible
+                                        const container = document.getElementById('pantryItemsContainer');
+                                        if (container && container.children.length > 0) {
+                                            // Success! Update UI
+                                            if (typeof updateEmptyState === 'function') {
+                                                updateEmptyState();
+                                            }
+                                            if (typeof updateProgressIndicator === 'function') {
+                                                updateProgressIndicator();
+                                            }
+                                            console.log('✅ Reload successful after retry');
+                                            return;
+                                        }
+                                        
+                                        // Items still not visible, try again
+                                        retryCount++;
+                                        retryReload();
+                                    } catch (retryError) {
+                                        console.error(`Retry ${retryCount + 1} failed:`, retryError);
+                                        retryCount++;
+                                        retryReload();
+                                    }
+                                }, retryDelays[retryCount] || 4000);
+                            };
+                            
+                            retryReload();
                         }
                     }, 500);
                 } else {
@@ -6002,6 +6256,294 @@
     // Reload pantry items without refreshing the page
     // Make reloadPantryItems globally accessible
     let reloadInProgress = false;  // Prevent concurrent reloads
+    
+    // New function: Reload pantry items directly from API endpoint (more reliable)
+    window.reloadPantryItemsFromAPI = async function reloadPantryItemsFromAPI() {
+        const container = document.getElementById('pantryItemsContainer');
+        if (!container) {
+            console.warn('Pantry items container not found');
+            return;
+        }
+        
+        try {
+            console.log('Reloading pantry items from API...');
+            const response = await fetchWithTimeout('/api/pantry', {
+                method: 'GET',
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'Cache-Control': 'no-cache, no-store, must-revalidate',
+                    'Pragma': 'no-cache',
+                    'Expires': '0'
+                },
+                cache: 'no-cache'
+            });
+            
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            
+            const data = await response.json();
+            if (!data || !data.success) {
+                throw new Error(data.error || 'Failed to fetch pantry items');
+            }
+            
+            const items = data.items || [];
+            console.log(`Fetched ${items.length} items from API`);
+            
+            // Clear container
+            container.innerHTML = '';
+            
+            if (items.length === 0) {
+                // Show empty state
+                const pantryCard = container.closest('.card');
+                const cardBody = pantryCard ? pantryCard.querySelector('.card-body') : null;
+                if (cardBody) {
+                    const emptyState = cardBody.querySelector('.empty-state');
+                    if (emptyState) {
+                        emptyState.style.display = '';
+                    }
+                }
+                // Update stats
+                const statsCount = document.getElementById('pantryStatsCount');
+                if (statsCount) {
+                    statsCount.textContent = '0';
+                }
+                // Update badge
+                const pantryCardHeader = pantryCard ? pantryCard.querySelector('.card-header') : null;
+                if (pantryCardHeader) {
+                    const badge = pantryCardHeader.querySelector('.badge');
+                    if (badge) {
+                        badge.style.display = 'none';
+                    }
+                }
+                return;
+            }
+            
+            // Hide empty state
+            const pantryCard = container.closest('.card');
+            const cardBody = pantryCard ? pantryCard.querySelector('.card-body') : null;
+            if (cardBody) {
+                const emptyState = cardBody.querySelector('.empty-state');
+                if (emptyState) {
+                    emptyState.style.display = 'none';
+                }
+            }
+            
+            // Helper to escape HTML
+            const escapeHtml = (text) => {
+                const div = document.createElement('div');
+                div.textContent = text || '';
+                return div.innerHTML;
+            };
+            
+            // Helper to format date
+            const formatDate = (dateStr) => {
+                if (!dateStr || dateStr === 'None' || dateStr === 'null' || dateStr === '') {
+                    return '';
+                }
+                const dateStrTrimmed = dateStr.trim();
+                if (dateStrTrimmed.length >= 10 && dateStrTrimmed.indexOf('-') >= 0) {
+                    return dateStrTrimmed.substring(0, 10);
+                }
+                return dateStrTrimmed;
+            };
+            
+            // Helper to get category display info
+            const getCategoryInfo = (category) => {
+                const catLower = (category || 'other').toLowerCase();
+                const categoryMap = {
+                    'fruits': { name: 'Fruits', gradient: 'linear-gradient(135deg, rgba(245, 158, 11, 0.12) 0%, rgba(217, 119, 6, 0.1) 100%)', color: '#92400E' },
+                    'vegetables': { name: 'Vegetables', gradient: 'linear-gradient(135deg, rgba(16, 185, 129, 0.12) 0%, rgba(5, 150, 105, 0.1) 100%)', color: '#047857' },
+                    'proteins': { name: 'Proteins', gradient: 'linear-gradient(135deg, rgba(239, 68, 68, 0.12) 0%, rgba(220, 38, 38, 0.1) 100%)', color: '#991B1B' },
+                    'meat': { name: 'Meat', gradient: 'linear-gradient(135deg, rgba(239, 68, 68, 0.12) 0%, rgba(220, 38, 38, 0.1) 100%)', color: '#991B1B' },
+                    'dairy': { name: 'Dairy', gradient: 'linear-gradient(135deg, rgba(59, 130, 246, 0.12) 0%, rgba(37, 99, 235, 0.1) 100%)', color: '#1E40AF' },
+                    'grains': { name: 'Grains', gradient: 'linear-gradient(135deg, rgba(139, 92, 246, 0.12) 0%, rgba(124, 58, 237, 0.1) 100%)', color: '#6D28D9' },
+                    'bakery': { name: 'Bakery', gradient: 'linear-gradient(135deg, rgba(139, 92, 246, 0.12) 0%, rgba(124, 58, 237, 0.1) 100%)', color: '#6D28D9' },
+                    'beverages': { name: 'Beverages', gradient: 'linear-gradient(135deg, rgba(6, 182, 212, 0.12) 0%, rgba(8, 145, 178, 0.1) 100%)', color: '#155E75' },
+                    'snacks': { name: 'Snacks', gradient: 'linear-gradient(135deg, rgba(236, 72, 153, 0.12) 0%, rgba(219, 39, 119, 0.1) 100%)', color: '#9F1239' },
+                    'condiments': { name: 'Condiments', gradient: 'linear-gradient(135deg, rgba(139, 92, 246, 0.12) 0%, rgba(124, 58, 237, 0.1) 100%)', color: '#6D28D9' },
+                    'canned goods': { name: 'Canned Goods', gradient: 'linear-gradient(135deg, rgba(139, 92, 246, 0.12) 0%, rgba(124, 58, 237, 0.1) 100%)', color: '#6D28D9' },
+                    'frozen': { name: 'Frozen', gradient: 'linear-gradient(135deg, rgba(6, 182, 212, 0.12) 0%, rgba(8, 145, 178, 0.1) 100%)', color: '#155E75' }
+                };
+                return categoryMap[catLower] || { name: 'Other', gradient: 'linear-gradient(135deg, rgba(100, 116, 139, 0.12) 0%, rgba(71, 85, 105, 0.1) 100%)', color: '#475569' };
+            };
+            
+            // Render items
+            items.forEach(item => {
+                const itemName = escapeHtml(item.name || 'Unnamed Item');
+                const itemQuantity = escapeHtml(item.quantity || '1');
+                const itemId = escapeHtml(item.id || '');
+                const expDate = formatDate(item.expirationDate);
+                const addedDate = formatDate(item.addedDate || item.added_date);
+                const category = item.category || 'other';
+                const categoryInfo = getCategoryInfo(category);
+                
+                const itemWrapper = document.createElement('div');
+                itemWrapper.className = 'col-12 col-md-6 col-lg-4 pantry-item-wrapper';
+                itemWrapper.setAttribute('data-item-name', itemName.toLowerCase());
+                itemWrapper.setAttribute('data-item-id', itemId);
+                itemWrapper.setAttribute('data-expiration-date', expDate || '9999-12-31');
+                itemWrapper.setAttribute('data-added-date', addedDate || new Date().toISOString().substring(0, 10));
+                itemWrapper.style.cssText = 'position: relative; z-index: 10;';
+                
+                // Build expiration badge HTML
+                let expirationBadgeHtml = '';
+                if (expDate && expDate !== '' && expDate !== '9999-12-31') {
+                    const expDateAttr = escapeHtml(expDate);
+                    expirationBadgeHtml = `
+                        <span class="badge editable-expiration expiration-badge expiration-fresh" 
+                              data-item-id="${itemId}"
+                              data-item-name="${itemName}"
+                              data-current-quantity="${itemQuantity}"
+                              data-current-expiration="${expDateAttr}"
+                              data-added-date="${addedDate}"
+                              data-exp-date="${expDateAttr}" 
+                              style="font-size: 0.75rem; font-weight: 600; padding: 0.4rem 0.6rem; border-radius: 10px; cursor: pointer; transition: all 0.2s ease; border: 1px solid rgba(16, 185, 129, 0.2); min-width: 150px; max-width: 100%; display: inline-flex; align-items: center; justify-content: flex-start; overflow: visible;"
+                              title="Click to edit expiration date">
+                            <i class="bi bi-clock-fill me-1" style="font-size: 0.75rem;"></i>
+                            <span class="expiration-value" style="white-space: nowrap; overflow: visible; text-overflow: clip;">${expDateAttr}</span>
+                        </span>
+                    `;
+                }
+                
+                // Build quantity badge HTML
+                let quantityBadgeHtml = '';
+                if (itemId) {
+                    quantityBadgeHtml = `
+                        <span class="badge editable-quantity" 
+                              data-item-id="${itemId}"
+                              data-item-name="${itemName}"
+                              data-current-quantity="${itemQuantity}"
+                              data-expiration-date="${expDate}"
+                              data-added-date="${addedDate}"
+                              style="background: linear-gradient(135deg, rgba(139, 92, 246, 0.12) 0%, rgba(59, 130, 246, 0.12) 100%); color: #8B5CF6; border-radius: 10px; font-size: 0.8rem; font-weight: 600; padding: 0.5rem 0.75rem; cursor: pointer; transition: all 0.2s ease; border: 1px solid rgba(139, 92, 246, 0.2);"
+                              title="Click to edit quantity">
+                            <i class="bi bi-hash me-1" style="font-size: 0.85rem;"></i><span class="quantity-value fw-bold">${itemQuantity}</span>
+                        </span>
+                    `;
+                } else if (itemQuantity !== '1') {
+                    quantityBadgeHtml = `
+                        <span class="badge" style="background: linear-gradient(135deg, rgba(139, 92, 246, 0.12) 0%, rgba(59, 130, 246, 0.12) 100%); color: #8B5CF6; border-radius: 10px; font-size: 0.8rem; font-weight: 600; padding: 0.5rem 0.75rem; border: 1px solid rgba(139, 92, 246, 0.2);">
+                            <i class="bi bi-hash me-1" style="font-size: 0.85rem;"></i>${itemQuantity}
+                        </span>
+                    `;
+                }
+                
+                itemWrapper.innerHTML = `
+                    <div class="pantry-item-card card border-0 bg-white h-100" 
+                         style="border-radius: 20px; transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); border: 1px solid #e2e8f0; cursor: pointer; overflow: hidden; position: relative;"
+                         onmouseover="this.style.transform='translateY(-8px) scale(1.02)'; this.style.boxShadow='0 16px 32px rgba(139, 92, 246, 0.2)'; this.style.borderColor='#8B5CF6';"
+                         onmouseout="this.style.transform='translateY(0) scale(1)'; this.style.boxShadow='0 4px 12px rgba(0,0,0,0.08)'; this.style.borderColor='#e2e8f0';">
+                        <div class="category-accent-bar" 
+                             data-category="${category.toLowerCase()}"
+                             style="height: 4px; width: 100%; background: linear-gradient(90deg, #8B5CF6 0%, #3B82F6 100%);"></div>
+                        <div class="card-body p-4">
+                            <div class="d-flex justify-content-between align-items-start mb-3">
+                                <div class="flex-grow-1" style="min-width: 0; overflow: visible;">
+                                    ${category !== 'other' ? `
+                                    <span class="category-badge-card" style="background: ${categoryInfo.gradient}; color: ${categoryInfo.color}; border: 1px solid rgba(139, 92, 246, 0.2);" data-category="${category.toLowerCase()}">
+                                        <i class="bi bi-tag-fill" style="font-size: 0.7rem;"></i>
+                                        <span>${escapeHtml(categoryInfo.name)}</span>
+                                    </span>
+                                    ` : ''}
+                                    <div class="d-flex align-items-center mb-3">
+                                        <div class="me-3" style="width: 40px; height: 40px; background: linear-gradient(135deg, rgba(139, 92, 246, 0.15) 0%, rgba(59, 130, 246, 0.15) 100%); border-radius: 12px; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+                                            <i class="bi bi-box-seam" style="font-size: 1.25rem; color: #8B5CF6;"></i>
+                                        </div>
+                                        <div class="flex-grow-1" style="min-width: 120px; flex: 1 1 auto;">
+                                            <h6 class="mb-0 fw-bold text-dark" style="font-size: 1.1rem; line-height: 1.4; word-wrap: normal; overflow-wrap: normal; word-break: keep-all; white-space: normal; display: block;" title="${itemName}">
+                                                ${itemName}
+                                            </h6>
+                                        </div>
+                                    </div>
+                                    <div class="d-flex flex-wrap gap-2 align-items-center">
+                                        ${quantityBadgeHtml}
+                                        ${expirationBadgeHtml}
+                                    </div>
+                                </div>
+                                <button class="btn btn-sm btn-outline-danger delete-item-btn" data-item-name="${itemName}" data-item-id="${itemId}" style="flex-shrink: 0; margin-left: 0.5rem;">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                
+                container.appendChild(itemWrapper);
+            });
+            
+            // Reinitialize interactive elements
+            initializeDeleteButtons();
+            initializeQuantityEditing();
+            initializeExpirationEditing();
+            
+            // Update category accent bars
+            if (typeof updateCategoryAccentBars === 'function') {
+                updateCategoryAccentBars();
+            }
+            
+            // Update stats
+            const statsCount = document.getElementById('pantryStatsCount');
+            if (statsCount) {
+                statsCount.textContent = items.length.toString();
+            }
+            
+            // Update badge
+            const pantryCardHeader = pantryCard ? pantryCard.querySelector('.card-header') : null;
+            if (pantryCardHeader) {
+                const headerDiv = pantryCardHeader.querySelector('.d-flex');
+                if (headerDiv) {
+                    let badge = headerDiv.querySelector('.badge');
+                    if (!badge) {
+                        badge = document.createElement('span');
+                        badge.className = 'badge bg-primary ms-2';
+                        const dropdown = headerDiv.querySelector('.dropdown');
+                        if (dropdown) {
+                            headerDiv.insertBefore(badge, dropdown);
+                        } else {
+                            headerDiv.appendChild(badge);
+                        }
+                    }
+                    badge.textContent = items.length.toString();
+                    badge.style.display = items.length > 0 ? '' : 'none';
+                }
+            }
+            
+            // Show/hide sort controls
+            const sortControlsSection = cardBody ? cardBody.querySelector('.d-flex.justify-content-between.align-items-center.mb-3.pb-3') : null;
+            if (sortControlsSection) {
+                sortControlsSection.style.display = items.length > 1 ? 'flex' : 'none';
+            }
+            
+            const sortDropdown = cardBody ? cardBody.querySelector('#sortDropdown') : document.querySelector('#sortDropdown');
+            if (sortDropdown) {
+                sortDropdown.style.display = items.length > 1 ? '' : 'none';
+            }
+            
+            // Update empty state
+            if (typeof updateEmptyState === 'function') {
+                updateEmptyState();
+            }
+            
+            // Update progress indicator
+            if (typeof updateProgressIndicator === 'function') {
+                updateProgressIndicator();
+            }
+            
+            // Re-apply filters if active
+            if (typeof applyAllFilters === 'function') {
+                setTimeout(() => {
+                    applyAllFilters();
+                }, 100);
+            }
+            
+            console.log(`Successfully reloaded ${items.length} items from API`);
+        } catch (error) {
+            console.error('Error reloading pantry items from API:', error);
+            throw error; // Re-throw to allow fallback
+        }
+    };
+    
     window.reloadPantryItems = async function reloadPantryItems() {
         // Prevent concurrent reloads
         if (reloadInProgress) {
@@ -6022,14 +6564,15 @@
         const scrollPosition = window.pageYOffset || document.documentElement.scrollTop;
         
         try {
-            // Add cache busting to ensure we get fresh data
-            const url = window.location.pathname + '?t=' + Date.now();
+            // Add cache busting to ensure we get fresh data (especially important for Firebase)
+            const url = window.location.pathname + '?t=' + Date.now() + '&_=' + Math.random();
             const response = await fetchWithTimeout(url, {
                 method: 'GET',
                 headers: {
                     'X-Requested-With': 'XMLHttpRequest',
-                    'Cache-Control': 'no-cache',
-                    'Pragma': 'no-cache'
+                    'Cache-Control': 'no-cache, no-store, must-revalidate',
+                    'Pragma': 'no-cache',
+                    'Expires': '0'
                 },
                 cache: 'no-cache'  // Prevent browser caching
             });
@@ -6167,6 +6710,23 @@
                     
                     // Re-initialize expiration date editing
                     initializeExpirationEditing();
+                    
+                    // Update category accent bars with category colors
+                    if (typeof updateCategoryAccentBars === 'function') {
+                        updateCategoryAccentBars();
+                    }
+                
+                // CRITICAL: Update empty state after reloading items
+                if (typeof updateEmptyState === 'function') {
+                    updateEmptyState();
+                }
+                
+                // CRITICAL: Update stats based on actual rendered items (not optimistic)
+                const actualItemCount = currentContainer.querySelectorAll('.pantry-item-wrapper').length;
+                const statsCountElement = document.getElementById('pantryStatsCount');
+                if (statsCountElement) {
+                    statsCountElement.textContent = actualItemCount;
+                }
                 
                 // Re-apply sort if one was active
                 const savedSortType = sessionStorage.getItem('pantrySortType');
@@ -6304,13 +6864,123 @@
             console.error('Error reloading pantry items:', error);
             // Handle timeout errors specifically
             if (error.name === 'AbortError') {
-                console.warn('Reload request timed out');
+                console.warn('Reload request timed out, trying API fallback...');
             }
-            // Don't reload page - just show error message
+            
+            // Try alternative method: fetch pantry data via API endpoint
+            try {
+                console.log('Trying alternative reload method via API...');
+                const apiResponse = await fetchWithTimeout('/api/pantry', {
+                    method: 'GET',
+                    headers: {
+                        'X-Requested-With': 'XMLHttpRequest',
+                        'Cache-Control': 'no-cache'
+                    },
+                    cache: 'no-cache'
+                });
+                
+                if (apiResponse.ok) {
+                    const apiData = await apiResponse.json();
+                    if (apiData && apiData.success && apiData.items) {
+                        // Update pantry items from API response
+                        const container = document.getElementById('pantryItemsContainer');
+                        if (container) {
+                            container.innerHTML = '';
+                            // Render items from API data
+                            if (apiData.items.length > 0) {
+                                // Use existing item rendering logic if available
+                                // Helper function to escape HTML
+                                const escapeHtml = (text) => {
+                                    const div = document.createElement('div');
+                                    div.textContent = text;
+                                    return div.innerHTML;
+                                };
+                                
+                                apiData.items.forEach(item => {
+                                    const itemWrapper = document.createElement('div');
+                                    itemWrapper.className = 'pantry-item-wrapper mb-3';
+                                    const itemName = escapeHtml(item.name || 'Unnamed Item');
+                                    const itemQuantity = escapeHtml(item.quantity || '1');
+                                    const itemExpDate = item.expirationDate ? escapeHtml(item.expirationDate) : '';
+                                    
+                                    itemWrapper.innerHTML = `
+                                        <div class="card pantry-item-card">
+                                            <div class="card-body">
+                                                <div class="d-flex justify-content-between align-items-start">
+                                                    <div class="flex-grow-1">
+                                                        <h5 class="card-title mb-1">${itemName}</h5>
+                                                        <p class="card-text text-muted mb-1">
+                                                            <small>Quantity: ${itemQuantity}</small>
+                                                        </p>
+                                                        ${itemExpDate ? `<p class="card-text mb-0"><small class="text-muted">Expires: ${itemExpDate}</small></p>` : ''}
+                                                    </div>
+                                                    <button class="btn btn-sm btn-outline-danger delete-item-btn" data-item-name="${itemName}">
+                                                        <i class="bi bi-trash"></i>
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    `;
+                                    container.appendChild(itemWrapper);
+                                });
+                                // Reinitialize interactive elements
+                                initializeDeleteButtons();
+                                initializeQuantityEditing();
+                                initializeExpirationEditing();
+                                // Update category accent bars with category colors
+                                if (typeof updateCategoryAccentBars === 'function') {
+                                    updateCategoryAccentBars();
+                                }
+                                // Update empty state and stats
+                                if (typeof updateEmptyState === 'function') {
+                                    updateEmptyState();
+                                }
+                                if (typeof updateProgressIndicator === 'function') {
+                                    updateProgressIndicator();
+                                }
+                                // Update stats
+                                const statsCount = document.getElementById('pantryStatsCount');
+                                if (statsCount) {
+                                    statsCount.textContent = apiData.items.length;
+                                }
+                                // Update badge
+                                const pantryCard = container.closest('.card');
+                                if (pantryCard) {
+                                    const header = pantryCard.querySelector('.card-header');
+                                    if (header) {
+                                        let badge = header.querySelector('.badge');
+                                        if (!badge) {
+                                            badge = document.createElement('span');
+                                            badge.className = 'badge bg-primary ms-2';
+                                            const headerDiv = header.querySelector('.d-flex');
+                                            if (headerDiv) {
+                                                headerDiv.appendChild(badge);
+                                            }
+                                        }
+                                        badge.textContent = apiData.items.length;
+                                        badge.style.display = apiData.items.length > 0 ? '' : 'none';
+                                    }
+                                }
+                                console.log('Successfully reloaded via API fallback');
+                                return; // Success, exit early
+                            } else {
+                                // No items - show empty state
+                                if (typeof updateEmptyState === 'function') {
+                                    updateEmptyState();
+                                }
+                            }
+                        }
+                    }
+                }
+            } catch (apiError) {
+                console.error('API fallback also failed:', apiError);
+            }
+            
+            // If all methods fail, show error message
             const feedback = document.getElementById('addItemFeedback') || document.getElementById('addItemModalFeedback');
             if (feedback) {
                 try {
-                    showFeedback('Failed to reload items. Please refresh the page.', 'warning');
+                    showFeedback('Items added but failed to refresh. Please refresh the page.', 'warning');
                 } catch (feedbackError) {
                     console.error('Error showing feedback:', feedbackError);
                 }
@@ -6318,6 +6988,27 @@
         } finally {
             // Always reset the reload flag
             reloadInProgress = false;
+            
+            // CRITICAL: Update empty state and stats after reload completes
+            setTimeout(() => {
+                if (typeof updateEmptyState === 'function') {
+                    updateEmptyState();
+                }
+                if (typeof updateProgressIndicator === 'function') {
+                    updateProgressIndicator();
+                }
+            }, 100);
+            
+            // Re-apply all active filters after reload to maintain filter state
+            if (typeof applyAllFilters === 'function') {
+                setTimeout(() => {
+                    applyAllFilters();
+                    // Update empty state again after filters are applied
+                    if (typeof updateEmptyState === 'function') {
+                        updateEmptyState();
+                    }
+                }, 200);
+            }
         }
     }
     
@@ -6475,6 +7166,125 @@
     // Make function globally available
     window.scrollToAddItemForm = scrollToAddItemForm;
     
+    // Open edit item modal
+    function openEditItemModal(itemId, itemName, quantity, expirationDate, addedDate) {
+        try {
+            // Check if modal elements exist
+            const modalElement = document.getElementById('editItemModal');
+            if (!modalElement) {
+                console.error('Edit item modal not found in DOM');
+                showFeedback('Edit modal not available. Please refresh the page.', 'danger');
+                return;
+            }
+            
+            // Populate form fields with null checks
+            const editItemId = document.getElementById('editItemId');
+            const editItemName = document.getElementById('editItemName');
+            const editItemQuantity = document.getElementById('editItemQuantity');
+            const editItemAddedDate = document.getElementById('editItemAddedDate');
+            const editItemExpiration = document.getElementById('editItemExpiration');
+            
+            if (!editItemId || !editItemName || !editItemQuantity || !editItemAddedDate || !editItemExpiration) {
+                console.error('Edit modal form fields not found');
+                showFeedback('Edit form not available. Please refresh the page.', 'danger');
+                return;
+            }
+            
+            editItemId.value = itemId || '';
+            editItemName.value = itemName || '';
+            editItemQuantity.value = quantity || '1';
+            editItemAddedDate.value = addedDate || '';
+            
+            // Set expiration date (format: YYYY-MM-DD)
+            let expDateValue = '';
+            if (expirationDate && expirationDate.trim() && expirationDate !== 'None' && expirationDate !== 'null') {
+                // Try to extract date part if it's a full datetime string
+                const dateMatch = expirationDate.match(/^(\d{4}-\d{2}-\d{2})/);
+                if (dateMatch) {
+                    expDateValue = dateMatch[1];
+                } else if (expirationDate.length >= 10) {
+                    expDateValue = expirationDate.substring(0, 10);
+                }
+            }
+            editItemExpiration.value = expDateValue;
+            
+            // Show modal
+            if (typeof bootstrap !== 'undefined' && bootstrap.Modal) {
+                const modal = new bootstrap.Modal(modalElement);
+                modal.show();
+            } else {
+                console.error('Bootstrap Modal not available');
+                showFeedback('Modal library not loaded. Please refresh the page.', 'danger');
+            }
+        } catch (error) {
+            console.error('Error opening edit modal:', error);
+            showFeedback('Failed to open edit form: ' + (error.message || 'Unknown error'), 'danger');
+        }
+    }
+    
+    // Handle edit item form submission
+    async function handleEditItemSubmit(event) {
+        event.preventDefault();
+        
+        try {
+            // Get form elements with null checks
+            const editItemId = document.getElementById('editItemId');
+            const editItemName = document.getElementById('editItemName');
+            const editItemQuantity = document.getElementById('editItemQuantity');
+            const editItemExpiration = document.getElementById('editItemExpiration');
+            const editItemAddedDate = document.getElementById('editItemAddedDate');
+            const saveBtn = document.getElementById('editItemSaveBtn');
+            
+            if (!editItemId || !editItemName || !editItemQuantity || !editItemExpiration || !editItemAddedDate || !saveBtn) {
+                console.error('Edit form elements not found');
+                showFeedback('Edit form not available. Please refresh the page.', 'danger');
+                return false;
+            }
+            
+            const itemId = editItemId.value;
+            const itemName = editItemName.value.trim();
+            const quantity = editItemQuantity.value || '1';
+            const expirationDate = editItemExpiration.value || null;
+            const addedDate = editItemAddedDate.value || new Date().toISOString();
+            
+            // Validate item name
+            if (!itemName) {
+                showFeedback('Item name cannot be empty', 'danger');
+                return false;
+            }
+            
+            // Disable save button and show loading state
+            const originalBtnText = saveBtn.innerHTML;
+            saveBtn.disabled = true;
+            saveBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Saving...';
+            
+            try {
+                // Call the existing update function
+                await handleUpdateItem(itemId, itemName, quantity, expirationDate, addedDate, 'item');
+                
+                // Close modal on success
+                if (typeof bootstrap !== 'undefined' && bootstrap.Modal) {
+                    const modal = bootstrap.Modal.getInstance(document.getElementById('editItemModal'));
+                    if (modal) {
+                        modal.hide();
+                    }
+                }
+            } catch (error) {
+                console.error('Error updating item:', error);
+                showFeedback('Failed to update item: ' + (error.message || 'Unknown error'), 'danger');
+            } finally {
+                // Restore button state
+                saveBtn.disabled = false;
+                saveBtn.innerHTML = originalBtnText;
+            }
+        } catch (error) {
+            console.error('Error in handleEditItemSubmit:', error);
+            showFeedback('Failed to process edit: ' + (error.message || 'Unknown error'), 'danger');
+        }
+        
+        return false;
+    }
+    
     // Handle item update via API (for both quantity and expiration date)
     async function handleUpdateItem(itemId, itemName, quantity, expirationDate, addedDate, updateType = 'item') {
         // Allow empty itemId - backend will fallback to name matching
@@ -6512,8 +7322,15 @@
             });
             
             if (response.ok) {
-                const data = await response.json();
-                if (data.success) {
+                let data;
+                try {
+                    data = await response.json();
+                } catch (jsonError) {
+                    console.error('Failed to parse JSON response:', jsonError);
+                    throw new Error('Invalid response from server');
+                }
+                
+                if (data && data.success) {
                     // Check if item was deleted (quantity reached 0)
                     if (data.deleted) {
                         const feedback = document.getElementById('addItemFeedback');
@@ -6887,6 +7704,11 @@
         updatePantryCardBackgrounds();
         updateExpiringSoonBanner();
         
+        // Update category accent bars with category colors
+        if (typeof updateCategoryAccentBars === 'function') {
+            updateCategoryAccentBars();
+        }
+        
         // Restore sort type if one was saved
         const savedSortType = sessionStorage.getItem('pantrySortType');
         if (savedSortType) {
@@ -6896,12 +7718,20 @@
             // Apply sort after a short delay to ensure DOM is ready
             setTimeout(() => {
                 sortPantry(savedSortType);
+                // Update accent bars after sorting
+                if (typeof updateCategoryAccentBars === 'function') {
+                    updateCategoryAccentBars();
+                }
             }, 300);
         } else {
             // Even without sort, update backgrounds after a delay to ensure DOM is ready
             setTimeout(() => {
                 updateExpirationBadges();
                 updatePantryCardBackgrounds();
+                // Update accent bars
+                if (typeof updateCategoryAccentBars === 'function') {
+                    updateCategoryAccentBars();
+                }
             }, 200);
         }
     });
@@ -7091,121 +7921,194 @@
         const emptyState = document.querySelector('.empty-state');
         const pantryContainer = document.getElementById('pantryItemsContainer');
         
-        if (!emptyState || !pantryContainer) return;
-        
-        const items = pantryContainer.querySelectorAll('.pantry-item-wrapper');
-        const hasItems = items.length > 0;
-        
-        if (hasItems) {
-            emptyState.style.display = 'none';
-        } else {
-            emptyState.style.display = 'block';
+        if (!pantryContainer) {
+            console.warn('updateEmptyState: pantryItemsContainer not found');
+            return;
         }
+        
+        // Check for visible items (not hidden by filters)
+        const allItems = pantryContainer.querySelectorAll('.pantry-item-wrapper');
+        const visibleItems = Array.from(allItems).filter(item => {
+            const style = window.getComputedStyle(item);
+            return style.display !== 'none' && style.visibility !== 'hidden';
+        });
+        const hasItems = visibleItems.length > 0;
+        
+        // Update empty state visibility
+        if (emptyState) {
+            if (hasItems) {
+                emptyState.style.display = 'none';
+            } else {
+                emptyState.style.display = 'block';
+            }
+        }
+        
+        // Also update stats count to match actual visible items
+        const statsCountElement = document.getElementById('pantryStatsCount');
+        if (statsCountElement) {
+            statsCountElement.textContent = visibleItems.length;
+        }
+        
+        console.log('updateEmptyState: visible items =', visibleItems.length, 'total items =', allItems.length);
     }
     
-    // Filter functionality
-    document.querySelectorAll('.filter-chip').forEach(chip => {
-        chip.addEventListener('click', function() {
-            const filter = this.getAttribute('data-filter');
-            const wasActive = this.classList.contains('active');
-            this.classList.toggle('active');
-            const isActive = this.classList.contains('active');
-            
-            // Apply filter
+    // Unified function to apply all active filters with AND logic
+    function applyAllFilters() {
             const items = document.querySelectorAll('.pantry-item-wrapper');
+        const activeFilters = [];
+        
+        // Get all active filters
+        document.querySelectorAll('.filter-chip.active').forEach(chip => {
+            activeFilters.push(chip.getAttribute('data-filter'));
+        });
+        
+        // If no filters are active, show all items
+        if (activeFilters.length === 0) {
+            items.forEach(item => {
+                item.style.display = '';
+            });
+            
+            // Reset category sort if it was active
+            if (currentSortType === 'category') {
+                if (typeof sortPantry === 'function') {
+                    sortPantry('name');
+                    if (typeof updateSortLabel === 'function') {
+                        updateSortLabel('Name (A-Z)');
+                    }
+                }
+            } else if (currentSortType && typeof sortPantry === 'function') {
+                setTimeout(() => {
+                    sortPantry(currentSortType);
+                }, 50);
+            }
+            return;
+        }
+        
+        // Check if category filter is active (for sorting)
+        const hasCategoryFilter = activeFilters.includes('category');
+        if (hasCategoryFilter) {
+            if (typeof sortPantry === 'function') {
+                sortPantry('category');
+                if (typeof updateSortLabel === 'function') {
+                    updateSortLabel('Category');
+                }
+            }
+        }
+        
+        // Apply all active filters with AND logic
             items.forEach(item => {
                 let show = true;
                 
-                // Only apply filter if it's active
-                if (isActive) {
-                    if (filter === 'expiring-soon') {
+            // Apply expiring-soon filter
+            if (activeFilters.includes('expiring-soon')) {
                         const expirationBadge = item.querySelector('.expiration-badge[data-exp-date]');
                         if (expirationBadge) {
                             const expDate = expirationBadge.getAttribute('data-exp-date');
                             if (expDate && expDate !== '9999-12-31') {
                                 const daysDiff = getDaysUntilExpiration(expDate);
-                                show = daysDiff >= 0 && daysDiff <= 7;
+                        show = show && (daysDiff >= 0 && daysDiff <= 7);
                             } else {
                                 show = false;
                             }
                         } else {
                             show = false;
                         }
-                    } else if (filter === 'category') {
-                        // Category filter - trigger category sort when activated
-                        if (isActive && typeof sortPantry === 'function') {
-                            sortPantry('category');
-                            if (typeof updateSortLabel === 'function') {
-                                updateSortLabel('Category');
-                            }
-                        }
-                        show = true;
-                    } else if (filter === 'recent') {
-                        // Show items added in last 7 days
+            }
+            
+            // Apply recent filter
+            if (activeFilters.includes('recent') && show) {
                         const addedDateAttr = item.getAttribute('data-added-date');
-                        if (addedDateAttr && addedDateAttr !== '') {
+                if (addedDateAttr && addedDateAttr !== '' && addedDateAttr !== 'undefined') {
                             try {
-                                // Handle both ISO format and YYYY-MM-DD format
                                 let addedDate;
                                 if (addedDateAttr.includes('T')) {
                                     addedDate = new Date(addedDateAttr);
+                        } else {
+                            const dateParts = addedDateAttr.split('-');
+                            if (dateParts.length === 3) {
+                                addedDate = new Date(parseInt(dateParts[0]), parseInt(dateParts[1]) - 1, parseInt(dateParts[2]));
                                 } else {
                                     addedDate = new Date(addedDateAttr + 'T00:00:00');
                                 }
+                        }
+                        
+                        if (isNaN(addedDate.getTime())) {
+                            show = false; // Invalid date, hide item
+                        } else {
                                 const today = new Date();
                                 today.setHours(0, 0, 0, 0);
                                 addedDate.setHours(0, 0, 0, 0);
                                 const daysDiff = Math.floor((today - addedDate) / (1000 * 60 * 60 * 24));
-                                show = daysDiff >= 0 && daysDiff <= 7;
+                            show = show && (daysDiff >= 0 && daysDiff <= 7);
+                        }
                             } catch (e) {
                                 console.warn('Error parsing added date:', addedDateAttr, e);
-                                // If date parsing fails, show item
-                                show = true;
+                        show = false; // Hide item on error
                             }
                         } else {
-                            // If no added date, hide item when filter is active
-                            show = false;
+                    show = false; // No added date, hide item
                         }
                     }
-                }
-                // If filter is deactivated, show all items
+            
+            // Category filter doesn't hide items, it just sorts (handled above)
                 
                 item.style.display = show ? '' : 'none';
             });
             
-            // Re-apply sorting after filter change to maintain sort order
-            if (currentSortType && typeof sortPantry === 'function') {
+        // Re-apply sorting after filter change
+        if (hasCategoryFilter && typeof sortPantry === 'function') {
+            setTimeout(() => {
+                sortPantry('category');
+            }, 50);
+        } else if (currentSortType && currentSortType !== 'category' && typeof sortPantry === 'function') {
                 setTimeout(() => {
                     sortPantry(currentSortType);
                 }, 50);
+        }
             }
             
-            // Update active state styling
+    // Update filter chip styling
+    function updateFilterChipStyling(chip, isActive) {
+        const filterType = chip.getAttribute('data-filter');
+        
             if (isActive) {
-                this.style.background = 'linear-gradient(135deg, rgba(139, 92, 246, 0.2) 0%, rgba(59, 130, 246, 0.2) 100%)';
-                this.style.borderColor = '#8B5CF6';
-                this.style.color = '#6D28D9';
+            chip.style.background = 'linear-gradient(135deg, rgba(139, 92, 246, 0.2) 0%, rgba(59, 130, 246, 0.2) 100%)';
+            chip.style.borderColor = '#8B5CF6';
+            chip.style.color = '#6D28D9';
             } else {
-                // Reset to original styling
-                const filterType = this.getAttribute('data-filter');
+            // Reset to original styling based on filter type
                 if (filterType === 'expiring-soon') {
-                    this.style.background = 'rgba(245, 158, 11, 0.1)';
-                    this.style.borderColor = 'rgba(245, 158, 11, 0.3)';
-                    this.style.color = '#92400E';
+                chip.style.background = 'rgba(245, 158, 11, 0.1)';
+                chip.style.borderColor = 'rgba(245, 158, 11, 0.3)';
+                chip.style.color = '#92400E';
                 } else if (filterType === 'category') {
-                    this.style.background = 'rgba(139, 92, 246, 0.1)';
-                    this.style.borderColor = 'rgba(139, 92, 246, 0.3)';
-                    this.style.color = '#6D28D9';
+                chip.style.background = 'rgba(139, 92, 246, 0.1)';
+                chip.style.borderColor = 'rgba(139, 92, 246, 0.3)';
+                chip.style.color = '#6D28D9';
                 } else if (filterType === 'recent') {
-                    this.style.background = 'rgba(59, 130, 246, 0.1)';
-                    this.style.borderColor = 'rgba(59, 130, 246, 0.3)';
-                    this.style.color = '#1E40AF';
+                chip.style.background = 'rgba(59, 130, 246, 0.1)';
+                chip.style.borderColor = 'rgba(59, 130, 246, 0.3)';
+                chip.style.color = '#1E40AF';
                 } else {
-                    this.style.background = '';
-                    this.style.borderColor = '';
-                    this.style.color = '';
-                }
+                chip.style.background = '';
+                chip.style.borderColor = '';
+                chip.style.color = '';
             }
+        }
+    }
+    
+    // Filter functionality with support for multiple active filters
+    document.querySelectorAll('.filter-chip').forEach(chip => {
+        chip.addEventListener('click', function() {
+            const filter = this.getAttribute('data-filter');
+            this.classList.toggle('active');
+            const isActive = this.classList.contains('active');
+            
+            // Update styling
+            updateFilterChipStyling(this, isActive);
+            
+            // Apply all filters (this will handle combinations)
+            applyAllFilters();
         });
     });
     
