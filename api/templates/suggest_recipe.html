@@ -41,24 +41,21 @@
     }
     
     .recipe-card .card-header h5 {
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-        max-width: 100%;
-        flex: 1;
-        min-width: 0;
+        overflow: visible !important;
+        text-overflow: unset !important;
+        white-space: normal !important;
+        max-width: 100% !important;
+        flex: 1 1 auto !important;
+        min-width: 0 !important;
+        word-wrap: break-word !important;
+        overflow-wrap: break-word !important;
+        word-break: break-word !important;
+        line-height: 1.4 !important;
     }
     
     .recipe-card .card-header .d-flex {
         gap: 12px;
-    }
-    
-    .recipe-card .badge {
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        max-width: 150px;
-        display: inline-block;
+        align-items: flex-start !important;
     }
     
     .recipe-card .card-body {
@@ -71,19 +68,45 @@
         overflow-wrap: break-word;
     }
     
-    /* Fix ingredient badges overflow */
+    /* Fix ingredient badges overflow - allow full text display */
     .recipe-card .badge {
-        max-width: 100%;
-        white-space: normal;
-        word-wrap: break-word;
-        display: inline-block;
+        max-width: 100% !important;
+        white-space: normal !important;
+        word-wrap: break-word !important;
+        overflow-wrap: break-word !important;
+        word-break: break-word !important;
+        overflow: visible !important;
+        text-overflow: unset !important;
+        display: inline-block !important;
         margin-bottom: 4px;
+        line-height: 1.5 !important;
+    }
+    
+    /* Specific styles for ingredient badges */
+    .recipe-card .ingredient-in-pantry,
+    .recipe-card .ingredient-expiring-soon {
+        max-width: 100% !important;
+        white-space: normal !important;
+        word-wrap: break-word !important;
+        overflow-wrap: break-word !important;
+        word-break: break-word !important;
+        overflow: visible !important;
+        text-overflow: unset !important;
+        display: inline-block !important;
+        padding: 6px 12px !important;
+        line-height: 1.5 !important;
     }
     
     /* Mobile responsiveness for recipe cards */
     @media (max-width: 768px) {
         .recipe-card .card-header h5 {
-            font-size: 1rem;
+            font-size: 1rem !important;
+            word-wrap: break-word !important;
+            overflow-wrap: break-word !important;
+            word-break: break-word !important;
+            white-space: normal !important;
+            overflow: visible !important;
+            text-overflow: unset !important;
         }
         
         .recipe-card .card-header .d-flex {
@@ -92,8 +115,15 @@
         }
         
         .recipe-card .badge {
-            max-width: 100%;
-            font-size: 0.75rem;
+            max-width: 100% !important;
+            font-size: 0.75rem !important;
+            white-space: normal !important;
+            word-wrap: break-word !important;
+            overflow-wrap: break-word !important;
+            word-break: break-word !important;
+            overflow: visible !important;
+            text-overflow: unset !important;
+            line-height: 1.5 !important;
         }
         
         .recipe-card .card-body {
@@ -123,12 +153,24 @@
     </div>
 
     <!-- Pantry Items Used -->
-    {% if pantry_items %}
+    {% if pantry_items_full %}
+    <div class="alert alert-info mb-4">
+        <h6 class="mb-2"><i class="bi bi-basket-fill me-2"></i>Using these pantry items:</h6>
+        <div class="d-flex flex-wrap gap-2">
+            {% for item in pantry_items_full %}
+                {% set item_name = item.get('name', '') if item|is_dict else item %}
+                {% if item_name %}
+                <span class="badge bg-light text-dark" style="word-wrap: break-word; overflow-wrap: break-word; word-break: break-word; white-space: normal; overflow: visible; text-overflow: unset; max-width: 100%; display: inline-block; line-height: 1.5;" title="{{ item_name }}">{{ item_name }}</span>
+                {% endif %}
+            {% endfor %}
+        </div>
+    </div>
+    {% elif pantry_items %}
     <div class="alert alert-info mb-4">
         <h6 class="mb-2"><i class="bi bi-basket-fill me-2"></i>Using these pantry items:</h6>
         <div class="d-flex flex-wrap gap-2">
             {% for item in pantry_items %}
-            <span class="badge bg-light text-dark">{{ item }}</span>
+            <span class="badge bg-light text-dark" style="word-wrap: break-word; overflow-wrap: break-word; word-break: break-word; white-space: normal; overflow: visible; text-overflow: unset; max-width: 100%; display: inline-block; line-height: 1.5;" title="{{ item }}">{{ item }}</span>
             {% endfor %}
         </div>
     </div>
@@ -139,10 +181,10 @@
             {% for recipe in recipes %}
                 <div class="col-lg-4 col-md-6 mb-4">
                     <div class="card shadow-sm border-0 h-100 recipe-card" style="--delay: {{ loop.index0 * 0.1 }};">
-                        <div class="card-header bg-gradient-primary text-white border-0" style="position: relative; overflow: hidden;">
+                        <div class="card-header bg-gradient-primary text-white border-0" style="position: relative; overflow: visible;">
                             <div style="position: absolute; top: -50%; right: -50%; width: 200%; height: 200%; background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, transparent 70%); opacity: 0.5;"></div>
-                            <div class="d-flex justify-content-between align-items-center" style="gap: 12px;">
-                                <h5 class="mb-0" style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1 1 0%; min-width: 0;">{{ recipe.name }}</h5>
+                            <div class="d-flex justify-content-between align-items-start" style="gap: 12px; flex-wrap: wrap; align-items: flex-start !important;">
+                                <h5 class="mb-0" style="overflow: visible; text-overflow: unset; white-space: normal; flex: 1 1 auto; min-width: 0; max-width: 100%; word-wrap: break-word; overflow-wrap: break-word; word-break: break-word; line-height: 1.4;" title="{{ recipe.name }}">{{ recipe.name }}</h5>
                                 <div class="text-end" style="flex-shrink: 0;">
                                     {% if recipe.health_rating %}
                                         {% if recipe.health_rating == "Healthy" %}
@@ -178,19 +220,25 @@
                             
                             {% for ing in recipe.ingredients %}
                                 {% set ing_lower = ing|lower %}
+                                {% set ing_clean = ing_lower|trim %}
                                 {% set is_in_pantry = False %}
                                 
                                 {% if pantry_items_full %}
                                     {% for item in pantry_items_full %}
-                                        {% set item_name_lower = item.get('name', '')|lower %}
-                                        {% if not is_in_pantry and item_name_lower and (item_name_lower == ing_lower or item_name_lower in ing_lower or ing_lower in item_name_lower) %}
+                                        {% set item_name_lower = (item.get('name', '')|string|trim|lower) if item|is_dict else (item|string|trim|lower) %}
+                                        {% if not is_in_pantry and item_name_lower and (item_name_lower == ing_clean or item_name_lower in ing_clean or ing_clean in item_name_lower or item_name_lower|replace(' ', '') == ing_clean|replace(' ', '') or item_name_lower|replace(' ', '') in ing_clean|replace(' ', '') or ing_clean|replace(' ', '') in item_name_lower|replace(' ', '')) %}
                                             {% set is_in_pantry = True %}
                                             {% set in_pantry_count = in_pantry_count + 1 %}
                                         {% endif %}
                                     {% endfor %}
-                                {% elif pantry_items and ing in pantry_items %}
-                                    {% set is_in_pantry = True %}
-                                    {% set in_pantry_count = in_pantry_count + 1 %}
+                                {% elif pantry_items %}
+                                    {% for item in pantry_items %}
+                                        {% set item_lower = (item|string|trim|lower) if item else '' %}
+                                        {% if not is_in_pantry and item_lower and (item_lower == ing_clean or item_lower in ing_clean or ing_clean in item_lower or item_lower|replace(' ', '') == ing_clean|replace(' ', '') or item_lower|replace(' ', '') in ing_clean|replace(' ', '') or ing_clean|replace(' ', '') in item_lower|replace(' ', '')) %}
+                                            {% set is_in_pantry = True %}
+                                            {% set in_pantry_count = in_pantry_count + 1 %}
+                                        {% endif %}
+                                    {% endfor %}
                                 {% endif %}
                                 
                                 {% if not is_in_pantry %}
@@ -258,14 +306,17 @@
                                     
                                     {% if pantry_items_full %}
                                         {% for item in pantry_items_full %}
-                                            {% set item_name_lower = item.get('name', '')|lower %}
-                                            {% if not is_in_pantry and item_name_lower and (item_name_lower == ing_lower or item_name_lower in ing_lower or ing_lower in item_name_lower) %}
+                                            {% set item_name_lower = (item.get('name', '')|string|trim|lower) if item|is_dict else (item|string|trim|lower) %}
+                                            {% set ing_clean = ing_lower|trim %}
+                                            {% if not is_in_pantry and item_name_lower and (item_name_lower == ing_clean or item_name_lower in ing_clean or ing_clean in item_name_lower or item_name_lower|replace(' ', '') == ing_clean|replace(' ', '') or item_name_lower|replace(' ', '') in ing_clean|replace(' ', '') or ing_clean|replace(' ', '') in item_name_lower|replace(' ', '')) %}
                                                 {% set pantry_item = item %}
                                                 {% set is_in_pantry = True %}
-                                                {% set exp_date = item.get('expirationDate', '') %}
-                                                {% if exp_date and exp_date != 'None' and exp_date != '' and exp_date != 'null' %}
-                                                    {% if exp_date|is_expiring_soon %}
-                                                        {% set is_expiring_soon = True %}
+                                                {% if item|is_dict %}
+                                                    {% set exp_date = item.get('expirationDate', '') %}
+                                                    {% if exp_date and exp_date != 'None' and exp_date != '' and exp_date != 'null' %}
+                                                        {% if exp_date|is_expiring_soon %}
+                                                            {% set is_expiring_soon = True %}
+                                                        {% endif %}
                                                     {% endif %}
                                                 {% endif %}
                                             {% endif %}
@@ -276,23 +327,23 @@
                                     
                                     {% if is_in_pantry %}
                                         {% if is_expiring_soon %}
-                                        <span class="badge bg-warning text-dark me-2 mb-2 ingredient-expiring-soon" style="background: linear-gradient(135deg, #F59E0B 0%, #D97706 100%) !important; color: white !important; font-weight: 600;">
+                                        <span class="badge bg-warning text-dark me-2 mb-2 ingredient-expiring-soon" style="background: linear-gradient(135deg, #F59E0B 0%, #D97706 100%) !important; color: white !important; font-weight: 600; word-wrap: break-word; overflow-wrap: break-word; word-break: break-word; white-space: normal; overflow: visible; text-overflow: unset; max-width: 100%; display: inline-block; line-height: 1.5;">
                                             <i class="bi bi-exclamation-triangle-fill me-1"></i>{{ ing }}
                                         </span>
                                         {% else %}
-                                        <span class="badge bg-success text-white me-2 mb-2 ingredient-in-pantry" style="background: linear-gradient(135deg, #10B981 0%, #059669 100%) !important; font-weight: 600;">
+                                        <span class="badge bg-success text-white me-2 mb-2 ingredient-in-pantry" style="background: linear-gradient(135deg, #10B981 0%, #059669 100%) !important; font-weight: 600; word-wrap: break-word; overflow-wrap: break-word; word-break: break-word; white-space: normal; overflow: visible; text-overflow: unset; max-width: 100%; display: inline-block; line-height: 1.5;">
                                             <i class="bi bi-check-circle me-1"></i>{{ ing }}
                                         </span>
                                         {% endif %}
                                     {% else %}
-                                    <span class="badge bg-light text-dark me-2 mb-2">{{ ing }}</span>
+                                    <span class="badge bg-light text-dark me-2 mb-2" style="word-wrap: break-word; overflow-wrap: break-word; word-break: break-word; white-space: normal; overflow: visible; text-overflow: unset; max-width: 100%; display: inline-block; line-height: 1.5;">{{ ing }}</span>
                                     {% endif %}
                                 {% endfor %}
                                 <div class="mt-2">
                                     <small class="text-muted">
                                         <i class="bi bi-info-circle me-1"></i>
-                                        <span class="badge bg-success text-white me-1" style="font-size: 0.7rem; padding: 2px 6px;">Green</span> = In pantry
-                                        <span class="badge bg-warning text-dark me-1" style="font-size: 0.7rem; padding: 2px 6px; background: #F59E0B !important; color: white !important;">Orange</span> = Expires soon (≤7 days)
+                                        <span class="badge bg-success text-white me-1" style="font-size: 0.7rem; padding: 2px 6px; word-wrap: break-word; overflow-wrap: break-word; word-break: break-word; white-space: normal; overflow: visible; text-overflow: unset; max-width: 100%; display: inline-block; line-height: 1.5;">Green</span> = In pantry
+                                        <span class="badge bg-warning text-dark me-1" style="font-size: 0.7rem; padding: 2px 6px; background: #F59E0B !important; color: white !important; word-wrap: break-word; overflow-wrap: break-word; word-break: break-word; white-space: normal; overflow: visible; text-overflow: unset; max-width: 100%; display: inline-block; line-height: 1.5;">Orange</span> = Expires soon (≤7 days)
                                     </small>
                                 </div>
                             </div>

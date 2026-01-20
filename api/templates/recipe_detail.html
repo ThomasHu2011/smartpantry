@@ -100,13 +100,17 @@
                         
                         {% if pantry_items_full %}
                             {% for item in pantry_items_full %}
-                                {% if not item_found and item.get('name', '')|lower == ing_lower %}
+                                {% set item_name_lower = (item.get('name', '')|string|trim|lower) if item|is_dict else (item|string|trim|lower) %}
+                                {% set ing_clean = ing_lower|trim %}
+                                {% if not item_found and item_name_lower and (item_name_lower == ing_clean or item_name_lower in ing_clean or ing_clean in item_name_lower or item_name_lower|replace(' ', '') == ing_clean|replace(' ', '') or item_name_lower|replace(' ', '') in ing_clean|replace(' ', '') or ing_clean|replace(' ', '') in item_name_lower|replace(' ', '')) %}
                                     {% set item_found = True %}
                                     {% set is_in_pantry = True %}
-                                    {% set exp_date = item.get('expirationDate', '') %}
-                                    {% if exp_date and exp_date != 'None' and exp_date != '' and exp_date != 'null' %}
-                                        {% if exp_date|is_expiring_soon %}
-                                            {% set is_expiring_soon = True %}
+                                    {% if item|is_dict %}
+                                        {% set exp_date = item.get('expirationDate', '') %}
+                                        {% if exp_date and exp_date != 'None' and exp_date != '' and exp_date != 'null' %}
+                                            {% if exp_date|is_expiring_soon %}
+                                                {% set is_expiring_soon = True %}
+                                            {% endif %}
                                         {% endif %}
                                     {% endif %}
                                 {% endif %}
@@ -116,7 +120,7 @@
                         <div class="col-md-6 mb-2">
                             <div class="form-check">
                                 <input class="form-check-input" type="checkbox" id="ingredient{{ loop.index }}">
-                                <label class="form-check-label{% if is_expiring_soon %} ingredient-expiring-soon{% elif is_in_pantry %} ingredient-in-pantry{% endif %}" for="ingredient{{ loop.index }}">
+                                <label class="form-check-label{% if is_expiring_soon %} ingredient-expiring-soon{% elif is_in_pantry %} ingredient-in-pantry{% endif %}" for="ingredient{{ loop.index }}" style="word-wrap: break-word; overflow-wrap: break-word; word-break: break-word; white-space: normal; overflow: visible; text-overflow: unset; max-width: 100%; display: block; line-height: 1.5;" title="{{ ingredient }}">
                                     {% if is_expiring_soon %}
                                         <i class="bi bi-exclamation-triangle-fill me-1"></i>
                                     {% elif is_in_pantry %}
@@ -455,6 +459,15 @@ window.addEventListener('scroll', () => {
     border-left: 4px solid #F59E0B;
     font-weight: 600;
     color: #D97706;
+    word-wrap: break-word !important;
+    overflow-wrap: break-word !important;
+    word-break: break-word !important;
+    white-space: normal !important;
+    overflow: visible !important;
+    text-overflow: unset !important;
+    max-width: 100% !important;
+    display: block !important;
+    line-height: 1.5 !important;
 }
 
 .ingredient-expiring-soon .bi-exclamation-triangle-fill {
@@ -468,10 +481,32 @@ window.addEventListener('scroll', () => {
     border-left: 4px solid #10B981;
     font-weight: 600;
     color: #059669;
+    word-wrap: break-word !important;
+    overflow-wrap: break-word !important;
+    word-break: break-word !important;
+    white-space: normal !important;
+    overflow: visible !important;
+    text-overflow: unset !important;
+    max-width: 100% !important;
+    display: block !important;
+    line-height: 1.5 !important;
 }
 
 .ingredient-in-pantry .bi-check-circle-fill {
     color: #10B981;
+}
+
+/* Fix form-check-label display for full ingredient names */
+.form-check-label {
+    word-wrap: break-word !important;
+    overflow-wrap: break-word !important;
+    word-break: break-word !important;
+    white-space: normal !important;
+    overflow: visible !important;
+    text-overflow: unset !important;
+    max-width: 100% !important;
+    display: block !important;
+    line-height: 1.5 !important;
 }
 
 @media print {
@@ -648,6 +683,14 @@ window.addEventListener('scroll', () => {
         margin-bottom: 3pt !important;
         font-size: 11pt !important;
         padding-left: 0 !important;
+        word-wrap: break-word !important;
+        overflow-wrap: break-word !important;
+        word-break: break-word !important;
+        white-space: normal !important;
+        overflow: visible !important;
+        text-overflow: unset !important;
+        max-width: 100% !important;
+        line-height: 1.5 !important;
     }
     
     .form-check-label::before {

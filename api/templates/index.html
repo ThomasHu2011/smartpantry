@@ -19,6 +19,9 @@
     #pantryItemsContainer {
         position: relative;
         z-index: 10;
+        display: block !important;
+        visibility: visible !important;
+        opacity: 1 !important;
     }
     
     /* Ensure pantry items appear above card header */
@@ -513,16 +516,17 @@
     
     /* Fix text overflow in pantry item names - wrap only at word boundaries */
     .pantry-item-card .fw-bold {
-        overflow: visible;
-        text-overflow: clip;
-        white-space: normal;
-        max-width: 100%;
-        display: block;
-        word-wrap: normal;
-        overflow-wrap: normal;
-        word-break: normal;
-        hyphens: none;
-        line-height: 1.4;
+        overflow: visible !important;
+        text-overflow: clip !important;
+        white-space: normal !important;
+        max-width: 100% !important;
+        display: block !important;
+        word-wrap: break-word !important;
+        overflow-wrap: break-word !important;
+        word-break: break-word !important;
+        hyphens: none !important;
+        line-height: 1.4 !important;
+        text-overflow: unset !important;
     }
     
     /* Ensure card layout doesn't break with long names */
@@ -763,10 +767,22 @@
     /* Enhanced delete button */
     .delete-item-btn {
         transition: all 0.2s ease;
+        pointer-events: auto !important;
+        cursor: pointer !important;
+        z-index: 1001 !important;
+        position: relative !important;
     }
     
     .delete-item-btn:hover {
         transform: scale(1.15) rotate(90deg);
+    }
+    
+    .delete-item-btn:active {
+        pointer-events: auto !important;
+    }
+    
+    .delete-item-btn i {
+        pointer-events: none !important;
     }
     
     /* Improved empty state */
@@ -1435,16 +1451,22 @@
     
     /* Override for pantry item name containers - allow proper word wrapping */
     .pantry-item-card .flex-grow-1 {
-        min-width: 120px;
-        overflow: visible;
+        min-width: 120px !important;
+        overflow: visible !important;
+        max-width: 100% !important;
     }
     
-    /* Ensure item names wrap at word boundaries, not mid-word */
+    /* Ensure item names wrap at word boundaries and show full names */
     .pantry-item-card .flex-grow-1 h6.fw-bold {
-        word-break: keep-all;
-        word-wrap: normal;
-        overflow-wrap: normal;
-        white-space: normal;
+        word-break: break-word !important;
+        word-wrap: break-word !important;
+        overflow-wrap: break-word !important;
+        white-space: normal !important;
+        overflow: visible !important;
+        text-overflow: unset !important;
+        max-width: 100% !important;
+        display: block !important;
+        line-height: 1.5 !important;
     }
     
     /* Recipe card improvements */
@@ -1933,7 +1955,11 @@
                              style="position: relative; z-index: 10;">
                             <div class="pantry-item-card card border-0 bg-white h-100" 
                                  style="border-radius: 20px; transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); border: 1px solid #e2e8f0; cursor: pointer; overflow: hidden; position: relative;"
-                                 onclick="openEditItemModal('{{ item_id|default('')|replace("'", "\\'") }}', '{{ item_name|replace("'", "\\'")|replace('"', '&quot;') }}', '{{ quantity|default('1') }}', '{{ exp_date if exp_date and exp_date != "None" and exp_date != "" else "" }}', '{{ added_date if added_date else "" }}');"
+                                 data-item-id="{{ item_id|default('') }}"
+                                 data-item-name="{{ item_name }}"
+                                 data-quantity="{{ quantity|default('1') }}"
+                                 data-expiration-date="{{ exp_date if exp_date and exp_date != 'None' and exp_date != '' else '' }}"
+                                 data-added-date="{{ added_date if added_date else '' }}"
                                  onmouseover="this.style.transform='translateY(-8px) scale(1.02)'; this.style.boxShadow='0 16px 32px rgba(139, 92, 246, 0.2)'; this.style.borderColor='#8B5CF6';"
                                  onmouseout="this.style.transform='translateY(0) scale(1)'; this.style.boxShadow='0 4px 12px rgba(0,0,0,0.08)'; this.style.borderColor='#e2e8f0';">
                                 <!-- Accent bar at top - colored by category -->
@@ -1945,7 +1971,7 @@
                                 <div class="card-body p-4">
                                     <div class="d-flex justify-content-between align-items-start mb-3">
                                         <!-- Item name with icon -->
-                                        <div class="flex-grow-1" style="min-width: 0; overflow: visible;">
+                                        <div class="flex-grow-1" style="min-width: 0; overflow: visible; max-width: 100%;">
                                             <!-- Category Badge -->
                                             {% set item_category = item.get('category', '') if item|is_dict else '' %}
                                             {% if item_category %}
@@ -1959,8 +1985,8 @@
                                                 <div class="me-3" style="width: 40px; height: 40px; background: linear-gradient(135deg, rgba(139, 92, 246, 0.15) 0%, rgba(59, 130, 246, 0.15) 100%); border-radius: 12px; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
                                                     <i class="bi bi-box-seam" style="font-size: 1.25rem; color: #8B5CF6;"></i>
                                             </div>
-                                                <div class="flex-grow-1" style="min-width: 120px; flex: 1 1 auto;">
-                                                    <h6 class="mb-0 fw-bold text-dark" style="font-size: 1.1rem; line-height: 1.4; word-wrap: normal; overflow-wrap: normal; word-break: keep-all; white-space: normal; display: block;" title="{{ item_name }}">
+                                                <div class="flex-grow-1" style="min-width: 120px; flex: 1 1 auto; max-width: 100%; overflow: visible;">
+                                                    <h6 class="mb-0 fw-bold text-dark" style="font-size: 1.1rem; line-height: 1.5; word-wrap: break-word; overflow-wrap: break-word; word-break: break-word; white-space: normal; display: block; overflow: visible; text-overflow: unset; max-width: 100%;" title="{{ item_name }}">
                                                     {{ item_name }}
                                                     </h6>
                                             </div>
@@ -2068,10 +2094,9 @@
                                         <!-- Delete button -->
                                         <button type="button"
                                            class="btn btn-sm delete-item-btn" 
-                                           style="border-radius: 12px; width: 40px; height: 40px; padding: 0; display: flex; align-items: center; justify-content: center; transition: all 0.3s ease; flex-shrink: 0; background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.2); color: #EF4444;"
+                                           style="border-radius: 12px; width: 40px; height: 40px; padding: 0; display: flex; align-items: center; justify-content: center; transition: all 0.3s ease; flex-shrink: 0; background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.2); color: #EF4444; pointer-events: auto; cursor: pointer; z-index: 1001; position: relative;"
                                            title="Remove item"
                                            data-item-name="{{ item_name }}"
-                                           onclick="event.stopPropagation();"
                                            onmouseover="this.style.background='#ef4444'; this.style.color='white'; this.style.transform='scale(1.1) rotate(90deg)'; this.style.borderColor='#ef4444';"
                                            onmouseout="this.style.background='rgba(239, 68, 68, 0.1)'; this.style.color='#EF4444'; this.style.transform='scale(1) rotate(0deg)'; this.style.borderColor='rgba(239, 68, 68, 0.2)';">
                                             <i class="bi bi-trash3-fill" style="font-size: 0.9rem;"></i>
@@ -2543,8 +2568,8 @@
                 </div>
 
                 <!-- Preview & Upload Section (Hidden by default) -->
-                <div id="previewSection" style="display: none;">
-                    <div class="text-center">
+                <div id="previewSection" style="display: none; position: relative; z-index: 1000; pointer-events: auto;">
+                    <div class="text-center" style="position: relative; z-index: 1001; pointer-events: auto;">
                         <!-- Upload Progress Feedback -->
                         <div id="uploadProgressFeedback" class="mb-3" style="display: none;">
                             <div class="d-flex align-items-center justify-content-center gap-2 p-3" style="background: linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(5, 150, 105, 0.08) 100%); border-radius: 12px; border-left: 4px solid #10B981;">
@@ -2578,14 +2603,14 @@
                             <small style="color: #1e40af;">Review your photo. Click "Analyze & Add Items" to continue, or "Retake" to capture another photo.</small>
                         </div>
                         
-                        <div class="mt-3 d-flex flex-wrap justify-content-center gap-2">
-                            <button type="button" class="btn btn-outline-secondary photo-modal-btn" id="retakePhotoBtn" style="border: 2px solid #6b7280; color: #6b7280; background: transparent; transition: all 0.2s ease;">
+                        <div class="mt-3 d-flex flex-wrap justify-content-center gap-2" style="position: relative; z-index: 1000; pointer-events: auto;">
+                            <button type="button" class="btn btn-outline-secondary photo-modal-btn" id="retakePhotoBtn" style="border: 2px solid #6b7280; color: #6b7280; background: transparent; transition: all 0.2s ease; position: relative; z-index: 1001; pointer-events: auto; cursor: pointer;">
                                 <i class="bi bi-arrow-counterclockwise me-2"></i>Retake
                             </button>
-                            <button type="button" class="btn btn-outline-danger photo-modal-btn" id="cancelUploadBtn" style="border: 2px solid #ef4444; color: #ef4444; background: transparent; transition: all 0.2s ease;">
+                            <button type="button" class="btn btn-outline-danger photo-modal-btn" id="cancelUploadBtn" style="border: 2px solid #ef4444; color: #ef4444; background: transparent; transition: all 0.2s ease; position: relative; z-index: 1001; pointer-events: auto; cursor: pointer;">
                                 <i class="bi bi-x-circle me-2"></i>Cancel
                             </button>
-                            <button type="button" class="btn btn-success btn-lg photo-modal-btn" id="uploadBtn" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); border: none; color: white; transition: all 0.2s ease; box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);">
+                            <button type="button" class="btn btn-success btn-lg photo-modal-btn" id="uploadBtn" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); border: none; color: white; transition: all 0.2s ease; box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3); position: relative; z-index: 1001; pointer-events: auto; cursor: pointer;">
                                 <i class="bi bi-stars me-2"></i><span id="uploadBtnText">Confirm & Analyze</span>
                             </button>
                         </div>
@@ -2995,6 +3020,18 @@
                 previewSection.style.display = 'block';
                 previewSection.style.opacity = '0';
                 previewSection.style.transition = 'opacity 0.3s ease';
+                previewSection.style.pointerEvents = 'auto';
+                previewSection.style.zIndex = '1000';
+                previewSection.style.position = 'relative';
+                // Ensure all buttons in preview section are clickable
+                const previewButtons = previewSection.querySelectorAll('button');
+                previewButtons.forEach(btn => {
+                    btn.style.pointerEvents = 'auto';
+                    btn.style.zIndex = '1001';
+                    btn.style.position = 'relative';
+                    btn.style.cursor = 'pointer';
+                    btn.disabled = false; // Ensure buttons are not disabled
+                });
                 setTimeout(() => {
                     previewSection.style.opacity = '1';
                 }, 200);
@@ -3943,13 +3980,6 @@
             allItems = [...highConfItems, ...lowConfItems];
         }
         
-        // Ensure all items have confidence values
-        // If items don't have confidence, assign default based on whether they're in high/low confidence arrays
-        if (allItems.length === 0 && (highConfItems.length > 0 || lowConfItems.length > 0)) {
-            // If allItems is empty but we have high/low items, combine them
-            allItems = [...highConfItems, ...lowConfItems];
-        }
-        
         // Ensure each item has a confidence value
         allItems = allItems.map(item => {
             if (typeof item === 'string') {
@@ -4701,10 +4731,10 @@
                                     </div>
                         
                         <!-- Item Info -->
-                        <div class="flex-grow-1" style="min-width: 0;">
+                        <div class="flex-grow-1" style="min-width: 0; max-width: 100%; overflow: visible;">
                             <div class="d-flex align-items-start justify-content-between gap-2 mb-2">
-                                <div style="flex: 1; min-width: 0;">
-                                    <h6 class="mb-1 fw-bold" style="font-size: 1rem; color: #1e293b; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                                <div style="flex: 1; min-width: 0; max-width: 100%; overflow: visible;">
+                                    <h6 class="mb-1 fw-bold" style="font-size: 1rem; color: #1e293b; word-wrap: break-word; overflow-wrap: break-word; word-break: break-word; white-space: normal; overflow: visible; text-overflow: unset; max-width: 100%; line-height: 1.5;">
                                         ${item.name}
                                     </h6>
                                     <div class="d-flex align-items-center gap-2 flex-wrap">
@@ -4960,8 +4990,28 @@
                     el.style.pointerEvents = 'auto';
                     if (el.tagName === 'BUTTON' || el.tagName === 'INPUT' || el.tagName === 'A' || el.getAttribute('role') === 'button') {
                         el.style.cursor = 'pointer';
+                        el.style.zIndex = '10001';
+                        el.style.position = 'relative';
                     }
                 });
+                // Specifically ensure preview section buttons are clickable
+                const previewSection = modalContent.querySelector('#previewSection');
+                if (previewSection) {
+                    previewSection.style.pointerEvents = 'auto';
+                    previewSection.style.zIndex = '1000';
+                    previewSection.style.position = 'relative';
+                    const previewButtons = previewSection.querySelectorAll('button');
+                    previewButtons.forEach(btn => {
+                        btn.style.pointerEvents = 'auto';
+                        btn.style.zIndex = '1001';
+                        btn.style.position = 'relative';
+                        btn.style.cursor = 'pointer';
+                        // Ensure buttons are not disabled unless they should be
+                        if (btn.id !== 'uploadBtn' || !btn.classList.contains('loading')) {
+                            btn.disabled = false;
+                        }
+                    });
+                }
             }
             if (modalDialog) {
                 modalDialog.style.pointerEvents = 'auto';
@@ -4976,6 +5026,20 @@
         
         // Also handle when modal is fully shown - focus trap
         photoModal.addEventListener('shown.bs.modal', () => {
+            // Ensure preview section buttons are clickable when modal is shown
+            const previewSection = photoModal.querySelector('#previewSection');
+            if (previewSection && previewSection.style.display !== 'none') {
+                const previewButtons = previewSection.querySelectorAll('button');
+                previewButtons.forEach(btn => {
+                    btn.style.pointerEvents = 'auto';
+                    btn.style.zIndex = '1001';
+                    btn.style.position = 'relative';
+                    btn.style.cursor = 'pointer';
+                    if (btn.id !== 'uploadBtn' || !btn.classList.contains('loading')) {
+                        btn.disabled = false;
+                    }
+                });
+            }
             // Focus trap - focus first focusable element
             const firstFocusable = photoModal.querySelector('button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])');
             if (firstFocusable) {
@@ -5148,16 +5212,16 @@
         if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
             // Disable live camera button (getUserMedia not available)
             if (openCameraBtn) {
-                openCameraBtn.disabled = true;
-                openCameraBtn.innerHTML = '<i class="bi bi-camera-video-off me-2"></i>HTTPS Only';
-                openCameraBtn.title = 'Live camera requires HTTPS or localhost. Use "Take Photo" button instead.';
-                openCameraBtn.classList.add('opacity-50');
+            openCameraBtn.disabled = true;
+            openCameraBtn.innerHTML = '<i class="bi bi-camera-video-off me-2"></i>HTTPS Only';
+            openCameraBtn.title = 'Live camera requires HTTPS or localhost. Use "Take Photo" button instead.';
+            openCameraBtn.classList.add('opacity-50');
             }
             
             // Make "Take Photo" button more prominent
             if (mobileCameraBtn) {
-                mobileCameraBtn.classList.remove('btn-success');
-                mobileCameraBtn.classList.add('btn-success', 'pulse');
+            mobileCameraBtn.classList.remove('btn-success');
+            mobileCameraBtn.classList.add('btn-success', 'pulse');
             }
         }
 
@@ -5586,12 +5650,22 @@
         currentSortType = sortType;
         sessionStorage.setItem('pantrySortType', sortType);
         
+        // Helper function to get display name from item
+        const getItemDisplayName = (item) => {
+            const nameElement = item.querySelector('h6');
+            if (nameElement) {
+                return nameElement.textContent.trim() || nameElement.getAttribute('title') || '';
+            }
+            // Fallback to data attribute if h6 not found
+            return item.getAttribute('data-item-name') || '';
+        };
+        
         itemsToSort.sort((a, b) => {
             if (sortType === 'category') {
-                const nameA = a.getAttribute('data-item-name') || '';
-                const nameB = b.getAttribute('data-item-name') || '';
-                const catA = getItemCategory(nameA);
-                const catB = getItemCategory(nameB);
+                const nameA = getItemDisplayName(a);
+                const nameB = getItemDisplayName(b);
+                const catA = getItemCategory(nameA.toLowerCase());
+                const catB = getItemCategory(nameB.toLowerCase());
                 
                 // Sort by category first
                 if (catA !== catB) {
@@ -5600,12 +5674,12 @@
                 // Then by name within category
                 return nameA.localeCompare(nameB);
             } else if (sortType === 'name') {
-                const nameA = a.getAttribute('data-item-name') || '';
-                const nameB = b.getAttribute('data-item-name') || '';
+                const nameA = getItemDisplayName(a);
+                const nameB = getItemDisplayName(b);
                 return nameA.localeCompare(nameB);
             } else if (sortType === 'name-desc') {
-                const nameA = a.getAttribute('data-item-name') || '';
-                const nameB = b.getAttribute('data-item-name') || '';
+                const nameA = getItemDisplayName(a);
+                const nameB = getItemDisplayName(b);
                 return nameB.localeCompare(nameA);
             } else if (sortType === 'expiration') {
                 const dateA = a.getAttribute('data-expiration-date') || '9999-12-31';
@@ -5642,14 +5716,17 @@
             }
         });
         
+        // Preserve container classes (row g-3) when clearing
+        const containerClasses = container.className;
         container.innerHTML = '';
+        container.className = containerClasses; // Restore classes
         
         if (sortType === 'category') {
             // Group items by category for better visual organization
             const categoryGroups = {};
             itemsToSort.forEach(item => {
-                const name = item.getAttribute('data-item-name') || '';
-                const category = getItemCategory(name);
+                const name = getItemDisplayName(item);
+                const category = getItemCategory(name.toLowerCase());
                 if (!categoryGroups[category]) {
                     categoryGroups[category] = [];
                 }
@@ -5711,6 +5788,16 @@
                 const card = item.querySelector('.pantry-item-card');
                 if (card) {
                     card.style.animationDelay = (index * 0.05) + 's';
+                }
+                // Ensure item maintains proper column class structure
+                if (!item.classList.contains('col-12')) {
+                    item.classList.add('col-12');
+                }
+                if (!item.classList.contains('col-md-6')) {
+                    item.classList.add('col-md-6');
+                }
+                if (!item.classList.contains('col-lg-4')) {
+                    item.classList.add('col-lg-4');
                 }
                 container.appendChild(item);
                 
@@ -6429,9 +6516,17 @@
                     `;
                 }
                 
+                // Escape values for use in onclick handler
+                const escapedItemId = (itemId || '').replace(/'/g, "\\'");
+                const escapedItemName = (itemName || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+                const escapedQuantity = (itemQuantity || '1').replace(/'/g, "\\'");
+                const escapedExpDate = (expDate || '').replace(/'/g, "\\'");
+                const escapedAddedDate = (addedDate || '').replace(/'/g, "\\'");
+                
                 itemWrapper.innerHTML = `
                     <div class="pantry-item-card card border-0 bg-white h-100" 
                          style="border-radius: 20px; transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); border: 1px solid #e2e8f0; cursor: pointer; overflow: hidden; position: relative;"
+                         onclick="if(typeof openEditItemModal === 'function') { openEditItemModal('${escapedItemId}', '${escapedItemName}', '${escapedQuantity}', '${escapedExpDate}', '${escapedAddedDate}'); } else { console.error('openEditItemModal function not found'); }"
                          onmouseover="this.style.transform='translateY(-8px) scale(1.02)'; this.style.boxShadow='0 16px 32px rgba(139, 92, 246, 0.2)'; this.style.borderColor='#8B5CF6';"
                          onmouseout="this.style.transform='translateY(0) scale(1)'; this.style.boxShadow='0 4px 12px rgba(0,0,0,0.08)'; this.style.borderColor='#e2e8f0';">
                         <div class="category-accent-bar" 
@@ -6450,8 +6545,8 @@
                                         <div class="me-3" style="width: 40px; height: 40px; background: linear-gradient(135deg, rgba(139, 92, 246, 0.15) 0%, rgba(59, 130, 246, 0.15) 100%); border-radius: 12px; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
                                             <i class="bi bi-box-seam" style="font-size: 1.25rem; color: #8B5CF6;"></i>
                                         </div>
-                                        <div class="flex-grow-1" style="min-width: 120px; flex: 1 1 auto;">
-                                            <h6 class="mb-0 fw-bold text-dark" style="font-size: 1.1rem; line-height: 1.4; word-wrap: normal; overflow-wrap: normal; word-break: keep-all; white-space: normal; display: block;" title="${itemName}">
+                                        <div class="flex-grow-1" style="min-width: 120px; flex: 1 1 auto; max-width: 100%; overflow: visible;">
+                                            <h6 class="mb-0 fw-bold text-dark" style="font-size: 1.1rem; line-height: 1.5; word-wrap: break-word; overflow-wrap: break-word; word-break: break-word; white-space: normal; display: block; overflow: visible; text-overflow: unset; max-width: 100%;" title="${itemName}">
                                                 ${itemName}
                                             </h6>
                                         </div>
@@ -6461,8 +6556,11 @@
                                         ${expirationBadgeHtml}
                                     </div>
                                 </div>
-                                <button class="btn btn-sm btn-outline-danger delete-item-btn" data-item-name="${itemName}" data-item-id="${itemId}" style="flex-shrink: 0; margin-left: 0.5rem;">
-                                    <i class="bi bi-trash"></i>
+                                <button class="btn btn-sm btn-outline-danger delete-item-btn" 
+                                        data-item-name="${itemName}" 
+                                        data-item-id="${itemId}" 
+                                        style="flex-shrink: 0; margin-left: 0.5rem; border-radius: 12px; width: 40px; height: 40px; padding: 0; display: flex; align-items: center; justify-content: center; transition: all 0.3s ease; background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.2); color: #EF4444; pointer-events: auto; cursor: pointer; z-index: 1001; position: relative;">
+                                    <i class="bi bi-trash3-fill" style="font-size: 0.9rem; pointer-events: none;"></i>
                                 </button>
                             </div>
                         </div>
@@ -6723,9 +6821,9 @@
                 
                 // CRITICAL: Update stats based on actual rendered items (not optimistic)
                 const actualItemCount = currentContainer.querySelectorAll('.pantry-item-wrapper').length;
-                const statsCountElement = document.getElementById('pantryStatsCount');
-                if (statsCountElement) {
-                    statsCountElement.textContent = actualItemCount;
+                const statsCountElement2 = document.getElementById('pantryStatsCount');
+                if (statsCountElement2) {
+                    statsCountElement2.textContent = actualItemCount;
                 }
                 
                 // Re-apply sort if one was active
@@ -6881,46 +6979,79 @@
                 
                 if (apiResponse.ok) {
                     const apiData = await apiResponse.json();
-                    if (apiData && apiData.success && apiData.items) {
+                    if (apiData && apiData.success && Array.isArray(apiData.items)) {
                         // Update pantry items from API response
                         const container = document.getElementById('pantryItemsContainer');
                         if (container) {
+                            // Preserve row classes when clearing
+                            const hasRowClasses = container.classList.contains('row');
                             container.innerHTML = '';
+                            if (hasRowClasses) {
+                                container.classList.add('row', 'g-3');
+                            }
                             // Render items from API data
                             if (apiData.items.length > 0) {
                                 // Use existing item rendering logic if available
                                 // Helper function to escape HTML
                                 const escapeHtml = (text) => {
+                                    if (!text) return '';
                                     const div = document.createElement('div');
-                                    div.textContent = text;
+                                    div.textContent = String(text);
                                     return div.innerHTML;
                                 };
                                 
                                 apiData.items.forEach(item => {
+                                    // Validate item structure
+                                    if (!item || typeof item !== 'object') {
+                                        console.warn('Invalid item structure:', item);
+                                        return;
+                                    }
+                                    
                                     const itemWrapper = document.createElement('div');
-                                    itemWrapper.className = 'pantry-item-wrapper mb-3';
+                                    itemWrapper.className = 'col-12 col-md-6 col-lg-4 pantry-item-wrapper mb-3';
+                                    
+                                    const itemId = item.id || `item_${Date.now()}_${Math.random()}`;
                                     const itemName = escapeHtml(item.name || 'Unnamed Item');
                                     const itemQuantity = escapeHtml(item.quantity || '1');
                                     const itemExpDate = item.expirationDate ? escapeHtml(item.expirationDate) : '';
+                                    const itemCategory = escapeHtml(item.category || 'other');
+                                    const itemAddedDate = item.addedDate ? escapeHtml(item.addedDate) : '';
                                     
-                                    itemWrapper.innerHTML = `
-                                        <div class="card pantry-item-card">
-                                            <div class="card-body">
-                                                <div class="d-flex justify-content-between align-items-start">
-                                                    <div class="flex-grow-1">
-                                                        <h5 class="card-title mb-1">${itemName}</h5>
-                                                        <p class="card-text text-muted mb-1">
-                                                            <small>Quantity: ${itemQuantity}</small>
-                                                        </p>
-                                                        ${itemExpDate ? `<p class="card-text mb-0"><small class="text-muted">Expires: ${itemExpDate}</small></p>` : ''}
+                                    // Create the card element with all necessary data attributes
+                                    const card = document.createElement('div');
+                                    card.className = 'card pantry-item-card';
+                                    card.setAttribute('data-item-id', itemId);
+                                    card.setAttribute('data-item-name', itemName);
+                                    card.setAttribute('data-quantity', itemQuantity);
+                                    card.setAttribute('data-expiration-date', itemExpDate || '');
+                                    card.setAttribute('data-category', itemCategory);
+                                    card.setAttribute('data-added-date', itemAddedDate);
+                                    
+                                    // Add onclick handler for edit functionality
+                                    card.setAttribute('onclick', `if(typeof openEditItemModal === 'function') { openEditItemModal('${itemId.replace(/'/g, "\\'")}', '${itemName.replace(/'/g, "\\'")}', '${itemQuantity.replace(/'/g, "\\'")}', '${itemExpDate.replace(/'/g, "\\'")}', '${itemAddedDate.replace(/'/g, "\\'")}'); }`);
+                                    
+                                    card.innerHTML = `
+                                        <div class="card-body">
+                                            <div class="d-flex justify-content-between align-items-start">
+                                                <div class="flex-grow-1" style="min-width: 0; overflow: visible; max-width: 100%;">
+                                                    <h6 class="fw-bold mb-2" style="font-size: 1.1rem; line-height: 1.5; word-wrap: break-word; overflow-wrap: break-word; word-break: break-word; white-space: normal; display: block; overflow: visible; text-overflow: unset; max-width: 100%;">${itemName}</h6>
+                                                    <div class="d-flex flex-wrap gap-2 mb-2">
+                                                        <span class="badge bg-secondary">Qty: ${itemQuantity}</span>
+                                                        ${itemExpDate ? `<span class="badge bg-info text-dark">Exp: ${itemExpDate}</span>` : ''}
+                                                        <span class="badge bg-primary">${itemCategory}</span>
                                                     </div>
-                                                    <button class="btn btn-sm btn-outline-danger delete-item-btn" data-item-name="${itemName}">
-                                                        <i class="bi bi-trash"></i>
-                                                    </button>
                                                 </div>
+                                                <button class="btn btn-sm btn-outline-danger delete-item-btn" 
+                                                        data-item-id="${itemId}"
+                                                        data-item-name="${itemName}" 
+                                                        style="pointer-events: auto; cursor: pointer; z-index: 1001; position: relative; border-radius: 12px; width: 40px; height: 40px; padding: 0; display: flex; align-items: center; justify-content: center; transition: all 0.3s ease; background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.2); color: #EF4444;">
+                                                    <i class="bi bi-trash3-fill" style="font-size: 0.9rem; pointer-events: none;"></i>
+                                                </button>
                                             </div>
                                         </div>
                                     `;
+                                    
+                                    itemWrapper.appendChild(card);
                                     container.appendChild(itemWrapper);
                                 });
                                 // Reinitialize interactive elements
@@ -7117,31 +7248,57 @@
             // Skip if button is not in DOM
             if (!btn.parentNode) return;
             
-            // Remove any existing listeners by cloning
+            // Remove any existing listeners by cloning (but remove inline onclick)
             const newBtn = btn.cloneNode(true);
+            // Remove inline onclick handler that might interfere
+            newBtn.removeAttribute('onclick');
+            // Ensure button is clickable
+            newBtn.style.pointerEvents = 'auto';
+            newBtn.style.cursor = 'pointer';
+            newBtn.style.zIndex = '1001';
+            newBtn.style.position = 'relative';
             btn.parentNode.replaceChild(newBtn, btn);
             
             // Add click listener with event delegation
             newBtn.addEventListener('click', function(e) {
                 e.preventDefault();
                 e.stopPropagation();
+                e.stopImmediatePropagation();
                 
+                // Try to get item ID first (preferred), then fall back to item name
+                let itemId = this.getAttribute('data-item-id');
                 let itemName = this.getAttribute('data-item-name');
-                if (!itemName || !itemName.trim()) {
-                    console.error('Item name is missing for delete button');
-                    alert('Error: Item name is missing. Please refresh the page.');
+                
+                // Validate that we have at least one identifier
+                if (!itemId && (!itemName || !itemName.trim())) {
+                    console.error('Item identifier is missing for delete button', {
+                        itemId: itemId,
+                        itemName: itemName,
+                        button: this
+                    });
+                    alert('Error: Item identifier is missing. Please refresh the page.');
                     return;
                 }
                 
                 // Decode if it was URL-encoded, but keep original for API call
                 try {
-                    itemName = decodeURIComponent(itemName);
-                } catch (e) {
+                    if (itemName) {
+                        itemName = decodeURIComponent(itemName);
+                    }
+                    if (itemId) {
+                        itemId = decodeURIComponent(itemId);
+                    }
+                } catch (decodeError) {
                     // If decode fails, use as-is
+                    console.warn('Failed to decode item identifier:', decodeError);
                 }
                 
-                handleDeleteItem(itemName);
-            });
+                console.log('Delete button clicked for item:', { itemId, itemName });
+                
+                // Use itemId if available, otherwise use itemName
+                const identifier = itemId || itemName;
+                handleDeleteItem(identifier);
+            }, true); // Use capture phase to ensure it fires before other handlers
         });
     }
     
@@ -7168,6 +7325,7 @@
     
     // Open edit item modal
     function openEditItemModal(itemId, itemName, quantity, expirationDate, addedDate) {
+        console.log('openEditItemModal called with:', { itemId, itemName, quantity, expirationDate, addedDate });
         try {
             // Check if modal elements exist
             const modalElement = document.getElementById('editItemModal');
@@ -7221,6 +7379,60 @@
             showFeedback('Failed to open edit form: ' + (error.message || 'Unknown error'), 'danger');
         }
     }
+    
+    // Make function globally available
+    window.openEditItemModal = openEditItemModal;
+    
+    // Add event delegation for pantry item clicks (works for both server-rendered and dynamically-rendered items)
+    document.addEventListener('click', function(e) {
+        // Check if click is on a pantry-item-card
+        const pantryCard = e.target.closest('.pantry-item-card');
+        if (pantryCard && !e.target.closest('.delete-item-btn') && !e.target.closest('.editable-quantity') && !e.target.closest('.editable-expiration')) {
+            // Get item data from the card first (preferred), then fall back to wrapper
+            const itemWrapper = pantryCard.closest('.pantry-item-wrapper');
+            
+            // Try to get data from card's data attributes first
+            let itemId = pantryCard.getAttribute('data-item-id') || '';
+            let itemName = pantryCard.getAttribute('data-item-name') || '';
+            let quantity = pantryCard.getAttribute('data-quantity') || '1';
+            let expDate = pantryCard.getAttribute('data-expiration-date') || '';
+            let addedDate = pantryCard.getAttribute('data-added-date') || '';
+            
+            // Fall back to wrapper or element-based extraction if card doesn't have data attributes
+            if (!itemName && itemWrapper) {
+                itemId = itemWrapper.getAttribute('data-item-id') || itemId;
+                // Get item name from the h6 element (actual display name, not lowercase)
+                const itemNameElement = pantryCard.querySelector('h6');
+                itemName = itemNameElement ? itemNameElement.textContent.trim() : '';
+                
+                // Get quantity from badge or default to 1
+                const quantityBadge = itemWrapper.querySelector('.editable-quantity');
+                quantity = quantityBadge ? (quantityBadge.getAttribute('data-current-quantity') || quantityBadge.querySelector('.quantity-value')?.textContent?.trim() || '1') : quantity;
+                
+                // Get expiration date
+                const expDateBadge = itemWrapper.querySelector('.editable-expiration');
+                expDate = expDateBadge ? (expDateBadge.getAttribute('data-current-expiration') || expDateBadge.getAttribute('data-exp-date') || '') : 
+                         (itemWrapper.getAttribute('data-expiration-date') || expDate);
+                
+                // Get added date
+                addedDate = itemWrapper.getAttribute('data-added-date') || addedDate;
+            } else if (!itemName) {
+                // Last resort: try to get from h6 element
+                const itemNameElement = pantryCard.querySelector('h6');
+                itemName = itemNameElement ? itemNameElement.textContent.trim() : '';
+            }
+                
+            if (itemName) {
+                e.preventDefault();
+                e.stopPropagation();
+                if (typeof openEditItemModal === 'function') {
+                    openEditItemModal(itemId, itemName, quantity, expDate, addedDate);
+                } else {
+                    console.error('openEditItemModal function not found');
+                }
+            }
+        }
+    });
     
     // Handle edit item form submission
     async function handleEditItemSubmit(event) {
