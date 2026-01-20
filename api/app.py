@@ -913,7 +913,8 @@ def classify_food_hierarchical(img_crop, classification_pred=None):
         label = pred.get("label", "").lower()
         score = float(pred.get("score", 0))
         
-        if score < 0.15:
+        # Lower threshold from 0.15 to 0.10 to catch more items
+        if score < 0.10:
             continue
         
         # Find category that matches
@@ -1319,13 +1320,19 @@ def detect_food_items_with_ml(img_bytes, user_pantry=None, skip_preprocessing=Fa
     # Try to load models if not loaded
     try:
         if not _ml_models_loaded:
+            print("🔄 Loading ML models...")
             load_ml_models()
-        pass
+            if not _ml_models_loaded:
+                print("⚠️ Warning: ML models failed to load, but continuing anyway")
+        else:
+            print("✅ ML models already loaded")
     except Exception as e:
+        print(f"❌ Warning: Failed to load ML models: {e}")
+        import traceback
+        traceback.print_exc()
+        # Don't return empty - try to continue with whatever models are available
         if VERBOSE_LOGGING:
-
-            print(f"Warning: Failed to load ML models: {e}")
-        return []  # Return empty list if models can't be loaded
+            print(f"Continuing with partial model availability")
     
     # STEP 0.5: Image Quality Scoring (NEW)
     quality_score = 1.0
@@ -1342,16 +1349,19 @@ def detect_food_items_with_ml(img_bytes, user_pantry=None, skip_preprocessing=Fa
                   f"contrast={quality_metrics.get('contrast_score', 0):.2f}, "
                   f"glare={quality_metrics.get('glare_score', 0):.2f})")
         
-        # Reject very poor quality images early
-        if quality_score < 0.3:
+        # Reject only extremely poor quality images (lowered threshold from 0.3 to 0.15)
+        # This allows more images to be processed while still filtering out truly unusable images
+        if quality_score < 0.15:
             if VERBOSE_LOGGING:
                 print(f"⚠️ Image quality too low ({quality_score:.2f}), rejecting scan")
-            return []  # Reject poor quality images
+            print(f"⚠️ Image quality too low ({quality_score:.2f}), rejecting scan")
+            return []  # Reject extremely poor quality images
         
-        # Warn about poor quality but continue
-        if quality_score < 0.5:
+        # Warn about poor quality but continue (lowered threshold from 0.5 to 0.4)
+        if quality_score < 0.4:
             if VERBOSE_LOGGING:
                 print(f"⚠️ Warning: Poor image quality ({quality_score:.2f}), results may be less accurate")
+            print(f"⚠️ Warning: Poor image quality ({quality_score:.2f}), continuing anyway")
     except Exception as e:
         if VERBOSE_LOGGING:
             print(f"Warning: Image quality scoring failed: {e}")
@@ -1586,7 +1596,9 @@ def detect_food_items_with_ml(img_bytes, user_pantry=None, skip_preprocessing=Fa
     
     # STEP 2a: YOLOv8 Detection (Better accuracy - recommended)
     detections_found_yolo = False
+    print(f"🔍 Checking YOLO: model={_yolo_model is not None}, enabled={YOLO_DETECTION_ENABLED}")
     if _yolo_model and YOLO_DETECTION_ENABLED:
+        print("✅ Using YOLOv8 for detection")
         try:
             import numpy as np
             from PIL import Image
@@ -1649,9 +1661,9 @@ def detect_food_items_with_ml(img_bytes, user_pantry=None, skip_preprocessing=Fa
                                 cls = cls.numpy()
                             class_id = int(cls)
                             
-                            # Filter by confidence threshold (increased from 0.3 to 0.25 for better recall)
+                            # Filter by confidence threshold (lowered from 0.25 to 0.20 for better recall)
                             # We'll use NMS later to filter duplicates
-                            if confidence < 0.25:  # Lower threshold to catch more items
+                            if confidence < 0.20:  # Lower threshold to catch more items
                                 continue
                             
                             # Get class name from YOLOv8 (with bounds checking)
@@ -1957,8 +1969,19 @@ def detect_food_items_with_ml(img_bytes, user_pantry=None, skip_preprocessing=Fa
     # Use YOLO results if available, otherwise use DETR results
     if detections_found_yolo:
         detections_found = True  # YOLO found items
+        print(f"✅ YOLO found {len(items)} items")
+    else:
+        print(f"⚠️ YOLO found no items (detections_found_yolo={detections_found_yolo})")
+        detections_found = False
     
-    if not detections_found and _food_classifier:
+    # Always try classification if we have the classifier, even if YOLO found some items
+    # This helps catch items that YOLO might have missed
+    if _food_classifier:
+        if not detections_found:
+            print("🔄 Falling back to full-image classification...")
+        else:
+            print("🔄 Also running full-image classification to catch missed items...")
+        print(f"   detections_found={detections_found}, _food_classifier={_food_classifier is not None}, items_so_far={len(items)}")
         try:
             # Add timeout protection for classification (prevent hanging)
             import threading
@@ -2006,8 +2029,10 @@ def detect_food_items_with_ml(img_bytes, user_pantry=None, skip_preprocessing=Fa
                     except (ValueError, TypeError):
                         pass
                     
-                    if score < 0.15:
-                        pass
+                    # Very low threshold (0.05) to catch as many items as possible
+                    # We'll let the user filter out false positives later
+                    if score < 0.05:
+                        continue  # Skip only very low confidence predictions
                     
                     label = pred.get("label", "")
                     if not label or not isinstance(label, str):
@@ -2025,13 +2050,14 @@ def detect_food_items_with_ml(img_bytes, user_pantry=None, skip_preprocessing=Fa
                         conf = score
                     
                     if not name or len(name) < 2:
-                        pass
+                        continue  # Skip items without valid names
                     
-                    # Skip non-food items
-                    non_food_keywords = ["table", "plate", "fork", "knife", "spoon", "cup"]
+                    # Skip non-food items (but be less aggressive)
+                    non_food_keywords = ["table", "plate", "fork", "knife", "spoon"]
+                    # Only skip if confidence is very low AND it's clearly not food
                     if any(kw in label.lower() for kw in non_food_keywords):
-                        if conf < 0.35:
-                            pass
+                        if conf < 0.25:  # Lower threshold - allow more items through
+                            continue
                     
                     key = name.lower().strip()
                     if key not in item_confidence or conf > item_confidence[key]:
@@ -2054,8 +2080,15 @@ def detect_food_items_with_ml(img_bytes, user_pantry=None, skip_preprocessing=Fa
                 print(f"Classification error: {e}")
             # Continue even if classification fails
 
+    # Debug: Log items before NMS and deduplication
+    print(f"🔍 Before NMS/deduplication: {len(items)} items found")
+    if len(items) > 0:
+        print(f"   Sample items: {[item.get('name', 'unknown') for item in items[:3]]}")
+        print(f"   Sample confidences: {[item.get('confidence', 0) for item in items[:3]]}")
+    
     # STEP 4: Apply Non-Maximum Suppression (NMS) to remove overlapping detections
     items = apply_nms(items, iou_threshold=0.5)
+    print(f"🔍 After NMS: {len(items)} items remaining")
     
     # STEP 5: De-duplicate by name (keep highest confidence)
     unique = {}
@@ -2073,6 +2106,7 @@ def detect_food_items_with_ml(img_bytes, user_pantry=None, skip_preprocessing=Fa
     # Convert to list and sort by confidence
     result = list(unique.values())
     result.sort(key=lambda x: x.get("confidence", 0), reverse=True)
+    print(f"🔍 After deduplication: {len(result)} unique items")
     
     # STEP 6: Apply ensemble confidence boosting (if multiple methods detected same item)
     result = apply_ensemble_boosting(result, items)
@@ -2096,6 +2130,10 @@ def detect_food_items_with_ml(img_bytes, user_pantry=None, skip_preprocessing=Fa
     # Ensure quality_score is valid (0.0-1.0)
     quality_score = max(0.0, min(1.0, quality_score)) if quality_score is not None else 1.0
     
+    # Don't apply quality penalty if it would remove all items
+    # Instead, use a minimum quality multiplier to ensure some items are returned
+    min_quality_multiplier = 0.3  # Never reduce confidence below 30% of original
+    
     for item in result:
         if not isinstance(item, dict):
             continue
@@ -2106,8 +2144,14 @@ def detect_food_items_with_ml(img_bytes, user_pantry=None, skip_preprocessing=Fa
         except (ValueError, TypeError):
             base_conf = 0.0
         
-        # Weight confidence by image quality
-        item["confidence"] = max(0.0, min(1.0, base_conf * quality_score))
+        # Weight confidence by image quality, but don't penalize too harshly
+        # Use a blend: 70% quality-weighted, 30% original (ensures items aren't filtered out)
+        quality_weighted = base_conf * quality_score
+        blended_conf = (quality_weighted * 0.7) + (base_conf * 0.3)
+        # Ensure minimum confidence to prevent filtering out all items
+        final_conf = max(blended_conf, base_conf * min_quality_multiplier)
+        
+        item["confidence"] = max(0.0, min(1.0, final_conf))
         item["quality_score"] = quality_score
         if VERBOSE_LOGGING and quality_score < 0.7:
             print(f"  ⚠️ Quality-adjusted confidence for '{item.get('name')}': {base_conf:.2f} → {item['confidence']:.2f}")
@@ -2116,6 +2160,13 @@ def detect_food_items_with_ml(img_bytes, user_pantry=None, skip_preprocessing=Fa
     result = calibrate_confidence(result)
     
     # STEP 9: Return categorized by confidence (high/medium/low)
+    print(f"📊 ML Detection Summary: Found {len(result)} items")
+    if len(result) > 0:
+        print(f"   Items: {[item.get('name', 'unknown') for item in result[:5]]}")
+        confidences = [f"{item.get('confidence', 0):.2f}" for item in result[:5]]
+        print(f"   Confidences: {confidences}")
+    else:
+        print("   ⚠️ No items detected - check model loading and image quality")
     return result
  
 
