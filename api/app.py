@@ -1338,6 +1338,13 @@ def detect_food_items_with_ml(img_bytes, user_pantry=None, skip_preprocessing=Fa
         if VERBOSE_LOGGING:
             print(f"Continuing with partial model availability")
     
+    # If no models are available and ML is enabled, log warning but don't fail
+    if (ML_VISION_ENABLED or YOLO_DETECTION_ENABLED) and not _yolo_model and not _food_classifier:
+        print("⚠️ WARNING: ML/YOLO enabled but no models loaded. Check if ultralytics/transformers are installed.")
+        print("   Install with: pip install ultralytics transformers")
+        print("   Falling back to OpenAI detection...")
+        # Don't return empty - let it fall through to OpenAI fallback
+    
     # STEP 0.5: Image Quality Scoring (NEW)
     quality_score = 1.0
     quality_metrics = {}
@@ -1613,9 +1620,9 @@ def detect_food_items_with_ml(img_bytes, user_pantry=None, skip_preprocessing=Fa
             
             # Run YOLOv8 inference with optimized confidence threshold
             # Use adaptive threshold: start lower to catch more items, then filter
-            # Lower threshold (0.20) to catch more items, especially in cluttered pantry images
+            # Lower threshold (0.15) to catch more items, especially in cluttered pantry images
             # Higher IOU (0.5) for better NMS to reduce duplicates
-            results = _yolo_model(img_array, conf=0.20, iou=0.50, verbose=False)
+            results = _yolo_model(img_array, conf=0.15, iou=0.50, verbose=False)
             
             if results and len(results) > 0:
                 result = results[0]
@@ -1665,9 +1672,9 @@ def detect_food_items_with_ml(img_bytes, user_pantry=None, skip_preprocessing=Fa
                                 cls = cls.numpy()
                             class_id = int(cls)
                             
-                            # Filter by confidence threshold (lowered from 0.25 to 0.20 for better recall)
+                            # Filter by confidence threshold (lowered from 0.25 to 0.15 for better recall)
                             # We'll use NMS later to filter duplicates
-                            if confidence < 0.20:  # Lower threshold to catch more items
+                            if confidence < 0.15:  # Lower threshold to catch more items (was 0.20)
                                 continue
                             
                             # Get class name from YOLOv8 (with bounds checking)
