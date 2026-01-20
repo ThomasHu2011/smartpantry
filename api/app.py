@@ -272,7 +272,10 @@ else:
 # ML Vision Configuration
 # IMPORTANT: ML models are disabled by default for serverless to reduce function size
 # Enable only if you have sufficient storage and want ML-based detection
-ML_VISION_ENABLED = os.getenv("ML_VISION_ENABLED", "false").lower() == "true"
+# Default to enabled for local/non-serverless so photo detection works out-of-the-box.
+# Keep disabled by default on serverless (Vercel/Render) to reduce cold-start and size pressure.
+_default_ml_vision_enabled = "false" if (IS_VERCEL or IS_RENDER) else "true"
+ML_VISION_ENABLED = os.getenv("ML_VISION_ENABLED", _default_ml_vision_enabled).lower() == "true"
 # For serverless deployments, prefer "classify_only" (smaller) or disable ML entirely
 # ML models (transformers, torch, easyocr) are very large and can exceed function size limits
 ML_VISION_MODE = os.getenv("ML_VISION_MODE", "classify_only").lower()  # hybrid | classify_only
@@ -280,7 +283,8 @@ ML_VISION_MODE = os.getenv("ML_VISION_MODE", "classify_only").lower()  # hybrid 
 # ✅ YOLOv8 Object Detection (Better accuracy than DETR)
 # YOLOv8 provides superior object detection for pantry/fridge images
 # Enable this for better detection accuracy (recommended over DETR)
-YOLO_DETECTION_ENABLED = os.getenv("YOLO_DETECTION_ENABLED", "false").lower() == "true"
+_default_yolo_enabled = "false" if (IS_VERCEL or IS_RENDER) else "true"
+YOLO_DETECTION_ENABLED = os.getenv("YOLO_DETECTION_ENABLED", _default_yolo_enabled).lower() == "true"
 YOLO_MODEL_SIZE = os.getenv("YOLO_MODEL_SIZE", "n").lower()  # n (nano), s (small), m (medium), l (large), x (xlarge)
 
 # Lazy-loaded ML models (keep memory usage lower in serverless)
@@ -2911,6 +2915,12 @@ def validate_category(item_name, category):
     if not name_lower:
         return category or 'other'
     
+    # Normalize common category synonyms from clients/LLMs/UI
+    cat_lower = (category or '').lower().strip()
+    if cat_lower in {'protein', 'proteins', 'protein(s)'}:
+        # Treat protein as meat for UI/UX clarity (and to match existing meat styling)
+        return 'meat'
+
     # Category mapping based on keywords (comprehensive list)
     category_keywords = {
         'dairy': ['milk', 'cheese', 'yogurt', 'butter', 'cream', 'sour cream', 'cottage cheese', 'milk product', 'egg', 'eggs', 'yoghurt', 'mozzarella', 'cheddar', 'swiss', 'gouda', 'brie', 'feta', 'parmesan', 'ricotta', 'cream cheese', 'heavy cream', 'half and half', 'buttermilk', 'sour cream', 'greek yogurt'],
@@ -4484,16 +4494,17 @@ def upload_photo():
         # For anonymous users, use session pantry
         user_pantry = session.get('web_pantry', [])
     
-    # ALWAYS try ML model FIRST, then use OpenAI only if ML finds no items
+    # ALWAYS try local ML/YOLO FIRST (when enabled), then use OpenAI only if ML finds no items
     try:
         detected_items_data = []
         ml_found_items = False
         use_ml = False
         
-        # STEP 1: ALWAYS try ML first (if ML_VISION_ENABLED is true)
-        if ML_VISION_ENABLED:
+        # STEP 1: Try ML pipeline if either ML vision or YOLO is enabled.
+        # (YOLO can run even when ML_VISION_ENABLED is false; it has its own flag + lazy loader.)
+        if ML_VISION_ENABLED or YOLO_DETECTION_ENABLED:
             try:
-                print(f"🔍 STEP 1: Using ML model FIRST for detection (ML_VISION_ENABLED={ML_VISION_ENABLED})")
+                print(f"🔍 STEP 1: Using ML/YOLO FIRST for detection (ML_VISION_ENABLED={ML_VISION_ENABLED}, YOLO_DETECTION_ENABLED={YOLO_DETECTION_ENABLED})")
                 detected_items_data = detect_food_items_with_ml(img_bytes, user_pantry=user_pantry)
                 
                 if detected_items_data and len(detected_items_data) > 0:
@@ -6100,7 +6111,11 @@ def api_delete_item(item_id):
     print(f"X-Client-Type: {request.headers.get('X-Client-Type', 'NOT PROVIDED')}")
     
     client_type = request.headers.get('X-Client-Type', 'web')
+    # Try headers first (mobile), then fall back to session (web)
     user_id = request.headers.get('X-User-ID')
+    if not user_id and 'user_id' in session:
+        user_id = session.get('user_id')
+        print(f"✅ Using user_id from session: {user_id}")
     
     # URL decode the item_id
     from urllib.parse import unquote
@@ -6109,7 +6124,11 @@ def api_delete_item(item_id):
     
     # Check if user is authenticated
     if user_id:
-        pantry_to_use = get_user_pantry(user_id)
+        try:
+            pantry_to_use = get_user_pantry(user_id)
+        except Exception as e:
+            print(f"❌ Error loading user pantry: {e}")
+            return jsonify({'success': False, 'error': f'Failed to load pantry: {str(e)}'}), 500
         # Convert to list of dicts if needed
         pantry_list = []
         for item in pantry_to_use:
@@ -6166,7 +6185,16 @@ def api_delete_item(item_id):
             return jsonify({'success': False, 'error': f'Item not found in pantry'}), 404
     else:
         # Use anonymous pantry
-        pantry_to_use = mobile_pantry if client_type == 'mobile' else web_pantry
+        # For web clients, get from session first (session persists across requests)
+        if client_type == 'mobile':
+            pantry_to_use = mobile_pantry
+        else:
+            # For web clients, get from session first (session persists across requests)
+            if 'web_pantry' not in session:
+                session['web_pantry'] = []
+            pantry_to_use = session.get('web_pantry', [])
+            # Also sync global variable for consistency
+            web_pantry = pantry_to_use
         # Ensure pantry_to_use is a list
         if not isinstance(pantry_to_use, list):
             pantry_to_use = []
@@ -6282,7 +6310,11 @@ def api_update_item(item_id):
     if quantity_num <= 0:
         # Delete the item
         if user_id:
-            pantry_to_use = get_user_pantry(user_id)
+            try:
+                pantry_to_use = get_user_pantry(user_id)
+            except Exception as e:
+                print(f"❌ Error loading user pantry: {e}")
+                return jsonify({'success': False, 'error': f'Failed to load pantry: {str(e)}'}), 500
             pantry_list.clear()  # Use clear() instead of reassignment
             item_found = False
             item_id_clean = item_id.strip() if item_id else ''
@@ -6354,7 +6386,7 @@ def api_update_item(item_id):
                     # Match by ID or name (if ID is empty or 'unknown', match by name only)
                     if (item_id_clean and item_id_from_dict and item_id_from_dict == item_id_clean) or item_name_from_dict == item_name_lower:
                         item_found = True
-                        pass
+                        continue  # Skip adding this item to pantry_list (effectively deletes it)
                     pantry_list.append(item)
                 else:
                     pantry_list.append({
@@ -6404,7 +6436,11 @@ def api_update_item(item_id):
     # Check if user is authenticated
     if user_id:
         print(f"✅ User authenticated: {user_id}")
-        pantry_to_use = get_user_pantry(user_id)
+        try:
+            pantry_to_use = get_user_pantry(user_id)
+        except Exception as e:
+            print(f"❌ Error loading user pantry: {e}")
+            return jsonify({'success': False, 'error': f'Failed to load pantry: {str(e)}'}), 500
         print(f"📦 User pantry has {len(pantry_to_use) if isinstance(pantry_to_use, list) else 0} items")
         # Convert to list of dicts if needed - create new list to avoid scope issues
         pantry_list = []

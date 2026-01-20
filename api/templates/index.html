@@ -1882,17 +1882,12 @@
         padding: 0;
     }
     
-    @media (max-width: 768px) {
-        .pantry-grid {
-            grid-template-columns: 1fr;
-            gap: 16px;
-        }
+    /* Keep multi-column on tablets; only collapse to 1 column on very small screens */
+    @media (max-width: 991px) {
+        .pantry-grid { grid-template-columns: repeat(2, 1fr); gap: 16px; }
     }
-    
-    @media (min-width: 769px) and (max-width: 1199px) {
-        .pantry-grid {
-            grid-template-columns: repeat(2, 1fr);
-        }
+    @media (max-width: 576px) {
+        .pantry-grid { grid-template-columns: 1fr; }
     }
     
     /* Modern pantry item card */
@@ -2473,7 +2468,8 @@
                         {% set quantity = quantity if quantity else '1' %}
                         {% set item_id = (item.get('id', '') if item|is_dict else '')|string|trim %}
                         {% set added_date = (item.get('addedDate', '') if item|is_dict else '')|string|trim %}
-                        {% set item_category = (item.get('category', 'other') if item|is_dict else 'other')|lower|trim %}
+                        {% set item_category_raw = (item.get('category', 'other') if item|is_dict else 'other')|lower|trim %}
+                        {% set item_category = 'meat' if item_category_raw in ['protein', 'proteins'] else item_category_raw %}
                         
                         <div class="pantry-item-wrapper" 
                              data-item-name="{{ item_name|lower|default('unnamed') }}"
@@ -2502,7 +2498,7 @@
                                             {% elif item_category == 'produce' or item_category == 'vegetables' or item_category == 'fruits' %}
                                             <i class="bi bi-apple"></i>
                                             {% elif item_category == 'meat' or item_category == 'proteins' %}
-                                            <i class="bi bi-heart-fill"></i>
+                                            <i class="bi bi-egg-fried"></i>
                                             {% elif item_category == 'beverages' %}
                                             <i class="bi bi-cup-hot"></i>
                                             {% elif item_category == 'bakery' %}
@@ -2527,21 +2523,21 @@
                                         <!-- Delete Button -->
                                         <button type="button" class="item-delete-btn delete-item-btn" 
                                                 title="Remove item" 
-                                                data-item-name="{{ item_name }}">
+                                                data-item-name="{{ item_name }}"
+                                                data-item-id="{{ item_id|default('') }}">
                                             <i class="bi bi-trash3-fill"></i>
                                         </button>
                                             </div>
                                             
                                     <!-- Metadata Row -->
                                     <div class="item-metadata">
-                                                    {% if item_id and item_id.strip() %}
                                         <!-- Editable Quantity -->
                                         <span class="metadata-badge quantity-badge editable-quantity" 
-                                                          data-item-id="{{ item_id }}"
+                                                          data-item-id="{{ item_id|default('') }}"
                                                           data-item-name="{{ item_name }}"
                                                           data-current-quantity="{{ quantity }}"
                                                           data-expiration-date="{{ exp_date }}"
-                                                          data-added-date="{{ item.get('addedDate', '') if item.get('addedDate') else '' }}"
+                                                          data-added-date="{{ added_date if added_date else '' }}"
                                               title="Click to edit quantity">
                                             <i class="bi bi-hash"></i>
                                             <span class="quantity-value">{{ quantity }}</span>
@@ -2550,11 +2546,11 @@
                                         <!-- Editable Expiration -->
                                                 {% if exp_date and exp_date != 'None' and exp_date != '' %}
                                         <span class="metadata-badge expiration-badge-modern fresh editable-expiration" 
-                                                              data-item-id="{{ item_id }}"
+                                                              data-item-id="{{ item_id|default('') }}"
                                                               data-item-name="{{ item_name }}"
                                                               data-current-quantity="{{ quantity }}"
                                                               data-current-expiration="{{ exp_date }}"
-                                                              data-added-date="{{ item.get('addedDate', '') if item.get('addedDate') else '' }}"
+                                                              data-added-date="{{ added_date if added_date else '' }}"
                                                               data-exp-date="{{ exp_date }}" 
                                               title="Click to edit expiration">
                                             <i class="bi bi-calendar3"></i>
@@ -2565,29 +2561,16 @@
                                                         </span>
                                                         {% else %}
                                         <span class="metadata-badge expiration-badge-modern none editable-expiration" 
-                                                              data-item-id="{{ item_id }}"
+                                                              data-item-id="{{ item_id|default('') }}"
                                                               data-item-name="{{ item_name }}"
                                                               data-current-quantity="{{ quantity }}"
                                                               data-current-expiration=""
-                                                              data-added-date="{{ item.get('addedDate', '') if item.get('addedDate') else '' }}"
+                                                              data-added-date="{{ added_date if added_date else '' }}"
                                               title="Click to add expiration">
                                             <i class="bi bi-calendar-plus"></i>
                                                             <span class="expiration-value">Add Date</span>
                                                         </span>
                                                 {% endif %}
-                                                                        {% else %}
-                                        <!-- Non-editable badges -->
-                                        <span class="metadata-badge quantity-badge">
-                                            <i class="bi bi-hash"></i>{{ quantity }}
-                                                            </span>
-                                        {% if exp_date and exp_date != 'None' and exp_date != '' %}
-                                        <span class="metadata-badge expiration-badge-modern fresh" data-exp-date="{{ exp_date }}">
-                                            <i class="bi bi-calendar3"></i>
-                                            {% set date_str = exp_date|trim %}
-                                            {% if date_str|length >= 10 %}{{ date_str[:10] }}{% else %}No Date{% endif %}
-                                                        </span>
-                                            {% endif %}
-                                            {% endif %}
                                     </div>
                                 </div>
                             </div>
@@ -4822,7 +4805,7 @@
     }
     
     // Show AI confidence modal with all detected items
-    function showAIConfidenceModal(allItems, autoAdded, highConfItems, lowConfItems) {
+    function showAIConfidenceModal(allItems, autoAdded, highConfItems, lowConfItems, forceRecreate = false) {
         // Debug: Log what we received
         console.log('showAIConfidenceModal called with:', {
             allItemsCount: allItems ? allItems.length : 0,
@@ -4866,7 +4849,7 @@
         });
         
         // Create or get AI confidence modal
-        let confidenceModal = document.getElementById('aiConfidenceModal');
+        let confidenceModal = forceRecreate ? null : document.getElementById('aiConfidenceModal');
         let modalNeedsSetup = false;
         if (!confidenceModal) {
             modalNeedsSetup = true;
@@ -5342,7 +5325,17 @@
             } else {
                 console.error('❌ Modal body not found! Modal structure may be corrupted.');
                 console.error('Modal HTML:', confidenceModal.innerHTML.substring(0, 1000));
-                throw new Error('Modal structure is invalid. Cannot populate items list.');
+                // Hard fallback: recreate modal once instead of throwing (prevents "Could not show verification window")
+                if (!forceRecreate) {
+                    try {
+                        confidenceModal.remove();
+                    } catch (e) {
+                        // ignore
+                    }
+                    return showAIConfidenceModal(allItems, autoAdded, highConfItems, lowConfItems, true);
+                }
+                showFeedback('Error displaying detected items. Please refresh and try again.', 'danger');
+                return;
             }
         }
         
@@ -7274,6 +7267,7 @@
     // Reload pantry items without refreshing the page
     // Make reloadPantryItems globally accessible
     let reloadInProgress = false;  // Prevent concurrent reloads
+    let reloadTimeoutId = null;  // Timeout to reset flag if reload gets stuck
     
     // New function: Reload pantry items directly from API endpoint (more reliable)
     window.reloadPantryItemsFromAPI = async function reloadPantryItemsFromAPI() {
@@ -7371,7 +7365,7 @@
                 const catLower = (category || 'other').toLowerCase().trim();
                 if (catLower === 'dairy') return '<i class="bi bi-cup-straw" style="font-size: 1.5rem; color: #8B5CF6;"></i>';
                 if (catLower === 'produce' || catLower === 'vegetables' || catLower === 'fruits') return '<i class="bi bi-apple" style="font-size: 1.5rem; color: #8B5CF6;"></i>';
-                if (catLower === 'meat' || catLower === 'proteins') return '<i class="bi bi-heart-fill" style="font-size: 1.5rem; color: #8B5CF6;"></i>';
+                if (catLower === 'meat' || catLower === 'proteins' || catLower === 'protein') return '<i class="bi bi-egg-fried" style="font-size: 1.5rem; color: #8B5CF6;"></i>';
                 if (catLower === 'beverages') return '<i class="bi bi-cup-hot" style="font-size: 1.5rem; color: #8B5CF6;"></i>';
                 if (catLower === 'bakery') return '<i class="bi bi-bread-slice" style="font-size: 1.5rem; color: #8B5CF6;"></i>';
                 if (catLower === 'canned goods' || catLower === 'canned_goods') return '<i class="bi bi-box" style="font-size: 1.5rem; color: #8B5CF6;"></i>';
@@ -7388,7 +7382,8 @@
                 const categoryMap = {
                     'fruits': { name: 'Fruits', gradient: 'linear-gradient(135deg, rgba(245, 158, 11, 0.12) 0%, rgba(217, 119, 6, 0.1) 100%)', color: '#92400E' },
                     'vegetables': { name: 'Vegetables', gradient: 'linear-gradient(135deg, rgba(16, 185, 129, 0.12) 0%, rgba(5, 150, 105, 0.1) 100%)', color: '#047857' },
-                    'proteins': { name: 'Proteins', gradient: 'linear-gradient(135deg, rgba(239, 68, 68, 0.12) 0%, rgba(220, 38, 38, 0.1) 100%)', color: '#991B1B' },
+                    'proteins': { name: 'Meat', gradient: 'linear-gradient(135deg, rgba(239, 68, 68, 0.12) 0%, rgba(220, 38, 38, 0.1) 100%)', color: '#991B1B' },
+                    'protein': { name: 'Meat', gradient: 'linear-gradient(135deg, rgba(239, 68, 68, 0.12) 0%, rgba(220, 38, 38, 0.1) 100%)', color: '#991B1B' },
                     'meat': { name: 'Meat', gradient: 'linear-gradient(135deg, rgba(239, 68, 68, 0.12) 0%, rgba(220, 38, 38, 0.1) 100%)', color: '#991B1B' },
                     'dairy': { name: 'Dairy', gradient: 'linear-gradient(135deg, rgba(59, 130, 246, 0.12) 0%, rgba(37, 99, 235, 0.1) 100%)', color: '#1E40AF' },
                     'grains': { name: 'Grains', gradient: 'linear-gradient(135deg, rgba(139, 92, 246, 0.12) 0%, rgba(124, 58, 237, 0.1) 100%)', color: '#6D28D9' },
@@ -7596,6 +7591,17 @@
             return;
         }
         reloadInProgress = true;
+        
+        // Set timeout to reset flag if reload gets stuck (30 seconds)
+        if (reloadTimeoutId) {
+            clearTimeout(reloadTimeoutId);
+        }
+        reloadTimeoutId = setTimeout(() => {
+            if (reloadInProgress) {
+                console.warn('⚠️ Reload timeout - resetting flag');
+                reloadInProgress = false;
+            }
+        }, 30000);
         
         // Ensure we have a valid container before proceeding
         const container = document.getElementById('pantryItemsContainer');
@@ -8127,6 +8133,10 @@
         } finally {
             // Always reset the reload flag
             reloadInProgress = false;
+            if (reloadTimeoutId) {
+                clearTimeout(reloadTimeoutId);
+                reloadTimeoutId = null;
+            }
             
             // CRITICAL: Update empty state and stats after reload completes
             setTimeout(() => {
