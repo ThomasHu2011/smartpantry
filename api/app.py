@@ -4433,38 +4433,44 @@ def upload_photo():
         # For anonymous users, use session pantry
         user_pantry = session.get('web_pantry', [])
     
-    # Try ML vision FIRST (if enabled), fallback to OpenAI only if ML fails or is disabled
-    detected_items_data = []
-    use_ml = ML_VISION_ENABLED
-    
-    # ALWAYS try ML first if enabled (priority over OpenAI)
-    if use_ml:
-        try:
-            print(f"🔍 Using ML model FIRST for detection (ML_VISION_ENABLED={ML_VISION_ENABLED})")
-            detected_items_data = detect_food_items_with_ml(img_bytes, user_pantry=user_pantry)
-            
-            if detected_items_data and len(detected_items_data) > 0:
-                print(f"✅ ML model detected {len(detected_items_data)} items - using ML results")
-                # ML model succeeded - use its results, don't fall back to OpenAI
-                use_ml = True
-            else:
-                # ML returned empty results - fall back to OpenAI if available
-                print(f"⚠️ ML model found no items, falling back to OpenAI")
-                use_ml = False
-        except Exception as e:
-            print(f"❌ ML vision failed: {e}")
-            import traceback
-            if VERBOSE_LOGGING:
-                traceback.print_exc()
-            print(f"⚠️ Falling back to OpenAI after ML failure")
-            use_ml = False
-
-    if not use_ml:
-        # Send image to OpenAI vision API
-        import base64
-        img_b64 = base64.b64encode(img_bytes).decode('utf-8')
+    # ALWAYS try ML model FIRST, then use OpenAI only if ML finds no items
+    try:
+        detected_items_data = []
+        ml_found_items = False
+        use_ml = False
         
-        prompt = """You are an expert food recognition system analyzing a pantry/fridge photo. Identify EVERY food item with maximum accuracy. BE AGGRESSIVE - include items even if you're slightly uncertain.
+        # STEP 1: ALWAYS try ML first (if ML_VISION_ENABLED is true)
+        if ML_VISION_ENABLED:
+            try:
+                print(f"🔍 STEP 1: Using ML model FIRST for detection (ML_VISION_ENABLED={ML_VISION_ENABLED})")
+                detected_items_data = detect_food_items_with_ml(img_bytes, user_pantry=user_pantry)
+                
+                if detected_items_data and len(detected_items_data) > 0:
+                    print(f"✅ ML model detected {len(detected_items_data)} items - using ML results")
+                    ml_found_items = True
+                    use_ml = True
+                else:
+                    # ML returned empty results - will fall back to OpenAI
+                    print(f"⚠️ ML model found no items, will use OpenAI as fallback")
+                    ml_found_items = False
+                    detected_items_data = []  # Clear empty results
+            except Exception as e:
+                print(f"❌ ML vision failed: {e}")
+                import traceback
+                if VERBOSE_LOGGING:
+                    traceback.print_exc()
+                print(f"⚠️ ML failed, will use OpenAI as fallback")
+                ml_found_items = False
+                detected_items_data = []  # Clear failed results
+        
+        # STEP 2: Use OpenAI ONLY if ML didn't find any items
+        if not ml_found_items:
+            print(f"🔍 STEP 2: Using OpenAI as fallback (ML found no items)")
+            # Send image to OpenAI vision API
+            import base64
+            img_b64 = base64.b64encode(img_bytes).decode('utf-8')
+            
+            prompt = """You are an expert food recognition system analyzing a pantry/fridge photo. Identify EVERY food item with maximum accuracy. BE AGGRESSIVE - include items even if you're slightly uncertain.
 
 SCAN THE ENTIRE IMAGE SYSTEMATICALLY:
     - Look at ALL areas: foreground, background, shelves, containers, bags, boxes, drawers, doors
@@ -4550,9 +4556,7 @@ Example 2: Image shows 3 cans of soup and a box of pasta
 
 Return ONLY valid JSON (no markdown, no code blocks, no explanations):
     {"items": [{"name": "...", "quantity": "...", "expirationDate": "YYYY-MM-DD or null", "category": "..."}]}"""
-    
-    try:
-        if not use_ml:
+            
             if not client:
                 raise ValueError("OpenAI API key not configured. Please set OPENAI_API_KEY in your .env file.")
             
@@ -4577,7 +4581,6 @@ Return ONLY valid JSON (no markdown, no code blocks, no explanations):
                 error_type = type(api_error).__name__
                 error_msg = str(api_error)
                 if VERBOSE_LOGGING:
-
                     print(f"OpenAI API error ({error_type}): {error_msg}")
                 
                 # Provide user-friendly error messages
@@ -4597,6 +4600,7 @@ Return ONLY valid JSON (no markdown, no code blocks, no explanations):
             
             # Parse JSON response with improved error handling
             detected_items_data = parse_api_response_with_retry(food_response)
+            print(f"✅ OpenAI detected {len(detected_items_data) if detected_items_data else 0} items")
         
         # Normalize and validate all items with partial recognition and expiration risk
         # If ML model was used, preserve confidence values from ML model
@@ -4727,27 +4731,26 @@ Return ONLY valid JSON (no markdown, no code blocks, no explanations):
                 normalized_exp_date = None
                 if expiration_date:
                     normalized_exp_date = normalize_expiration_date(str(expiration_date))
-            
-            # Calculate expiration risk (days until expiration)
-            expiration_risk = None
-            if normalized_exp_date:
-                try:
-                    exp_date_obj = datetime.strptime(normalized_exp_date, '%Y-%m-%d')
-                    today = datetime.now()
-                    days_until_exp = (exp_date_obj - today).days
-                    if days_until_exp < 0:
-                        expiration_risk = 'expired'
-                    elif days_until_exp <= 3:
-                        expiration_risk = 'critical'  # 0-3 days
-                    elif days_until_exp <= 7:
-                        expiration_risk = 'high'  # 4-7 days
-                    elif days_until_exp <= 14:
-                        expiration_risk = 'medium'  # 8-14 days
-                    else:
-                        expiration_risk = 'low'  # >14 days
-                    pass
-                except Exception:
-                    pass
+                
+                # Calculate expiration risk (days until expiration)
+                expiration_risk = None
+                if normalized_exp_date:
+                    try:
+                        exp_date_obj = datetime.strptime(normalized_exp_date, '%Y-%m-%d')
+                        today = datetime.now()
+                        days_until_exp = (exp_date_obj - today).days
+                        if days_until_exp < 0:
+                            expiration_risk = 'expired'
+                        elif days_until_exp <= 3:
+                            expiration_risk = 'critical'  # 0-3 days
+                        elif days_until_exp <= 7:
+                            expiration_risk = 'high'  # 4-7 days
+                        elif days_until_exp <= 14:
+                            expiration_risk = 'medium'  # 8-14 days
+                        else:
+                            expiration_risk = 'low'  # >14 days
+                    except Exception:
+                        pass
                 
                 pantry_items.append({
                     'id': str(uuid.uuid4()),
@@ -4760,17 +4763,17 @@ Return ONLY valid JSON (no markdown, no code blocks, no explanations):
                     'is_partial': is_partial,  # Flag for partial recognition
                     'expiration_risk': expiration_risk  # Risk level for expiration
                 })
-            
-            # Remove duplicates (case-insensitive)
-            seen_names = set()
-            unique_items = []
-            for item in pantry_items:
-                name_lower = item['name'].lower()
-                if name_lower not in seen_names:
-                    seen_names.add(name_lower)
-                    unique_items.append(item)
-            
-            pantry_items = unique_items
+        
+        # Remove duplicates (case-insensitive)
+        seen_names = set()
+        unique_items = []
+        for item in pantry_items:
+            name_lower = item['name'].lower()
+            if name_lower not in seen_names:
+                seen_names.add(name_lower)
+                unique_items.append(item)
+        
+        pantry_items = unique_items
         
         # Add to appropriate pantry based on user authentication
         if 'user_id' in session and session.get('user_id'):
@@ -6887,18 +6890,22 @@ def api_upload_photo():
             # For web anonymous users, use session pantry
             user_pantry = session.get('web_pantry', [])
         
-        # Try ML vision FIRST (if enabled), fallback to OpenAI only if ML fails or is disabled
+        # ALWAYS try ML model FIRST, then use OpenAI only if ML finds no items
         detected_items_data = []
         pantry_items = []  # Initialize pantry_items early
-        use_ml = ML_VISION_ENABLED
+        ml_found_items = False
+        use_ml = False
         
-        if use_ml:
+        # STEP 1: ALWAYS try ML first (if ML_VISION_ENABLED is true)
+        if ML_VISION_ENABLED:
             try:
-                print(f"🔍 Using ML model for detection (ML_VISION_ENABLED={ML_VISION_ENABLED})")
+                print(f"🔍 STEP 1: Using ML model FIRST for detection (ML_VISION_ENABLED={ML_VISION_ENABLED})")
                 detected_items_data = detect_food_items_with_ml(img_bytes, user_pantry=user_pantry)
                 
                 if detected_items_data and len(detected_items_data) > 0:
-                    print(f"✅ ML model detected {len(detected_items_data)} items")
+                    print(f"✅ ML model detected {len(detected_items_data)} items - using ML results")
+                    ml_found_items = True
+                    use_ml = True
                     # Process ML detection results into pantry_items format
                     for item in detected_items_data:
                         try:
@@ -6989,19 +6996,25 @@ def api_upload_photo():
                     
                     pantry_items = unique_items
                     print(f"✅ ML detection processed: {len(pantry_items)} unique items")
-                    use_ml = True  # Keep ML enabled since it worked
                 else:
-                    # ML returned empty results - fall back to OpenAI if available
-                    print(f"⚠️ ML model found no items, falling back to OpenAI")
-                    use_ml = False
+                    # ML returned empty results - will fall back to OpenAI
+                    print(f"⚠️ ML model found no items, will use OpenAI as fallback")
+                    ml_found_items = False
+                    detected_items_data = []  # Clear empty results
+                    pantry_items = []  # Clear pantry_items
             except Exception as e:
                 print(f"❌ ML vision failed: {e}")
                 import traceback
                 if VERBOSE_LOGGING:
                     traceback.print_exc()
-                use_ml = False
-
-        if not use_ml:
+                print(f"⚠️ ML failed, will use OpenAI as fallback")
+                ml_found_items = False
+                detected_items_data = []  # Clear failed results
+                pantry_items = []  # Clear pantry_items
+        
+        # STEP 2: Use OpenAI ONLY if ML didn't find any items
+        if not ml_found_items:
+            print(f"🔍 STEP 2: Using OpenAI as fallback (ML found no items)")
             # Send image to OpenAI vision API
             import base64
             img_b64 = base64.b64encode(img_bytes).decode('utf-8')
@@ -7092,8 +7105,7 @@ Example 2: Image shows 3 cans of soup and a box of pasta
 
 Return ONLY valid JSON (no markdown, no code blocks, no explanations):
     {"items": [{"name": "...", "quantity": "...", "expirationDate": "YYYY-MM-DD or null", "category": "..."}]}"""
-        
-        if not use_ml:
+            
             if not client:
                 return jsonify({
                     'success': False,
@@ -7121,7 +7133,6 @@ Return ONLY valid JSON (no markdown, no code blocks, no explanations):
                 error_type = type(api_error).__name__
                 error_msg = str(api_error)
                 if VERBOSE_LOGGING:
-
                     print(f"OpenAI API error ({error_type}): {error_msg}")
                 
                 # Provide user-friendly error messages
@@ -7156,6 +7167,7 @@ Return ONLY valid JSON (no markdown, no code blocks, no explanations):
             
             # Parse JSON response with improved error handling
             detected_items_data = parse_api_response_with_retry(food_response)
+            print(f"✅ OpenAI detected {len(detected_items_data) if detected_items_data else 0} items")
             
             # Normalize and validate all items
             pantry_items = []
