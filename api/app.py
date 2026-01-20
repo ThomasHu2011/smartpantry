@@ -4974,7 +4974,6 @@ Return ONLY valid JSON (no markdown, no code blocks, no explanations):
                     item['confidence'] = 0.5
                 # Ensure id exists
                 if 'id' not in item or not item['id']:
-                    import uuid
                     item['id'] = str(uuid.uuid4())
             
             # Separate partial recognition items

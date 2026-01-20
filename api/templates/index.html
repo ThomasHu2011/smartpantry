@@ -1877,7 +1877,7 @@
     /* Responsive pantry grid */
     .pantry-grid {
         display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+        grid-template-columns: repeat(3, 1fr);
         gap: 20px;
         padding: 0;
     }
@@ -1889,7 +1889,7 @@
         }
     }
     
-    @media (min-width: 1200px) {
+    @media (min-width: 769px) and (max-width: 1199px) {
         .pantry-grid {
             grid-template-columns: repeat(2, 1fr);
         }
@@ -2437,18 +2437,6 @@
                                    placeholder="Search your pantry..." 
                                    autocomplete="off">
                         </div>
-                        <!-- Modern Filter Chips -->
-                        <div class="filter-chips-container">
-                            <button type="button" class="filter-chip-modern" data-filter="expiring-soon">
-                                <i class="bi bi-clock-history"></i>Expiring Soon
-                            </button>
-                            <button type="button" class="filter-chip-modern" data-filter="category">
-                                <i class="bi bi-grid-3x3-gap-fill"></i>By Category
-                            </button>
-                            <button type="button" class="filter-chip-modern" data-filter="recent">
-                                <i class="bi bi-plus-circle"></i>Recently Added
-                            </button>
-                        </div>
                     </div>
                     
                     <!-- Sort Controls -->
@@ -2509,14 +2497,31 @@
                                     <!-- Item Header -->
                                     <div class="item-header">
                                         <div class="item-icon-wrapper">
+                                            {% if item_category == 'dairy' %}
+                                            <i class="bi bi-cup-straw"></i>
+                                            {% elif item_category == 'produce' or item_category == 'vegetables' or item_category == 'fruits' %}
+                                            <i class="bi bi-apple"></i>
+                                            {% elif item_category == 'meat' or item_category == 'proteins' %}
+                                            <i class="bi bi-heart-fill"></i>
+                                            {% elif item_category == 'beverages' %}
+                                            <i class="bi bi-cup-hot"></i>
+                                            {% elif item_category == 'bakery' %}
+                                            <i class="bi bi-bread-slice"></i>
+                                            {% elif item_category == 'canned goods' or item_category == 'canned_goods' %}
+                                            <i class="bi bi-box"></i>
+                                            {% elif item_category == 'snacks' %}
+                                            <i class="bi bi-cookie"></i>
+                                            {% elif item_category == 'condiments' %}
+                                            <i class="bi bi-droplet-fill"></i>
+                                            {% elif item_category == 'grains' %}
+                                            <i class="bi bi-database"></i>
+                                            {% elif item_category == 'frozen' %}
+                                            <i class="bi bi-snow"></i>
+                                            {% else %}
                                             <i class="bi bi-box-seam-fill"></i>
+                                            {% endif %}
                                         </div>
                                         <div class="item-info">
-                                            {% if item_category and item_category != 'other' %}
-                                            <span class="item-category-tag" data-category="{{ item_category }}">
-                                                <i class="bi bi-tag-fill"></i>{{ item_category|title }}
-                                            </span>
-                                            {% endif %}
                                             <h6 class="item-name" title="{{ item_name }}">{{ item_name }}</h6>
                                         </div>
                                         <!-- Delete Button -->
@@ -6525,10 +6530,9 @@
                 // Add category header only if we should show them
                 if (showCategoryHeaders) {
                     const categoryHeader = document.createElement('div');
-                    categoryHeader.className = 'col-12';
                     // First category header shouldn't have top margin
                     const marginTop = categoryIndex === 0 ? '0' : '24px';
-                    categoryHeader.style.cssText = `margin-top: ${marginTop}; margin-bottom: 12px; padding: 12px 16px; background: linear-gradient(135deg, rgba(139, 92, 246, 0.08) 0%, rgba(59, 130, 246, 0.05) 100%); border-radius: 12px; border-left: 4px solid ${categoryInfo.color}; width: 100%;`;
+                    categoryHeader.style.cssText = `grid-column: 1 / -1; margin-top: ${marginTop}; margin-bottom: 12px; padding: 12px 16px; background: linear-gradient(135deg, rgba(139, 92, 246, 0.08) 0%, rgba(59, 130, 246, 0.05) 100%); border-radius: 12px; border-left: 4px solid ${categoryInfo.color}; width: 100%;`;
                     categoryHeader.innerHTML = `
                         <div class="d-flex align-items-center gap-2">
                             <i class="bi ${categoryInfo.icon}" style="color: ${categoryInfo.color}; font-size: 1.1rem;"></i>
@@ -6545,12 +6549,7 @@
                     if (card) {
                         card.style.animationDelay = (index * 0.05) + 's';
                     }
-                    // Ensure item maintains proper column class structure (full width)
-                    if (!item.classList.contains('col-12')) {
-                        item.classList.add('col-12');
-                    }
-                    // Remove any multi-column classes
-                    item.classList.remove('col-md-6', 'col-lg-4');
+                    // No need for column classes - grid handles layout
                     container.appendChild(item);
                 });
             });
@@ -6567,12 +6566,7 @@
                 if (card) {
                     card.style.animationDelay = (index * 0.05) + 's';
                 }
-                // Ensure item maintains proper column class structure (full width)
-                if (!item.classList.contains('col-12')) {
-                    item.classList.add('col-12');
-                }
-                // Remove any multi-column classes
-                item.classList.remove('col-md-6', 'col-lg-4');
+                // No need for column classes - grid handles layout
                 container.appendChild(item);
                 
                 // Hide category info
@@ -7840,15 +7834,38 @@
                                         else expBadgeClass = 'fresh';
                                     }
                                     
+                                    // Get category icon (handle both naming conventions)
+                                    let categoryIcon = 'bi-box-seam-fill';
+                                    if (itemCategory === 'dairy') {
+                                        categoryIcon = 'bi-cup-straw';
+                                    } else if (itemCategory === 'produce' || itemCategory === 'vegetables' || itemCategory === 'fruits') {
+                                        categoryIcon = 'bi-apple';
+                                    } else if (itemCategory === 'meat' || itemCategory === 'proteins') {
+                                        categoryIcon = 'bi-heart-fill';
+                                    } else if (itemCategory === 'beverages') {
+                                        categoryIcon = 'bi-cup-hot';
+                                    } else if (itemCategory === 'bakery') {
+                                        categoryIcon = 'bi-bread-slice';
+                                    } else if (itemCategory === 'canned goods' || itemCategory === 'canned_goods') {
+                                        categoryIcon = 'bi-box';
+                                    } else if (itemCategory === 'snacks') {
+                                        categoryIcon = 'bi-cookie';
+                                    } else if (itemCategory === 'condiments') {
+                                        categoryIcon = 'bi-droplet-fill';
+                                    } else if (itemCategory === 'grains') {
+                                        categoryIcon = 'bi-database';
+                                    } else if (itemCategory === 'frozen') {
+                                        categoryIcon = 'bi-snow';
+                                    }
+                                    
                                     card.innerHTML = `
                                         <div class="category-indicator category-${itemCategory}" data-category="${itemCategory}"></div>
                                         <div class="pantry-card-content">
                                             <div class="item-header">
                                                 <div class="item-icon-wrapper">
-                                                    <i class="bi bi-box-seam-fill"></i>
+                                                    <i class="bi ${categoryIcon}"></i>
                                                 </div>
                                                 <div class="item-info">
-                                                    ${itemCategory && itemCategory !== 'other' ? `<span class="item-category-tag" data-category="${itemCategory}"><i class="bi bi-tag-fill"></i>${itemCategory.charAt(0).toUpperCase() + itemCategory.slice(1)}</span>` : ''}
                                                     <h6 class="item-name" title="${itemName}">${itemName}</h6>
                                                 </div>
                                                 <button type="button" class="item-delete-btn delete-item-btn" 
@@ -8798,7 +8815,7 @@
         let expiringCount = 0;
         let expiringItems = [];
         items.forEach(item => {
-            const expirationBadge = item.querySelector('.expiration-badge[data-exp-date]');
+            const expirationBadge = item.querySelector('.expiration-badge-modern[data-exp-date]');
             if (expirationBadge) {
                 const expDate = expirationBadge.getAttribute('data-exp-date');
                 if (expDate && expDate !== '9999-12-31') {
@@ -8941,7 +8958,7 @@
         // Count items with expiration dates
         let itemsWithDates = 0;
         items.forEach(item => {
-            const expirationBadge = item.querySelector('.expiration-badge[data-exp-date]');
+            const expirationBadge = item.querySelector('.expiration-badge-modern[data-exp-date]');
             if (expirationBadge) {
                 const expDate = expirationBadge.getAttribute('data-exp-date');
                 if (expDate && expDate !== '9999-12-31' && expDate !== 'None' && expDate !== '' && expDate !== 'null') {
@@ -9014,164 +9031,24 @@
     }
     
     // Unified function to apply all active filters with AND logic
+    // Note: Filter chips have been removed, so this function now just ensures all items are visible
     function applyAllFilters() {
-            const items = document.querySelectorAll('.pantry-item-wrapper');
-        const activeFilters = [];
+        const items = document.querySelectorAll('.pantry-item-wrapper');
         
-        // Get all active filters
-        document.querySelectorAll('.filter-chip.active').forEach(chip => {
-            activeFilters.push(chip.getAttribute('data-filter'));
+        // Since filter chips are removed, show all items
+        items.forEach(item => {
+            item.style.display = '';
         });
         
-        // If no filters are active, show all items
-        if (activeFilters.length === 0) {
-            items.forEach(item => {
-                item.style.display = '';
-            });
-            
-            // Reset category sort if it was active
-            if (currentSortType === 'category') {
-                if (typeof sortPantry === 'function') {
-                    sortPantry('name');
-                    if (typeof updateSortLabel === 'function') {
-                        updateSortLabel('Name (A-Z)');
-                    }
-                }
-            } else if (currentSortType && typeof sortPantry === 'function') {
-                setTimeout(() => {
-                    sortPantry(currentSortType);
-                }, 50);
-            }
-            return;
-        }
-        
-        // Check if category filter is active (for sorting)
-        const hasCategoryFilter = activeFilters.includes('category');
-        if (hasCategoryFilter) {
-            if (typeof sortPantry === 'function') {
-                sortPantry('category');
-                if (typeof updateSortLabel === 'function') {
-                    updateSortLabel('Category');
-                }
-            }
-        }
-        
-        // Apply all active filters with AND logic
-            items.forEach(item => {
-                let show = true;
-                
-            // Apply expiring-soon filter
-            if (activeFilters.includes('expiring-soon')) {
-                        const expirationBadge = item.querySelector('.expiration-badge[data-exp-date]');
-                        if (expirationBadge) {
-                            const expDate = expirationBadge.getAttribute('data-exp-date');
-                            if (expDate && expDate !== '9999-12-31') {
-                                const daysDiff = getDaysUntilExpiration(expDate);
-                        show = show && (daysDiff >= 0 && daysDiff <= 7);
-                            } else {
-                                show = false;
-                            }
-                        } else {
-                            show = false;
-                        }
-            }
-            
-            // Apply recent filter
-            if (activeFilters.includes('recent') && show) {
-                        const addedDateAttr = item.getAttribute('data-added-date');
-                if (addedDateAttr && addedDateAttr !== '' && addedDateAttr !== 'undefined') {
-                            try {
-                                let addedDate;
-                                if (addedDateAttr.includes('T')) {
-                                    addedDate = new Date(addedDateAttr);
-                        } else {
-                            const dateParts = addedDateAttr.split('-');
-                            if (dateParts.length === 3) {
-                                addedDate = new Date(parseInt(dateParts[0]), parseInt(dateParts[1]) - 1, parseInt(dateParts[2]));
-                                } else {
-                                    addedDate = new Date(addedDateAttr + 'T00:00:00');
-                                }
-                        }
-                        
-                        if (isNaN(addedDate.getTime())) {
-                            show = false; // Invalid date, hide item
-                        } else {
-                                const today = new Date();
-                                today.setHours(0, 0, 0, 0);
-                                addedDate.setHours(0, 0, 0, 0);
-                                const daysDiff = Math.floor((today - addedDate) / (1000 * 60 * 60 * 24));
-                            show = show && (daysDiff >= 0 && daysDiff <= 7);
-                        }
-                            } catch (e) {
-                                console.warn('Error parsing added date:', addedDateAttr, e);
-                        show = false; // Hide item on error
-                            }
-                        } else {
-                    show = false; // No added date, hide item
-                        }
-                    }
-            
-            // Category filter doesn't hide items, it just sorts (handled above)
-                
-                item.style.display = show ? '' : 'none';
-            });
-            
-        // Re-apply sorting after filter change
-        if (hasCategoryFilter && typeof sortPantry === 'function') {
+        // Re-apply current sort if one is active
+        if (currentSortType && typeof sortPantry === 'function') {
             setTimeout(() => {
-                sortPantry('category');
+                sortPantry(currentSortType);
             }, 50);
-        } else if (currentSortType && currentSortType !== 'category' && typeof sortPantry === 'function') {
-                setTimeout(() => {
-                    sortPantry(currentSortType);
-                }, 50);
-        }
-            }
-            
-    // Update filter chip styling
-    function updateFilterChipStyling(chip, isActive) {
-        const filterType = chip.getAttribute('data-filter');
-        
-            if (isActive) {
-            chip.style.background = 'linear-gradient(135deg, rgba(139, 92, 246, 0.2) 0%, rgba(59, 130, 246, 0.2) 100%)';
-            chip.style.borderColor = '#8B5CF6';
-            chip.style.color = '#6D28D9';
-            } else {
-            // Reset to original styling based on filter type
-                if (filterType === 'expiring-soon') {
-                chip.style.background = 'rgba(245, 158, 11, 0.1)';
-                chip.style.borderColor = 'rgba(245, 158, 11, 0.3)';
-                chip.style.color = '#92400E';
-                } else if (filterType === 'category') {
-                chip.style.background = 'rgba(139, 92, 246, 0.1)';
-                chip.style.borderColor = 'rgba(139, 92, 246, 0.3)';
-                chip.style.color = '#6D28D9';
-                } else if (filterType === 'recent') {
-                chip.style.background = 'rgba(59, 130, 246, 0.1)';
-                chip.style.borderColor = 'rgba(59, 130, 246, 0.3)';
-                chip.style.color = '#1E40AF';
-                } else {
-                chip.style.background = '';
-                chip.style.borderColor = '';
-                chip.style.color = '';
-            }
         }
     }
     
-    // Filter functionality with support for multiple active filters
-    document.querySelectorAll('.filter-chip').forEach(chip => {
-        chip.addEventListener('click', function() {
-            const filter = this.getAttribute('data-filter');
-            this.classList.toggle('active');
-            const isActive = this.classList.contains('active');
-            
-            // Update styling
-            updateFilterChipStyling(this, isActive);
-            
-            // Apply all filters (this will handle combinations)
-            applyAllFilters();
-        });
-    });
+    // Filter chips have been removed - no event listeners needed
     
     // Helper function to get days until expiration
     function getDaysUntilExpiration(expDate) {
