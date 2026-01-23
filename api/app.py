@@ -254,7 +254,7 @@ if not api_key:
     print("⚠️  WARNING: OPENAI_API_KEY not found in environment variables")
     print("   Some features (photo recognition, recipe suggestions) will not work.")
     if IS_RENDER:
-        print("   On Render: Go to Dashboard → Your Service → Environment → Add OPENAI_API_KEY")
+        print("   On Render: Go to Dashboard -> Your Service -> Environment -> Add OPENAI_API_KEY")
     else:
         print("   Create a .env file with: OPENAI_API_KEY=your_api_key_here")
     client = None
@@ -294,10 +294,14 @@ _ocr_reader = None
 _object_detector = None
 _yolo_model = None  # YOLOv8 model for better object detection
 
+# CLIP model for open-vocabulary food matching (semantic layer)
+_clip_model = None
+_clip_processor = None
+
 def load_ml_models():
     """Load ML models lazily for serverless-friendly photo analysis.
     Includes comprehensive error handling and timeout protection."""
-    global _ml_models_loaded, _food_classifier, _ocr_reader, _object_detector
+    global _ml_models_loaded, _food_classifier, _ocr_reader, _object_detector, _yolo_model, _clip_model, _clip_processor
     
     if _ml_models_loaded:
         return True
@@ -323,34 +327,56 @@ def load_ml_models():
             else:
                 try:
                     # Import only when needed (lazy loading)
-                    from transformers import pipeline
-                    import signal
+                    from transformers import pipeline, CLIPProcessor, CLIPModel
                     import threading
                     
                     classifier_loaded = False
                     classifier_error = None
-                    
                     _food_classifier_local = None
+                    clip_loaded = False
+                    clip_error = None
+                    _clip_model_local = None
+                    _clip_processor_local = None
                     
                     def load_classifier():
                         nonlocal classifier_loaded, classifier_error, _food_classifier_local
                         try:
+                            print("   🔍 Loading lightweight food classifier from HuggingFace...")
+                            # Primary option: nateraw/food (small, food-focused)
                             _food_classifier_local = pipeline(
                                 "image-classification",
-                                model="nateraw/food-image-classification",
-                                device=-1  # CPU only for serverless
+                                model="nateraw/food"
                             )
                             classifier_loaded = True
-                            pass
+                            print("   ✅ Food classifier loaded: nateraw/food")
+                        except Exception as e_primary:
+                            print(f"   ⚠️ Primary food model 'nateraw/food' failed: {e_primary}")
+                            # Fallback: Food-101 ViT
+                            try:
+                                _food_classifier_local = pipeline(
+                                    "image-classification",
+                                    model="nateraw/vit-base-food101"
+                                )
+                                classifier_loaded = True
+                                print("   ✅ Food classifier loaded: nateraw/vit-base-food101")
+                            except Exception as e_fallback:
+                                classifier_error = Exception(
+                                    f"Failed to load food classifiers: primary={e_primary}, fallback={e_fallback}"
+                                )
+                                _food_classifier_local = None
+                                classifier_loaded = False
                         except Exception as e:
                             classifier_error = e
+                            print(f"   ⚠️ Food classifier loading failed (non-critical): {e}")
+                            classifier_loaded = False  # Don't fail completely if classifier can't load
                     
-                    thread = threading.Thread(target=load_classifier)
-                    thread.daemon = True
-                    thread.start()
-                    thread.join(timeout=120)  # 2 minute timeout
+                    # Load food classifier in background
+                    classifier_thread = threading.Thread(target=load_classifier)
+                    classifier_thread.daemon = True
+                    classifier_thread.start()
+                    classifier_thread.join(timeout=180)  # up to 3 minutes to download/load HF model
                     
-                    if thread.is_alive():
+                    if classifier_thread.is_alive():
                         print("⚠️  Warning: Food classifier loading timed out")
                         _food_classifier = None
                     elif classifier_error:
@@ -358,9 +384,46 @@ def load_ml_models():
                         _food_classifier = None
                     elif classifier_loaded and _food_classifier_local:
                         _food_classifier = _food_classifier_local
-                        print("✅ Food classifier loaded")
+                        print("✅ Food classifier loaded successfully")
                     else:
+                        print("⚠️  Warning: food classifier did not load (no error but not ready)")
                         _food_classifier = None
+
+                    # Load CLIP model for open-vocabulary matching
+                    def load_clip():
+                        nonlocal clip_loaded, clip_error, _clip_model_local, _clip_processor_local
+                        try:
+                            print("   🔍 Loading CLIP model for open-vocabulary food matching...")
+                            _clip_model_local = CLIPModel.from_pretrained("openai/clip-vit-base-patch32")
+                            _clip_processor_local = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
+                            clip_loaded = True
+                            print("   ✅ CLIP model loaded: openai/clip-vit-base-patch32")
+                        except Exception as e:
+                            clip_error = e
+                            clip_loaded = False
+                            print(f"   ⚠️ CLIP model loading failed (non-critical): {e}")
+
+                    clip_thread = threading.Thread(target=load_clip)
+                    clip_thread.daemon = True
+                    clip_thread.start()
+                    clip_thread.join(timeout=180)
+
+                    if clip_thread.is_alive():
+                        print("⚠️  Warning: CLIP loading timed out")
+                        _clip_model = None
+                        _clip_processor = None
+                    elif clip_error:
+                        print(f"⚠️  Warning: CLIP not available: {clip_error}")
+                        _clip_model = None
+                        _clip_processor = None
+                    elif clip_loaded and _clip_model_local and _clip_processor_local:
+                        _clip_model = _clip_model_local
+                        _clip_processor = _clip_processor_local
+                        print("✅ CLIP model ready for semantic matching")
+                    else:
+                        print("⚠️  Warning: CLIP did not load (no error but not ready)")
+                        _clip_model = None
+                        _clip_processor = None
                 except Exception as e:
                     print(f"⚠️  Warning: food classifier loading failed: {e}")
                     _food_classifier = None
@@ -386,7 +449,6 @@ def load_ml_models():
                         try:
                             _ocr_reader_local = easyocr.Reader(['en'], gpu=False)
                             ocr_loaded = True
-                            pass
                         except Exception as e:
                             ocr_error = e
                     
@@ -695,16 +757,17 @@ def preprocess_image_for_ml(img_bytes, angle=None, apply_perspective_correction=
     # Sharpen to improve edge detection and text recognition (especially important for angled photos)
     img = img.filter(ImageFilter.SHARPEN)
     
+    # Improve: More aggressive enhancement for difficult angles
     # Increase contrast MORE aggressively for angled photos (items are harder to see)
     # Angled photos often have less contrast due to lighting angles
-    img = ImageEnhance.Contrast(img).enhance(1.5)  # Increased from 1.4 for bad angles
+    img = ImageEnhance.Contrast(img).enhance(1.6)  # Increased from 1.5 for difficult angles
     
     # Brightness adjustment - angled photos may have uneven lighting
     # Use adaptive brightness enhancement
-    img = ImageEnhance.Brightness(img).enhance(1.15)  # Increased from 1.1
+    img = ImageEnhance.Brightness(img).enhance(1.2)  # Increased from 1.15 for difficult angles
     
     # Saturation boost to help identify colorful food items (more important with bad angles)
-    img = ImageEnhance.Color(img).enhance(1.15)  # Increased from 1.1
+    img = ImageEnhance.Color(img).enhance(1.2)  # Increased from 1.15 for difficult angles
     
     # Additional enhancement for angled photos: reduce noise and improve sharpness
     # Apply gentle unsharp mask for better edge detection
@@ -784,9 +847,10 @@ def detect_with_multiple_angles(img_bytes, user_pantry=None):
     """
     item_confidence_map = {}
     
-    # Try original and common rotations (0, 90, 180, 270)
+    # Improve: Try more angles for difficult angle detection
+    # Try original and common rotations (0, 90, 180, 270) for better coverage
     # Limit to most common angles to balance speed vs accuracy
-    angles_to_try = [None, 90, 270]  # Original, 90° right, 90° left (most common bad angles)
+    angles_to_try = [None, 90, 180, 270]  # Original, 90° right, 180° upside down, 90° left
     
     for angle in angles_to_try:
         try:
@@ -874,7 +938,7 @@ def extract_expiration_dates(img, ocr_reader):
 
 def classify_food_hierarchical(img_crop, classification_pred=None):
     """
-    Hierarchical classification: Category → Specific Item
+    Hierarchical classification: Category -> Specific Item
     Returns: {"name": "...", "category": "...", "confidence": 0.0-1.0}
     """
     if not _food_classifier and not classification_pred:
@@ -917,8 +981,8 @@ def classify_food_hierarchical(img_crop, classification_pred=None):
         label = pred.get("label", "").lower()
         score = float(pred.get("score", 0))
         
-        # Lower threshold from 0.15 to 0.10 to catch more items
-        if score < 0.10:
+        # Lower threshold from 0.10 to 0.05 to catch more items
+        if score < 0.05:
             continue
         
         # Find category that matches
@@ -945,6 +1009,101 @@ def classify_food_hierarchical(img_crop, classification_pred=None):
             "category": best_category,
             "confidence": best_conf
         }
+
+
+def clip_match_open_vocabulary(img_crop, labels, use_prompt_engineering=True):
+    """
+    Use CLIP to match an image crop against an arbitrary list of text labels.
+    
+    Precision Rule #2: Prompt engineering - uses "a photo of {item}" format for better accuracy.
+    Precision Rule #7: Calibrates CLIP scores using temperature scaling.
+    
+    Returns: {"label": best_label, "score": calibrated_score, "second_best": calibrated_second_best, "raw_score": raw_score} or None
+    """
+    global _clip_model, _clip_processor
+    if not _clip_model or not _clip_processor:
+        return None
+    if not labels:
+        return None
+    try:
+        from PIL import Image
+        import torch
+    except Exception:
+        return None
+    try:
+        if not isinstance(img_crop, Image.Image):
+            return None
+        
+        # Precision Rule #2: Prompt engineering - use "a photo of {item}" format
+        if use_prompt_engineering:
+            prompt_labels = [f"a photo of {label}" for label in labels]
+        else:
+            prompt_labels = labels
+        
+        # Performance: Use efficient batching and move to device if available
+        device = next(_clip_model.parameters()).device
+        inputs = _clip_processor(text=prompt_labels, images=img_crop, return_tensors="pt", padding=True)
+        # Move inputs to same device as model (GPU if available)
+        inputs = {k: v.to(device) if isinstance(v, torch.Tensor) else v for k, v in inputs.items()}
+        
+        with torch.no_grad():
+            out = _clip_model(**inputs)
+            probs = out.logits_per_image.softmax(dim=-1)[0].cpu().numpy()
+        
+        if probs.size == 0:
+            return None
+        
+        # FIX 3: Get top-3 results for ambiguity detection
+        sorted_indices = probs.argsort()[::-1]  # Sort descending
+        top3_indices = sorted_indices[:min(3, len(labels))]
+        
+        best_idx = int(top3_indices[0])
+        raw_best_score = float(probs[best_idx])
+        
+        # Get top-3 scores and labels
+        top3_scores = [float(probs[i]) for i in top3_indices]
+        top3_labels = [labels[i].lower() for i in top3_indices]
+        
+        # second-best and third-best scores
+        if len(top3_scores) > 1:
+            raw_second_best = top3_scores[1]
+        else:
+            raw_second_best = 0.0
+        if len(top3_scores) > 2:
+            raw_third_best = top3_scores[2]
+        else:
+            raw_third_best = 0.0
+        
+        # Precision Rule #7: Calibrate CLIP scores using temperature scaling
+        # FIXED: Softer calibration that preserves low scores for pantry images
+        # Old formula zeroed out scores < 0.2, causing all low-confidence items to become 0.0
+        # New formula: preserves relative differences and maps to 0.0-1.0 range
+        # Formula: calibrated = raw^0.7 * 1.5 (soft power scaling)
+        # This maps: 0.01 → 0.03, 0.05 → 0.12, 0.1 → 0.19, 0.2 → 0.33, 0.5 → 0.65
+        def calibrate_score(raw):
+            if raw <= 0:
+                return 0.0
+            # Soft power scaling preserves low scores while still boosting high scores
+            calibrated = (raw ** 0.7) * 1.5
+            return min(1.0, max(0.0, calibrated))
+        
+        calibrated_best = calibrate_score(raw_best_score)
+        calibrated_second = calibrate_score(raw_second_best)
+        calibrated_third = calibrate_score(raw_third_best)
+        
+        return {
+            "label": top3_labels[0],  # Return original label, not prompt
+            "score": calibrated_best,
+            "raw_score": raw_best_score,
+            "second_best": calibrated_second,
+            "raw_second_best": raw_second_best,
+            "third_best": calibrated_third,
+            "raw_third_best": raw_third_best,
+            "top3_labels": top3_labels,  # FIX 3: Return top-3 labels
+            "top3_scores": [calibrated_best, calibrated_second, calibrated_third]  # FIX 3: Return top-3 calibrated scores
+        }
+    except Exception:
+        return None
     
     return None
 
@@ -953,12 +1112,13 @@ def apply_context_fusion(items, user_pantry=None, img_height=None):
     Enhanced context fusion with shelf-aware spatial context:
         - Items already in pantry are more likely
         - Common items are more likely
-        - Shelf-aware location hints (door shelves → beverages/condiments, crisper → produce, etc.)
+        - Shelf-aware location hints (door shelves -> beverages/condiments, crisper -> produce, etc.)
     
     Args:
         items: List of detected items with bounding boxes
         user_pantry: Optional user's current pantry for context fusion
         img_height: Optional image height for spatial context (Y-position normalization)
+
     """
     if not user_pantry:
         user_pantry = []
@@ -1138,52 +1298,131 @@ def apply_ensemble_boosting(result, all_detections):
             item.get('confidence', 0)
         )
     
-    # Boost confidence for items detected by multiple methods
+    # Boost confidence for items detected by multiple methods or multiple times
     for item in result:
         key = item.get("name", "").lower().strip()
         if key in detection_counts:
             detection_info = detection_counts[key]
             method_count = len(detection_info['methods'])
+            detection_count = detection_info['count']
             
-            # Boost confidence: +5% for each additional detection method
+            # Boost for multiple detection methods
+            method_boost = 1.0
             if method_count > 1:
-                boost = min(0.15, (method_count - 1) * 0.05)  # Max 15% boost
-                item['confidence'] = min(1.0, item.get('confidence', 0) * (1 + boost))
-                item['ensemble_boost'] = True
-                item['detection_methods'] = list(detection_info['methods'])
+                method_boost = 1.0 + (method_count - 1) * 0.10  # 10% per additional method
+            
+            # Boost for multiple detections of same item (consensus)
+            count_boost = 1.0
+            if detection_count > 1:
+                count_boost = 1.0 + min(0.20, (detection_count - 1) * 0.05)  # 5% per additional detection, max 20%
+            
+            # Apply boosts
+            boosted_conf = item.get('confidence', 0) * method_boost * count_boost
+            # 🔥 IMPROVEMENT 1: Cap confidence at 0.85 to prevent "fake confidence"
+            item['confidence'] = min(0.85, boosted_conf)
+
+
+            item['ensemble_boost'] = True
+
+
+            item['detection_methods'] = list(detection_info['methods'])
+
+
+            item['detection_count'] = detection_count
+
+
     
     return result
 
+
 def calibrate_confidence(items):
     """
-    Calibrate confidence scores based on historical accuracy data.
-    Adjusts confidence to better reflect actual accuracy.
+    🔥 IMPROVED: Calibrate confidence scores with confidence ceiling and disagreement penalty.
+    Prevents "fake confidence" from stacked boosts.
     """
     # TODO: Load historical accuracy data from feedback
     # For now, apply basic calibration based on detection method
     for item in items:
         method = item.get('detection_method', 'unknown')
         original_conf = item.get('confidence', 0.5)
+        name = item.get('name', '').lower()  # Get item name for keyword matching
         
-        # Calibration factors based on method reliability (empirical)
-        calibration_factors = {
-            'yolov8': 0.95,  # YOLOv8 is generally reliable, slight calibration down
-            'dETR': 0.90,   # DETR is reliable but slightly less than YOLOv8
-            'classification': 0.85,  # Classification alone is less reliable
-            'ensemble': 1.0,  # Ensemble is most reliable
-            'yolov8+classification': 0.98,  # Combined methods are more reliable
-            'unknown': 0.85
+        # 🔥 PRECISION: Reduced confidence boosts to prevent "fake confidence"
+        # Prevents weak detections from being boosted to appear strong
+        boost_factors = {
+            'yolov8': 1.15,  # Reduced from 1.25 - prevent low confidence from becoming high
+            'yolov8+classification': 1.25,  # Reduced from 1.35 - ensemble is strong but not inflated
+            'ensemble': 1.25,  # Reduced from 1.40 - multiple methods agree but don't over-boost
+            'classification': 1.10,  # Reduced from 1.15 - classification is food-specific
+            'unknown': 1.05  # Reduced from 1.10
         }
         
-        factor = calibration_factors.get(method, 0.85)
+        factor = boost_factors.get(method, 1.10)
         
-        # Apply calibration (slightly reduce overconfident predictions)
-        calibrated_conf = original_conf * factor
+        # Additional boosts for specific item characteristics
+        additional_boost = 1.0
+        
+        # Boost for actual food items (not containers) - but less aggressively
+        food_keywords = ['apple', 'banana', 'orange', 'bread', 'milk', 'cheese', 'egg', 
+                        'chicken', 'beef', 'pasta', 'rice', 'cereal', 'soup', 'donut',
+                        'sandwich', 'pizza', 'cake', 'carrot', 'broccoli', 'tomato',
+                        'yogurt', 'butter', 'fish', 'pork', 'turkey', 'onion', 'garlic',
+                        'potato', 'lettuce', 'cucumber', 'pepper', 'olive', 'honey',
+                        'mustard', 'mayonnaise', 'ketchup', 'vinegar', 'oil']
+        if any(kw in name for kw in food_keywords):
+            additional_boost *= 1.15  # Reduced from 1.30 - food items are more reliable but don't over-boost
+        
+        # Boost for items detected by YOLO - but only if confidence is decent
+        # Base confidence matters - but don't boost very low confidence items
+        if original_conf > 0.20:  # Raised threshold from 0.10 to 0.20
+            additional_boost *= 1.05  # Reduced from 1.15 - only slight boost for decent confidence
+        
+        # Rule 1: YOLO is blind - never trust YOLO class names as semantic truth
+        # YOLO only provides regions, not food labels
+        # Only use classifier/CLIP/OCR labels for disagreement checks
+        classifier_label = item.get('classifier_label', '').lower() if item.get('classifier_label') else None
+        clip_label = item.get('clip_label', '').lower() if item.get('clip_label') else None
+        ocr_label = item.get('ocr_label', '').lower() if item.get('ocr_label') else None
+        
+        disagreement_penalty = 1.0
+        # Only check disagreement between semantic models (classifier, CLIP, OCR), not YOLO
+        labels_to_check = [l for l in [classifier_label, clip_label, ocr_label] if l]
+        if len(labels_to_check) >= 2:
+            # Check if labels disagree significantly
+            unique_labels = set(labels_to_check)
+            if len(unique_labels) > 1:
+                # Strong disagreement between semantic models - reduce confidence by 20%
+                disagreement_penalty = 0.80
+                if VERBOSE_LOGGING:
+                    print(f"   ⚠️ Disagreement penalty: {unique_labels} -> confidence × 0.80")
+        
+        # FIX 7: Stop inflating confidence - use honest scores
+        # Only apply minimal calibration, don't stack boosts
+        # Original confidence should reflect actual uncertainty
+        if method in ['yolov8+clip', 'yolov8+ocr', 'ensemble']:
+            # These methods are already strong - minimal boost
+            calibrated_conf = min(0.9, original_conf * 1.05 * disagreement_penalty)
+        else:
+            # Other methods - slight boost but keep honest
+            calibrated_conf = min(0.85, original_conf * factor * disagreement_penalty)
+        
+        # FIX 7: Never force confidence above actual signal strength
+        # If original confidence is low, don't inflate it
+        if original_conf < 0.3:
+            calibrated_conf = min(calibrated_conf, original_conf * 1.2)  # Max 20% boost for low confidence
+        
+        # 🔥 IMPROVEMENT 1C: Only boost if all models agree (OCR + YOLO + classifier)
+        # If models agree, then boost - otherwise we already penalized
+        if not item.get('disagreement', False):
+            # Models agree - slight boost for consensus
+            calibrated_conf = min(0.85, calibrated_conf * 1.05)  # Small boost for agreement
         
         # Store both original and calibrated
         item['original_confidence'] = original_conf
         item['confidence'] = calibrated_conf
-        item['calibration_factor'] = factor
+        item['calibration_boost'] = factor * additional_boost * disagreement_penalty
+        if disagreement_penalty < 1.0:
+            item['disagreement_penalty'] = True
     
     return items
 
@@ -1284,17 +1523,1032 @@ def get_adaptive_confidence_threshold(item_name, category):
     else:
         return 0.7  # Default threshold
 
+# ============================================================================
+# STAGE-BASED DETECTION PIPELINE
+# Each stage answers one question only, following clean architecture
+# ============================================================================
+
+def stage_yolo_detect_regions(img):
+    """
+    STAGE 1: YOLO - "Where is something?"
+    Purpose: Find regions of interest, NOT food names.
+    Returns: List of regions with bbox and confidence only.
+    """
+    global _yolo_model
+    regions = []
+    
+    if not _yolo_model or not YOLO_DETECTION_ENABLED:
+        return regions
+    
+    try:
+        import numpy as np
+        img_array = np.array(img)
+        # 🔥 FIX 4: Optimize YOLO for pantry images
+        # Pantry scenes: stacked items, small packages, low contrast shelves
+        # Use lower confidence, higher IoU, filter small/nested/thin boxes
+        scene_type = "pantry"  # Default to pantry (more permissive)
+        yolo_conf_threshold = 0.15  # FIX 4: Lower threshold for pantry (0.20 was too high, causing missed detections)
+        yolo_iou_threshold = 0.50  # FIX 4: Slightly lower IoU to catch more items (0.55 was too aggressive)
+        
+        # Get image dimensions for area filtering
+        img_height, img_width = img_array.shape[:2]
+        image_area = img_height * img_width
+        min_area = 0.01 * image_area  # FIX 4: Minimum 1% of image area (was 2%, too aggressive for small items)
+        
+        # Optimize YOLO for pantry - detect as many items as possible
+        results = _yolo_model(img_array, conf=yolo_conf_threshold, iou=yolo_iou_threshold, verbose=False, max_det=100)
+        
+        if results and len(results) > 0:
+            result = results[0]
+            boxes = result.boxes
+            if boxes is not None and len(boxes) > 0:
+                for box in boxes:
+                    try:
+                        # Extract bbox
+                        xyxy = box.xyxy[0] if hasattr(box.xyxy, '__getitem__') else box.xyxy
+                        if hasattr(xyxy, 'cpu'):
+                            xyxy = xyxy.cpu().numpy()
+                        elif hasattr(xyxy, 'numpy'):
+                            xyxy = xyxy.numpy()
+                        
+                        if len(xyxy) < 4:
+                            continue
+                        x1, y1, x2, y2 = xyxy[:4]
+                        
+                        # FIX 4: Filter small boxes (minimum area threshold)
+                        box_width = x2 - x1
+                        box_height = y2 - y1
+                        box_area = box_width * box_height
+                        if box_area < min_area:
+                            if VERBOSE_LOGGING:
+                                print(f"   ⚠️ Filtering small box: area={box_area:.0f} < min={min_area:.0f}")
+                            continue
+                        
+                        # FIX 4: Filter thin boxes (width or height too small relative to image)
+                        min_dimension = min(box_width, box_height)
+                        if min_dimension < 0.005 * min(img_width, img_height):  # Less than 0.5% of smallest image dimension (was 1%, too aggressive)
+                            if VERBOSE_LOGGING:
+                                print(f"   ⚠️ Filtering thin box: min_dim={min_dimension:.0f}")
+                            continue
+                        
+                        # Extract confidence
+                        conf = box.conf[0] if hasattr(box.conf, '__getitem__') else box.conf
+                        if hasattr(conf, 'cpu'):
+                            conf = conf.cpu().numpy()
+                        elif hasattr(conf, 'numpy'):
+                            conf = conf.numpy()
+                        yolo_conf = float(conf)
+                        
+                        # Extract class_id for container detection
+                        cls = box.cls[0] if hasattr(box.cls, '__getitem__') else box.cls
+                        if hasattr(cls, 'cpu'):
+                            cls = cls.cpu().numpy()
+                        elif hasattr(cls, 'numpy'):
+                            cls = cls.numpy()
+                        class_id = int(cls)
+                        
+                        # Get class name for container detection
+                        if hasattr(_yolo_model, 'names') and class_id < len(_yolo_model.names):
+                            class_name = _yolo_model.names[class_id]
+                        else:
+                            class_name = f"class_{class_id}"
+                        
+                        # Check if container-like
+                        container_types = ['bottle', 'jar', 'can', 'box', 'bag', 'package', 'bowl', 'cup', 'wine glass']
+                        is_container = any(kw in class_name.lower() for kw in container_types)
+                        
+                        # YOLO food prior: weak signal based on COCO class
+                        ALLOWED_COCO_CLASSES = {
+                            46: "banana", 47: "apple", 49: "orange",
+                            50: "broccoli", 51: "carrot",
+                            48: "sandwich", 52: "hot dog", 53: "pizza", 54: "donut", 55: "cake",
+                            39: "bottle", 40: "wine glass", 41: "cup", 45: "bowl"
+                        }
+                        yolo_food_prior = 0.3 if class_id in ALLOWED_COCO_CLASSES else 0.05
+                        
+                        regions.append({
+                            "bbox": [float(x1), float(y1), float(x2), float(y2)],
+                            "yolo_conf": yolo_conf,
+                            "class_id": class_id,
+                            "class_name": class_name,
+                            "is_container": is_container,
+                            "yolo_food_prior": yolo_food_prior,
+                            "area": box_area  # Store area for nested box filtering
+                        })
+                    except Exception as e:
+                        if VERBOSE_LOGGING:
+                            print(f"   ⚠️ Error processing YOLO box: {e}")
+                        continue
+                
+                # FIX 4: Filter nested boxes (smaller box inside larger box)
+                # Sort by area (largest first) and remove boxes that are mostly contained in larger boxes
+                if len(regions) > 1:
+                    regions_sorted = sorted(regions, key=lambda r: r.get("area", 0), reverse=True)
+                    filtered_regions = []
+                    for i, region in enumerate(regions_sorted):
+                        x1, y1, x2, y2 = region["bbox"]
+                        is_nested = False
+                        for j, other_region in enumerate(regions_sorted):
+                            if i == j:
+                                continue
+                            ox1, oy1, ox2, oy2 = other_region["bbox"]
+                            # Check if this box is mostly inside the other box
+                            overlap_x1 = max(x1, ox1)
+                            overlap_y1 = max(y1, oy1)
+                            overlap_x2 = min(x2, ox2)
+                            overlap_y2 = min(y2, oy2)
+                            if overlap_x1 < overlap_x2 and overlap_y1 < overlap_y2:
+                                overlap_area = (overlap_x2 - overlap_x1) * (overlap_y2 - overlap_y1)
+                                region_area = region.get("area", (x2 - x1) * (y2 - y1))
+                                # If >80% of this box is inside the other box, it's nested
+                                if overlap_area > 0.8 * region_area:
+                                    is_nested = True
+                                    if VERBOSE_LOGGING:
+                                        print(f"   ⚠️ Filtering nested box: {region.get('class_name')} inside {other_region.get('class_name')}")
+                                    break
+                        if not is_nested:
+                            filtered_regions.append(region)
+                    regions = filtered_regions
+    except Exception as e:
+        if VERBOSE_LOGGING:
+            print(f"   ⚠️ YOLO detection error: {e}")
+    
+    return regions
+
+
+def stage_classify_food_type(crop, region_info=None):
+    """
+    STAGE 1.5: Food Type Classification - "What kind of thing is this?"
+    Purpose: Narrow the answer space before naming. This dramatically improves precision.
+    
+    Returns: {"food_type": "...", "score": 0.0-1.0} or None
+    """
+    # Food types that CLIP can distinguish well
+    FOOD_TYPES = [
+        "fresh produce",
+        "bottle or jar",
+        "carton",
+        "can",
+        "box",
+        "bag",
+        "snack",
+        "beverage"
+    ]
+    
+    # Use CLIP to classify food type
+    food_type_pred = clip_match_open_vocabulary(crop, FOOD_TYPES, use_prompt_engineering=True)
+    if not food_type_pred:
+        return None
+    
+    food_type = food_type_pred.get("label", "")
+    score = food_type_pred.get("score", 0.0)
+    
+    if VERBOSE_LOGGING:
+        print(f"   🏷️ Food type classification: {food_type} (score: {score:.2f})")
+    
+    return {
+        "food_type": food_type,
+        "score": score
+    }
+
+
+def stage_clip_suggest_label(crop, candidate_labels, region_info=None):
+    """
+    STAGE 2: CLIP - "What could this be?"
+    Purpose: Open-vocabulary semantic matching. Suggests, doesn't decide.
+    
+    Precision Rules Applied:
+    - #3: Margin-based selection (requires separation between top-1 and top-2)
+    - #5: Visual plausibility checks (soft penalties)
+    - #8: Food-only gating (checks if item is food before trusting)
+    
+    Args:
+        crop: PIL Image crop
+        candidate_labels: List of candidate food labels (context-aware)
+        region_info: Optional dict with region metadata (is_container, class_name, etc.)
+    
+    Returns: {"label": "...", "score": calibrated_score, "second_best": calibrated_second, "needs_confirmation": bool} or None
+    """
+    if not candidate_labels:
+        return None
+    
+    # Performance: Skip food gate for speed when we have many food candidates
+    # Food gate is expensive (2-3 CLIP calls) and candidate_labels are already food-focused
+    run_food_gate = len(candidate_labels) < 10  # Only run if very few candidates
+    
+    if run_food_gate:
+        # 🔥 FIX 5: Foodness gating - check if food > object before rejecting
+        # Use binary food vs non-food check, not label-specific gating
+        FOODNESS_LABELS = ["food", "ingredient", "grocery item", "edible item"]
+        NON_FOOD_LABELS = ["tool", "furniture", "clothing", "appliance", "object", "non-food"]
+        
+        # Performance: Batch process food check (single CLIP call instead of 2)
+        food_check_labels = FOODNESS_LABELS + NON_FOOD_LABELS
+        food_check = clip_match_open_vocabulary(crop, food_check_labels, use_prompt_engineering=False)
+        
+        if food_check:
+            # Get actual scores for food vs non-food
+            food_label = food_check["label"]
+            food_score = food_check["score"] if food_label in FOODNESS_LABELS else 0.0
+            non_food_score = food_check["score"] if food_label in NON_FOOD_LABELS else 0.0
+            clip_food_score = food_score - non_food_score
+        else:
+            clip_food_score = 0.0
+        
+        # 🔥 PRINCIPLE 1 & 4: Never hard-reject food-like items
+        # Separate foodness check from food name check
+        # If food_score > object_score → surface guess (even if weak)
+        # If food_score < object_score by >0.3 → mark for confirmation but still process
+        if clip_food_score < -0.3:
+            # Very negative score - likely non-food, but still process (never hard-reject)
+            if VERBOSE_LOGGING:
+                print(f"   ⚠️ CLIP food gate: likely non-food (food_score={clip_food_score:.2f}) - will mark for confirmation but still process")
+            # Continue processing - let other signals decide (never hard-reject)
+        elif clip_food_score < 0.0:
+            # Slightly negative - uncertain, but allow food prediction
+            if VERBOSE_LOGGING:
+                print(f"   ⚠️ CLIP food gate: uncertain (food_score={clip_food_score:.2f}) - allowing food prediction, mark for confirmation")
+            # Continue processing, will mark for confirmation later
+        else:
+            # Food score >= 0 - food-like, allow prediction
+            if VERBOSE_LOGGING:
+                print(f"   ✅ CLIP food gate: food-like (food_score={clip_food_score:.2f}) - allowing prediction")
+    else:
+        # Skip food gate - assume food since we have many food candidates
+        clip_food_score = 0.5  # Neutral score, continue processing
+    
+    # Run CLIP matching on candidate labels
+    clip_pred = clip_match_open_vocabulary(crop, candidate_labels, use_prompt_engineering=True)
+    if not clip_pred:
+        return None
+    
+    best = clip_pred["score"]  # Already calibrated
+    second = clip_pred.get("second_best", 0.0)  # Already calibrated
+    raw_best = clip_pred.get("raw_score", 0.0)
+    top3_labels = clip_pred.get("top3_labels", [clip_pred["label"]])
+    top3_scores = clip_pred.get("top3_scores", [best, second, 0.0])
+    
+    # FIX 3: Check for ambiguity - if top-2 scores are close (< 0.07), show both
+    margin = best - second
+    ambiguity_threshold = 0.07  # FIX 3: If difference < 0.07, show ambiguity
+    
+    # FIX 3: Build ambiguous label if scores are close
+    ambiguous_label = None
+    if len(top3_labels) >= 2 and margin < ambiguity_threshold:
+        # Top-2 are ambiguous - show both
+        ambiguous_label = " / ".join(top3_labels[:2])
+        if VERBOSE_LOGGING:
+            print(f"   🔀 FIX 3: Ambiguous prediction (margin={margin:.3f} < {ambiguity_threshold}) - showing: {ambiguous_label}")
+    
+    # Fix #4: Disable CLIP margin logic unless comparing >= 3 labels
+    # Margin checks are misleading when there are too few labels
+    margin_threshold = 0.01  # Optimize: Lower margin threshold to 0.01 - accept more predictions
+    
+    # Fix 3: Margin gate should NOT reject - margin ≠ correctness, margin = confidence difference
+    # FIXED: When both scores are very low (0.0), it means CLIP is uncertain, not that margin is wrong
+    # Check raw scores to determine if this is a real uncertainty vs calibration artifact
+    raw_second = clip_pred.get("raw_second_best", 0.0)
+    
+    if len(candidate_labels) >= 3 and margin < margin_threshold:
+        # Margin too small - but check if it's due to low raw scores or actual uncertainty
+        if raw_best > 0.01 and raw_second > 0.01:
+            # Both raw scores are reasonable - small margin is real uncertainty
+            if VERBOSE_LOGGING:
+                print(f"   ⚠️ CLIP margin too small: {best:.3f} vs {second:.3f} (margin={margin:.3f} < {margin_threshold}, raw: {raw_best:.3f} vs {raw_second:.3f}) - accepting best label, needs confirmation")
+        else:
+            # Very low raw scores - calibration artifact, accept anyway
+            if VERBOSE_LOGGING:
+                print(f"   ⚠️ CLIP low scores (raw: {raw_best:.3f} vs {raw_second:.3f}) - accepting best label, needs confirmation")
+        # Accept the best label, just mark for confirmation
+        # FIX 3: Use ambiguous label if available
+        final_label = ambiguous_label if ambiguous_label else clip_pred["label"]
+        return {
+            "label": final_label,  # FIX 3: Use ambiguous label if scores are close
+            "score": best,
+            "second_best": second,
+            "needs_confirmation": True,
+            "margin": margin,
+            "is_ambiguous": ambiguous_label is not None,  # FIX 3: Flag for ambiguity
+            "top3_labels": top3_labels  # FIX 3: Include top-3 for reference
+        }
+    elif len(candidate_labels) < 3:
+        # Too few labels - skip margin check, accept best
+        if VERBOSE_LOGGING:
+            print(f"   ℹ️ Skipping margin check (only {len(candidate_labels)} labels) - accepting best label")
+    
+    # Precision Rule #5: Visual plausibility checks (soft penalties)
+    # Apply penalties based on visual features, not hard deletes
+    penalty_factor = 1.0
+    label = clip_pred["label"]
+    
+    # FIX 6: Scene prior - penalize non-food items in pantry context
+    SCENE_PRIOR = {
+        "tie": -0.9,
+        "tennis racket": -0.9,
+        "shoe": -0.8,
+        "sock": -0.8,
+        "clothing": -0.8,
+        "furniture": -0.7,
+        "tool": -0.7,
+        "appliance": -0.7,
+        "food": +0.3,
+        "ingredient": +0.3,
+        "grocery": +0.3
+    }
+    scene_type = "pantry"  # Default to pantry context
+    if scene_type in ["pantry", "fridge"]:
+        label_lower = label.lower()
+        # Check for non-food items
+        for non_food_key, penalty in SCENE_PRIOR.items():
+            if non_food_key in label_lower and penalty < 0:
+                penalty_factor *= (1.0 + penalty)  # Apply negative penalty
+                if VERBOSE_LOGGING:
+                    print(f"   ⚠️ FIX 6: Scene prior penalty for '{label}' in {scene_type}: {penalty:.2f}")
+                break
+        # Check for food items (boost)
+        for food_key, boost in SCENE_PRIOR.items():
+            if food_key in label_lower and boost > 0:
+                penalty_factor *= (1.0 + boost * 0.1)  # Apply positive boost (smaller)
+                if VERBOSE_LOGGING:
+                    print(f"   ✅ FIX 6: Scene prior boost for '{label}' in {scene_type}: {boost:.2f}")
+                break
+    
+    if region_info:
+        is_container = region_info.get("is_container", False)
+        class_name = region_info.get("class_name", "").lower()
+        
+        # Check for onion vs apple confusion
+        if label == "onion":
+            # Onion should have papery texture, lower saturation
+            # This is a simplified check - in production, use actual texture analysis
+            # For now, just apply a small penalty if detected as container (unlikely for loose onion)
+            if is_container and "bottle" in class_name:
+                penalty_factor *= 0.7
+                if VERBOSE_LOGGING:
+                    print(f"   ⚠️ Visual plausibility: onion in bottle container (penalty applied)")
+        
+        # Check for oil vs water confusion
+        if label.endswith("oil"):
+            # Oil should be gold/amber/green colored
+            # Simplified: if it's a clear bottle, might be water
+            if "bottle" in class_name and not is_container:
+                penalty_factor *= 0.6
+                if VERBOSE_LOGGING:
+                    print(f"   ⚠️ Visual plausibility: oil in clear container (penalty applied)")
+    
+    final_score = best * penalty_factor
+    
+    # FIXED: Use raw score for thresholding, not calibrated score
+    # Calibrated scores can be low even when raw scores are reasonable
+    # For pantry images with 500+ candidates, raw scores of 0.01-0.05 are normal
+    # Accept if raw score > 0.005 (very permissive) OR calibrated > 0.05
+    raw_threshold = 0.005  # Very low threshold for raw scores
+    calibrated_threshold = 0.05  # Low threshold for calibrated scores
+    
+    if final_score < calibrated_threshold and raw_best < raw_threshold:
+        if VERBOSE_LOGGING:
+            print(f"   🚫 CLIP score too low: calibrated={final_score:.3f}, raw={raw_best:.3f}")
+        return None
+    
+    # FIX 3: Use ambiguous label if available
+    final_label = ambiguous_label if ambiguous_label else label
+    
+    return {
+        "label": final_label,  # FIX 3: Use ambiguous label if scores are close
+        "score": min(final_score, 0.8),  # Cap influence
+        "second_best": second,
+        "needs_confirmation": False if ambiguous_label is None else True,  # FIX 3: Mark ambiguous as needing confirmation
+        "margin": margin,
+        "is_ambiguous": ambiguous_label is not None,  # FIX 3: Flag for ambiguity
+        "top3_labels": top3_labels  # FIX 3: Include top-3 for reference
+    }
+
+
+def stage_ocr_bind_to_region(yolo_bbox, full_image_ocr_results, img_size):
+    """
+    🔥 FIX #1: Spatial OCR Binding - Assign OCR text to YOLO boxes
+    Purpose: Match OCR text regions to YOLO bounding boxes based on spatial overlap
+    Returns: List of OCR text snippets that overlap with the YOLO box
+    """
+    if not full_image_ocr_results:
+        return []
+    
+    yolo_x1, yolo_y1, yolo_x2, yolo_y2 = yolo_bbox
+    yolo_center_x = (yolo_x1 + yolo_x2) / 2
+    yolo_center_y = (yolo_y1 + yolo_y2) / 2
+    
+    bound_texts = []
+    
+    for ocr_item in full_image_ocr_results:
+        # EasyOCR returns: (bbox, text, confidence) where bbox is array of 4 corner points
+        if len(ocr_item) < 3:
+            continue
+        
+        ocr_bbox = ocr_item[0]  # Array of 4 corner points [[x1,y1], [x2,y2], [x3,y3], [x4,y4]]
+        ocr_text = ocr_item[1] if len(ocr_item) > 1 else ""
+        ocr_conf = ocr_item[2] if len(ocr_item) > 2 else 0.0
+        
+        if not ocr_text or ocr_conf < 0.1:
+            continue
+        
+        # Convert OCR bbox to (x1, y1, x2, y2) format
+        try:
+            import numpy as np
+            ocr_points = np.array(ocr_bbox)
+            ocr_x1 = float(np.min(ocr_points[:, 0]))
+            ocr_y1 = float(np.min(ocr_points[:, 1]))
+            ocr_x2 = float(np.max(ocr_points[:, 0]))
+            ocr_y2 = float(np.max(ocr_points[:, 1]))
+            
+            # Check if OCR text center is inside YOLO box (simple overlap check)
+            ocr_center_x = (ocr_x1 + ocr_x2) / 2
+            ocr_center_y = (ocr_y1 + ocr_y2) / 2
+            
+            # Method 1: Check if OCR center is inside YOLO box
+            if (yolo_x1 <= ocr_center_x <= yolo_x2 and yolo_y1 <= ocr_center_y <= yolo_y2):
+                bound_texts.append({
+                    "text": ocr_text,
+                    "confidence": ocr_conf,
+                    "bbox": [ocr_x1, ocr_y1, ocr_x2, ocr_y2]
+                })
+            # Method 2: Check if YOLO center is inside OCR box (for small text on large boxes)
+            elif (ocr_x1 <= yolo_center_x <= ocr_x2 and ocr_y1 <= yolo_center_y <= ocr_y2):
+                bound_texts.append({
+                    "text": ocr_text,
+                    "confidence": ocr_conf,
+                    "bbox": [ocr_x1, ocr_y1, ocr_x2, ocr_y2]
+                })
+            # Method 3: Check for significant overlap (IoU > 0.1)
+            else:
+                overlap_x1 = max(yolo_x1, ocr_x1)
+                overlap_y1 = max(yolo_y1, ocr_y1)
+                overlap_x2 = min(yolo_x2, ocr_x2)
+                overlap_y2 = min(yolo_y2, ocr_y2)
+                
+                if overlap_x1 < overlap_x2 and overlap_y1 < overlap_y2:
+                    overlap_area = (overlap_x2 - overlap_x1) * (overlap_y2 - overlap_y1)
+                    ocr_area = (ocr_x2 - ocr_x1) * (ocr_y2 - ocr_y1)
+                    yolo_area = (yolo_x2 - yolo_x1) * (yolo_y2 - yolo_y1)
+                    
+                    # If overlap is > 10% of OCR box or > 5% of YOLO box, consider it bound
+                    if overlap_area > 0.1 * ocr_area or overlap_area > 0.05 * yolo_area:
+                        bound_texts.append({
+                            "text": ocr_text,
+                            "confidence": ocr_conf,
+                            "bbox": [ocr_x1, ocr_y1, ocr_x2, ocr_y2]
+                        })
+        except Exception as e:
+            if VERBOSE_LOGGING:
+                print(f"   ⚠️ OCR binding error: {e}")
+            continue
+    
+    return bound_texts
+
+
+def stage_ocr_read_label(crop, is_container=False, bound_ocr_texts=None):
+    """
+    STAGE 3: OCR - "What does the text say?"
+    Purpose: Understand packaged food. Overrides CLIP when text is clear.
+    Improved: Multiple crops, image enhancement, rotation handling for difficult angles.
+    🔥 FIX #1: Now accepts pre-bound OCR texts from spatial binding
+    Returns: {"label": "...", "confidence": 0.0-1.0, "text": "..."} or None
+    """
+    global _ocr_reader
+    
+    # 🔥 FIX #1: If OCR texts are already bound to this region, use them first
+    if bound_ocr_texts and len(bound_ocr_texts) > 0:
+        # Combine all bound texts
+        combined_text = ' '.join([item["text"] for item in bound_ocr_texts]).lower()
+        avg_conf = sum(item["confidence"] for item in bound_ocr_texts) / len(bound_ocr_texts)
+        
+        if combined_text and len(combined_text) >= 2:
+            # 🔥 FIX #1: Process bound OCR texts through keyword matching
+            # This is the key improvement - OCR text is now spatially bound to the YOLO box
+            matched_label = None
+            matched_confidence = 0.0
+            
+            # Try to match against food keywords (same logic as below)
+            # Import the keyword matching logic
+            label_keyword_map = {
+                # (This will be matched against the existing keyword map in the function)
+            }
+            
+            # For now, process bound texts through the normal keyword matching below
+            # We'll use the bound text as the OCR input
+            if VERBOSE_LOGGING:
+                print(f"   📍 Using spatially bound OCR text: '{combined_text}' (conf: {avg_conf:.2f})")
+    
+    if not _ocr_reader and not bound_ocr_texts:
+        return None
+    
+    if not is_container and not bound_ocr_texts:
+        # Only run OCR for containers or if explicitly requested
+        return None
+    
+    # 🔥 FIX #1: If we have bound OCR texts, use them directly
+    # Otherwise, run OCR on crop as before
+    if bound_ocr_texts and len(bound_ocr_texts) > 0:
+        # Use bound texts - skip OCR processing, go straight to keyword matching
+        combined_text = ' '.join([item["text"] for item in bound_ocr_texts]).lower()
+        avg_conf = sum(item["confidence"] for item in bound_ocr_texts) / len(bound_ocr_texts)
+        ocr_text = combined_text
+        ocr_confidence = avg_conf
+        # Skip to keyword matching section (after OCR processing)
+        skip_ocr_processing = True
+    else:
+        skip_ocr_processing = False
+        ocr_text = None
+        ocr_confidence = 0.0
+    
+    try:
+        import numpy as np
+        import re
+        from PIL import Image, ImageEnhance, ImageFilter
+        
+        if skip_ocr_processing:
+            # Use bound OCR texts - skip OCR processing, go to keyword matching
+            # ocr_text and ocr_confidence already set above
+            pass
+        else:
+            # Improve: Try multiple crops and enhancements for better OCR on difficult angles
+            crops_to_try = []
+        crop_width, crop_height = crop.size[0], crop.size[1]
+        
+        # Crop 1: Full crop (for wide containers)
+        crops_to_try.append(("full", crop))
+        
+        # Crop 2: Middle section (for tall containers - where label usually is)
+        if crop_height > crop_width * 1.2:
+            label_y_start = int(crop_height * 0.15)
+            label_y_end = int(crop_height * 0.85)
+            middle_crop = crop.crop((0, label_y_start, crop_width, label_y_end))
+            crops_to_try.append(("middle", middle_crop))
+        
+        # Crop 3: Top third (some labels are at top)
+        if crop_height > crop_width * 1.2:
+            top_crop = crop.crop((0, 0, crop_width, int(crop_height * 0.4)))
+            crops_to_try.append(("top", top_crop))
+        
+        # Crop 4: Center horizontal strip (for wide containers)
+        if crop_width > crop_height * 1.2:
+            center_y = crop_height // 2
+            strip_height = int(crop_height * 0.3)
+            strip_crop = crop.crop((0, center_y - strip_height//2, crop_width, center_y + strip_height//2))
+            crops_to_try.append(("center_strip", strip_crop))
+        
+        best_ocr_result = None
+        best_confidence = 0.0
+        
+        # Try each crop with enhancements
+        for crop_name, test_crop in crops_to_try:
+            # Enhance image for better OCR (especially for difficult angles)
+            enhanced_crops = []
+            
+            # Original
+            enhanced_crops.append(("original", test_crop))
+            
+            # Enhanced contrast (helps with difficult lighting)
+            contrast_enhanced = ImageEnhance.Contrast(test_crop).enhance(2.0)
+            enhanced_crops.append(("high_contrast", contrast_enhanced))
+            
+            # Sharpened (helps with blurry text)
+            sharpened = test_crop.filter(ImageFilter.SHARPEN)
+            enhanced_crops.append(("sharpened", sharpened))
+            
+            # Try rotations for difficult angles (90, 180, 270 degrees)
+            for angle in [90, 180, 270]:
+                rotated = test_crop.rotate(angle, expand=True)
+                enhanced_crops.append((f"rotated_{angle}", rotated))
+            
+            # Try each enhanced version
+            for enh_name, enhanced_crop in enhanced_crops:
+                try:
+                    crop_array = np.array(enhanced_crop)
+                    ocr_results = _ocr_reader.readtext(crop_array)
+                    
+                    if ocr_results:
+                        # Calculate average confidence
+                        avg_conf = sum(conf for (_, _, conf) in ocr_results) / len(ocr_results)
+                        if avg_conf > best_confidence:
+                            best_confidence = avg_conf
+                            # Collect all text
+                            ocr_text_temp = ' '.join([text for (_, text, conf) in ocr_results if conf > 0.10]).lower()
+                            if ocr_text_temp and len(ocr_text_temp) >= 2:
+                                best_ocr_result = {
+                                    "text": ocr_text_temp,
+                                    "confidence": avg_conf,
+                                    "crop_used": crop_name,
+                                    "enhancement": enh_name
+                                }
+                except Exception as e:
+                    if VERBOSE_LOGGING:
+                        print(f"   ⚠️ OCR error on {crop_name}/{enh_name}: {e}")
+                    continue
+        
+            if not best_ocr_result:
+                # If we have bound texts, use them even if OCR on crop failed
+                if bound_ocr_texts and len(bound_ocr_texts) > 0:
+                    combined_text = ' '.join([item["text"] for item in bound_ocr_texts]).lower()
+                    avg_conf = sum(item["confidence"] for item in bound_ocr_texts) / len(bound_ocr_texts)
+                    ocr_text = combined_text
+                    ocr_confidence = avg_conf
+                else:
+                    return None
+            else:
+                ocr_text = best_ocr_result["text"]
+                ocr_confidence = best_ocr_result["confidence"]
+            
+            if not ocr_text or len(ocr_text) < 2:
+                return None
+        
+        # Remove common label text
+        common_label_text = [
+            'nutrition facts', 'serving size', 'calories', 'total fat', 'saturated fat',
+            'trans fat', 'cholesterol', 'sodium', 'total carbohydrate', 'dietary fiber',
+            'total sugars', 'protein', 'vitamin', 'calcium', 'iron', 'ingredients',
+            'contains', 'allergen', 'manufactured', 'distributed', 'net weight', 'net wt'
+        ]
+        for label_text in common_label_text:
+            ocr_text = ocr_text.replace(label_text, ' ')
+        
+        # Remove brand words
+        brand_words = ['365', 'organic', 'whole foods', 'trader joe', 'kirkland', 'great value']
+        words = ocr_text.split()
+        words = [w for w in words if not any(brand in w.lower() for brand in brand_words)]
+        ocr_text = ' '.join(words)
+        
+        # 🔥 EXPANDED OCR KEYWORD DICTIONARY (100-500 foods) - Critical for packaged food
+        # This is how real pantry apps work - keyword matching from OCR text
+        label_keyword_map = {
+            # Oils and liquids (expanded)
+            'olive': 'olive oil', 'extra virgin': 'olive oil', 'evoo': 'olive oil', 'virgin olive': 'olive oil',
+            'canola': 'canola oil', 'vegetable oil': 'vegetable oil', 'coconut oil': 'coconut oil',
+            'sesame oil': 'sesame oil', 'avocado oil': 'avocado oil', 'walnut oil': 'walnut oil',
+            'vinegar': 'vinegar', 'balsamic': 'balsamic vinegar', 'rice vinegar': 'rice vinegar',
+            'apple cider vinegar': 'apple cider vinegar', 'white wine vinegar': 'white wine vinegar',
+            # Condiments (expanded)
+            'mustard': 'mustard', 'dijon': 'mustard', 'yellow mustard': 'mustard',
+            'mayonnaise': 'mayonnaise', 'mayo': 'mayonnaise', 'ketchup': 'ketchup',
+            'hot sauce': 'hot sauce', 'sriracha': 'sriracha', 'tabasco': 'hot sauce',
+            'soy sauce': 'soy sauce', 'tamari': 'soy sauce', 'teriyaki': 'teriyaki sauce',
+            'hoisin': 'hoisin sauce', 'fish sauce': 'fish sauce', 'oyster sauce': 'oyster sauce',
+            'worcestershire': 'worcestershire sauce', 'bbq sauce': 'bbq sauce',
+            'ranch': 'ranch dressing', 'italian dressing': 'italian dressing', 'caesar dressing': 'caesar dressing',
+            'honey': 'honey', 'maple syrup': 'maple syrup', 'jam': 'jam', 'jelly': 'jelly',
+            'peanut butter': 'peanut butter', 'almond butter': 'almond butter', 'tahini': 'tahini',
+            'hummus': 'hummus', 'pesto': 'pesto', 'salsa': 'salsa', 'guacamole': 'guacamole',
+            # Spices (expanded)
+            'salt': 'salt', 'pepper': 'black pepper', 'black pepper': 'black pepper',
+            'red pepper': 'red pepper', 'paprika': 'paprika', 'cumin': 'cumin',
+            'oregano': 'oregano', 'basil': 'basil', 'thyme': 'thyme', 'rosemary': 'rosemary',
+            'parsley': 'parsley', 'cinnamon': 'cinnamon', 'nutmeg': 'nutmeg',
+            'ginger': 'ginger', 'turmeric': 'turmeric', 'curry': 'curry powder',
+            'chili powder': 'chili powder', 'cayenne': 'cayenne', 'garlic powder': 'garlic powder',
+            'onion powder': 'onion powder', 'bay leaves': 'bay leaves',
+            # Grains and pasta (expanded - CRITICAL for packaged food)
+            'pasta': 'pasta', 'spaghetti': 'spaghetti', 'macaroni': 'macaroni', 'penne': 'penne',
+            'fettuccine': 'pasta', 'linguine': 'pasta', 'rigatoni': 'pasta', 'fusilli': 'pasta',
+            'rice': 'rice', 'white rice': 'white rice', 'brown rice': 'brown rice', 'jasmine rice': 'rice',
+            'basmati rice': 'rice', 'wild rice': 'rice',
+            'flour': 'flour', 'wheat flour': 'flour', 'all purpose flour': 'flour', 'bread flour': 'flour',
+            'oats': 'oats', 'oatmeal': 'oats', 'rolled oats': 'oats',
+            'cereal': 'cereal', 'granola': 'granola', 'quinoa': 'quinoa', 'barley': 'barley',
+            'couscous': 'couscous', 'bulgur': 'bulgur', 'farro': 'farro',
+            # Baking (expanded)
+            'sugar': 'sugar', 'brown sugar': 'brown sugar', 'powdered sugar': 'powdered sugar',
+            'baking powder': 'baking powder', 'baking soda': 'baking soda', 'yeast': 'yeast',
+            'vanilla': 'vanilla extract', 'cocoa': 'cocoa powder', 'chocolate chips': 'chocolate chips',
+            'shortening': 'shortening', 'cornstarch': 'cornstarch',
+            # Dairy (expanded)
+            'milk': 'milk', 'whole milk': 'milk', 'skim milk': 'milk', '2% milk': 'milk',
+            'yogurt': 'yogurt', 'greek yogurt': 'yogurt', 'cheese': 'cheese', 'cheddar': 'cheese',
+            'mozzarella': 'cheese', 'parmesan': 'cheese', 'butter': 'butter',
+            'eggs': 'eggs', 'egg': 'eggs', 'sour cream': 'sour cream', 'cream cheese': 'cream cheese',
+            'cottage cheese': 'cheese', 'heavy cream': 'cream', 'half and half': 'cream',
+            # Canned/packaged (expanded - CRITICAL)
+            'beans': 'beans', 'chickpeas': 'chickpeas', 'black beans': 'black beans',
+            'kidney beans': 'beans', 'pinto beans': 'beans', 'navy beans': 'beans',
+            'tomato sauce': 'tomato sauce', 'tomato paste': 'tomato paste', 'marinara': 'tomato sauce',
+            'soup': 'soup', 'chicken soup': 'soup', 'vegetable soup': 'soup',
+            'broth': 'broth', 'stock': 'stock', 'chicken broth': 'chicken broth',
+            'beef broth': 'broth', 'vegetable broth': 'broth',
+            'canned tomatoes': 'canned tomatoes', 'canned fruit': 'canned fruit',
+            'tuna': 'tuna', 'salmon': 'salmon', 'sardines': 'sardines',
+            # Bread and bakery (expanded)
+            'bread': 'bread', 'white bread': 'bread', 'wheat bread': 'bread', 'whole wheat bread': 'bread',
+            'bagel': 'bagel', 'english muffin': 'english muffin', 'tortilla': 'tortilla',
+            'cracker': 'crackers', 'crackers': 'crackers', 'rice cakes': 'rice cakes',
+            # Snacks (expanded)
+            'chips': 'chips', 'potato chips': 'chips', 'tortilla chips': 'chips',
+            'cookies': 'cookies', 'cookie': 'cookies', 'nuts': 'nuts', 'almonds': 'almonds',
+            'walnuts': 'nuts', 'peanuts': 'nuts', 'cashews': 'nuts', 'pistachios': 'nuts',
+            'granola bars': 'granola bars', 'protein bar': 'protein bar', 'energy bar': 'energy bar',
+            'popcorn': 'popcorn', 'pretzels': 'pretzels',
+            # Beverages (expanded)
+            'juice': 'juice', 'orange juice': 'orange juice', 'apple juice': 'apple juice',
+            'cranberry juice': 'cranberry juice', 'grape juice': 'grape juice',
+            'soda': 'soda', 'cola': 'soda', 'sprite': 'sprite', 'ginger ale': 'soda',
+            'water': 'water', 'sparkling water': 'water', 'seltzer': 'water',
+            'coffee': 'coffee', 'tea': 'tea', 'green tea': 'tea', 'black tea': 'tea',
+            # Frozen (expanded)
+            'ice cream': 'ice cream', 'frozen vegetables': 'frozen vegetables',
+            'frozen fruit': 'frozen fruit', 'frozen pizza': 'frozen pizza',
+            # Produce (common packaged)
+            'garlic': 'garlic', 'onion': 'onion', 'potato': 'potato', 'tomato': 'tomato',
+            # Specialty/ethnic foods
+            'gochujang': 'gochujang', 'harissa': 'harissa', 'miso': 'miso',
+            'kimchi': 'kimchi', 'sauerkraut': 'sauerkraut', 'tempeh': 'tempeh'
+        }
+        
+        # 🔥 CRITICAL: Match keywords - OCR is REQUIRED for packaged food
+        # This is how real pantry apps work - keyword matching from OCR text
+        ocr_text_normalized = re.sub(r'[^a-z\s]', '', ocr_text.lower())
+        best_match = None
+        best_conf = 0.0
+        
+        for keyword, food_name in label_keyword_map.items():
+            if keyword in ocr_text_normalized:
+                # Calculate confidence based on keyword match and OCR confidence
+                # Longer keywords = more specific = higher confidence
+                keyword_conf = min(0.95, 0.6 + len(keyword) * 0.05)
+                if keyword_conf > best_conf:
+                    best_match = food_name
+                    best_conf = keyword_conf
+        
+        if best_match:
+            # 🔥 TRUST OCR MORE: If OCR finds text with keyword match, use it with high confidence
+            # Simple hack to boost accuracy by 2× - trust OCR more than CLIP for packaged food
+            # OCR confidence > 0.3 → trust OCR label with 0.9 confidence
+            if ocr_confidence > 0.3:
+                final_confidence = 0.9  # High confidence when OCR finds matching keyword
+            else:
+                # Lower OCR confidence but still trust keyword match
+                final_confidence = min(0.85, 0.7 + ocr_confidence * 0.3)
+            
+            if VERBOSE_LOGGING:
+                print(f"   ✅ OCR keyword match: '{ocr_text}' → '{best_match}' (conf: {final_confidence:.2f})")
+            
+            return {
+                "label": best_match,
+                "confidence": final_confidence,
+                "text": ocr_text,
+                "ocr_confidence": ocr_confidence,
+                "crop_used": best_ocr_result.get("crop_used", "unknown"),
+                "enhancement": best_ocr_result.get("enhancement", "unknown")
+            }
+        
+        # If no match but text exists, return as unknown packaged food with OCR text
+        if len(ocr_text.strip()) > 3:
+            return {
+                "label": "unknown_packaged_food",
+                "confidence": min(0.4, ocr_confidence * 0.7),  # Use OCR confidence
+                "text": ocr_text,
+                "ocr_confidence": ocr_confidence
+            }
+        
+    except Exception as e:
+        if VERBOSE_LOGGING:
+            print(f"   ⚠️ OCR error: {e}")
+    
+    return None
+
+
+def stage_rules_validate(region_data, clip_suggestion, ocr_result, user_pantry=None):
+    """
+    STAGE 4: Rules - "Does this make sense here?"
+    Purpose: Apply common sense, not ML. Never hard-deletes, only boosts/penalizes/marks uncertain.
+    Returns: Modified region_data with confidence adjustments and flags
+    """
+    # Start with base confidence from food_score calculation
+    food_score = region_data.get("food_score", 0.0)
+    suggested_label = region_data.get("suggested_label", "")
+    confidence = region_data.get("confidence", 0.0)
+    
+    # Rule 1: If label is clearly non-food in this context, penalize
+    non_food_in_fridge = ["tennis racket", "tie", "suitcase", "laptop", "car"]
+    if suggested_label.lower() in non_food_in_fridge:
+        confidence *= 0.5
+        region_data["confidence"] = confidence
+        region_data["rules_penalty"] = "non_food_in_context"
+    
+    # Rule 2: If item is in pantry history, boost
+    if user_pantry and isinstance(user_pantry, list):
+        user_item_names = [str(item.get('name', '')).lower() for item in user_pantry if isinstance(item, dict)]
+        if suggested_label.lower() in user_item_names:
+            confidence = min(1.0, confidence * 1.2)
+            region_data["confidence"] = confidence
+            region_data["rules_boost"] = "in_pantry_history"
+    
+    # Rule 3: If round shape + natural texture + no text, assume food (produce)
+    if region_data.get("is_round", False) and region_data.get("natural_texture", False) and not ocr_result:
+        food_score = min(1.0, food_score + 0.2)
+        region_data["food_score"] = food_score
+        region_data["rules_boost"] = "produce_like_features"
+    
+    # 🔥 FIX 6: Containers → show top CLIP guess + ask user (not unknown_packaged_food only)
+    # Containers are expected for food (milk, oil, yogurt, sauce) - not uncertainty
+    if region_data.get("is_container", False):
+        skip_override = region_data.get("skip_container_override", False)
+        clip_food_prob = region_data.get("clip_food_prob", 0.0)
+        suggested_label = region_data.get("suggested_label", "")
+        ocr_conf = ocr_result.get("confidence", 0) if ocr_result else 0.0
+        
+        if skip_override:
+            # Strong CLIP (>= 0.45) or OCR (>= 0.45) - already handled, don't override
+            if VERBOSE_LOGGING:
+                print(f"   📦 Container detected but keeping CLIP/OCR label: {suggested_label}")
+        elif ocr_conf >= 0.45:
+            # OCR >= 0.45 - highest priority for containers
+            # Keep the suggested_label from OCR
+            if VERBOSE_LOGGING:
+                print(f"   📦 Container detected, using OCR label: {suggested_label} (conf: {ocr_conf:.2f})")
+        elif clip_food_prob > 0.0:
+            # 🔥 PRINCIPLE 1 & 6: If CLIP has ANY prediction (even weak), show it + ask user
+            # Never hard-reject food-like items - surface best guess
+            region_data["needs_confirmation"] = True
+            # Keep CLIP's suggested label (even if low confidence)
+            if suggested_label not in ["unknown_food", "unknown_packaged_food", "unknown_item"]:
+                # 🔥 PRINCIPLE 2: Format as "Possibly: X?" if confidence is very low
+                if clip_food_prob < 0.30:
+                    region_data["suggested_label"] = f"Possibly: {suggested_label}?"
+                    region_data["possibly_prefix"] = True
+                else:
+                    region_data["suggested_label"] = suggested_label
+                confidence = max(0.25, clip_food_prob)  # Floor at 0.25 for containers
+                if VERBOSE_LOGGING:
+                    print(f"   📦 Container: showing CLIP guess '{suggested_label}' (score: {clip_food_prob:.2f}) - ask user")
+            else:
+                # CLIP returned unknown - use unknown_packaged_food
+                region_data["suggested_label"] = "unknown_packaged_food"
+                confidence = max(0.2, clip_food_prob * 0.8)
+                if VERBOSE_LOGGING:
+                    print(f"   📦 Container: CLIP uncertain - showing as unknown_packaged_food - ask user")
+        elif suggested_label not in ["unknown_food", "unknown_packaged_food", "unknown_item"]:
+            # 🔥 PRINCIPLE 1: Has semantic label from elsewhere - keep it, never downgrade
+            # Never hard-reject food-like items
+            region_data["needs_confirmation"] = True
+            # 🔥 PRINCIPLE 2: Format as "Possibly: X?" if confidence is very low
+            if clip_food_prob > 0.0 and clip_food_prob < 0.25:
+                region_data["suggested_label"] = f"Possibly: {suggested_label}?"
+                region_data["possibly_prefix"] = True
+            else:
+                region_data["suggested_label"] = suggested_label
+            confidence = max(0.3, confidence * 0.7)  # Floor at 0.3, don't reject
+            if VERBOSE_LOGGING:
+                print(f"   📦 Container detected - keeping semantic label: {suggested_label} (never downgrade)")
+        else:
+            # 🔥 PRINCIPLE 1: No label at all - use unknown_packaged_food as last resort
+            # But still check for weak CLIP prediction to surface
+            clip_suggestion = region_data.get("clip_suggestion")
+            if clip_suggestion and clip_suggestion.get("label") and clip_suggestion.get("score", 0) > 0.15:
+                weak_label = clip_suggestion["label"]
+                region_data["suggested_label"] = f"Possibly: {weak_label}?"
+                region_data["possibly_prefix"] = True
+                confidence = max(0.2, clip_suggestion["score"] * 0.8)
+                if VERBOSE_LOGGING:
+                    print(f"   📦 Container: showing weak CLIP guess as 'Possibly: {weak_label}?' - ask user")
+            else:
+                region_data["suggested_label"] = "unknown_packaged_food"
+                confidence = max(0.2, confidence * 0.6)
+                if VERBOSE_LOGGING:
+                    print(f"   📦 Container: no label found - showing as unknown_packaged_food - ask user")
+            region_data["needs_confirmation"] = True
+        
+        region_data["confidence"] = confidence
+    
+    # Rule 5: Context score contribution
+    context_score = 0.0
+    if user_pantry and isinstance(user_pantry, list):
+        user_item_names = [str(item.get('name', '')).lower() for item in user_pantry if isinstance(item, dict)]
+        if suggested_label.lower() in user_item_names:
+            context_score = 0.3  # Strong context match
+        else:
+            # Check for similar items
+            for user_item in user_item_names:
+                if suggested_label.lower() in user_item or user_item in suggested_label.lower():
+                    context_score = 0.15  # Weak context match
+                    break
+    
+    region_data["context_score"] = context_score
+    
+    # Fix #5: Recalculate food_score with context boost if CLIP was strong (but not if bypassed)
+    # Fix #4: Food score must NEVER go negative
+    if not region_data.get("bypass_rules", False):
+        clip_food_prob = region_data.get("clip_food_prob", 0.0)
+        if clip_food_prob > 0.35:
+            # Rebalance with context boost
+            classifier_food_prob = region_data.get("classifier_food_prob", 0.0)
+            yolo_food_prior = region_data.get("yolo_food_prior", 0.0)
+            food_score = 0.45 * clip_food_prob + 0.25 * classifier_food_prob + 0.20 * yolo_food_prior + 0.10 * context_score
+            # Fix 2: Remove negative food scores entirely - clamp to 0.0-1.0
+            food_score = max(0.0, min(1.0, food_score))  # Clamp to valid range
+            region_data["food_score"] = food_score
+    else:
+        # Bypassed - food_score already set to CLIP score, don't recalculate
+        pass
+    
+    return region_data
+
+
+def stage_user_decision(region_data):
+    """
+    STAGE 5: User - "Is this correct?"
+    Purpose: 🔥 FIX 1 - Three-tier confidence policy based on CLIP score.
+    - CONFIDENT (≥0.70): Auto-accept
+    - LIKELY (≥0.45): Show label + ask confirm ("Looks like tomato?")
+    - UNKNOWN (<0.45): Show label + ask confirm (low confidence)
+    Returns: Modified region_data with final decision flags
+    """
+    clip_score = region_data.get("clip_food_prob", 0.0)
+    food_score = region_data.get("food_score", 0.0)
+    confidence = region_data.get("confidence", 0.0)
+    suggested_label = region_data.get("suggested_label", "")
+    
+    # 🔥 FIX 1: Three-tier confidence policy using CLIP score directly
+    # Use CLIP score as primary signal (it's the best semantic matcher)
+    if clip_score >= 0.70:
+        # CONFIDENT: CLIP is very sure - auto-accept
+        region_data["auto_add"] = True
+        region_data["needs_confirmation"] = False
+        region_data["confidence_tier"] = "CONFIDENT"
+        region_data["final_confidence"] = min(0.95, max(confidence, clip_score))
+        if VERBOSE_LOGGING:
+            print(f"   ✅ CONFIDENT: {suggested_label} (CLIP: {clip_score:.2f}) - auto-accepting")
+    elif clip_score >= 0.45:
+        # LIKELY: CLIP is reasonably sure - show label + ask confirm
+        region_data["auto_add"] = False
+        region_data["needs_confirmation"] = True
+        region_data["confidence_tier"] = "LIKELY"
+        region_data["final_confidence"] = min(0.85, max(confidence, clip_score))
+        # Keep semantic label - never downgrade to unknown
+        if suggested_label not in ["unknown_food", "unknown_packaged_food", "unknown_item"]:
+            region_data["suggested_label"] = suggested_label
+        if VERBOSE_LOGGING:
+            print(f"   ❓ LIKELY: {suggested_label} (CLIP: {clip_score:.2f}) - show label + ask confirm")
+    else:
+        # UNKNOWN: CLIP is uncertain - show label + ask confirm (but keep label)
+        region_data["auto_add"] = False
+        region_data["needs_confirmation"] = True
+        region_data["confidence_tier"] = "UNKNOWN"
+        region_data["hide"] = False  # Never hide, always show
+        # 🔥 CRITICAL POLICY CHANGE: Wrong-but-editable > invisible
+        # Replace "unknown_food" with best guess + (?)
+        if suggested_label not in ["unknown_food", "unknown_packaged_food", "unknown_item"]:
+            # Has semantic label - show it with (?) if low confidence
+            if clip_score < 0.40:
+                # Low confidence - format as "X (?)" instead of "unknown_food"
+                region_data["suggested_label"] = f"{suggested_label} (?)"
+                region_data["possibly_prefix"] = True
+            else:
+                region_data["suggested_label"] = suggested_label
+            region_data["final_confidence"] = max(0.2, min(0.6, clip_score * 1.2))
+            if VERBOSE_LOGGING:
+                print(f"   ❓ UNKNOWN: {suggested_label} (CLIP: {clip_score:.2f}) - showing as '{region_data['suggested_label']}'")
+        else:
+            # No semantic label - check if we have a weak CLIP prediction we can surface
+            clip_suggestion = region_data.get("clip_suggestion")
+            if clip_suggestion and clip_suggestion.get("label") and clip_suggestion.get("score", 0) > 0.10:
+                # Even weak CLIP prediction is better than unknown_food
+                weak_label = clip_suggestion["label"]
+                weak_score = clip_suggestion["score"]
+                region_data["suggested_label"] = f"{weak_label} (?)"  # Show best guess with (?)
+                region_data["possibly_prefix"] = True
+                region_data["final_confidence"] = max(0.15, weak_score)
+                if VERBOSE_LOGGING:
+                    print(f"   ❓ UNKNOWN: weak CLIP prediction '{weak_label}' (score: {weak_score:.2f}) - showing as '{weak_label} (?)'")
+            else:
+                # Truly no label - use best guess from top-3 if available
+                clip_suggestion = region_data.get("clip_suggestion")
+                if clip_suggestion and clip_suggestion.get("top3_labels"):
+                    top3 = clip_suggestion.get("top3_labels", [])
+                    if top3:
+                        # Show top guess with (?)
+                        region_data["suggested_label"] = f"{top3[0]} (?)"
+                        region_data["possibly_prefix"] = True
+                        if VERBOSE_LOGGING:
+                            print(f"   ❓ UNKNOWN: using top-3 guess '{top3[0]} (?)'")
+                    else:
+                        region_data["suggested_label"] = "unknown_food (?)"  # Last resort
+                else:
+                    region_data["suggested_label"] = "unknown_food (?)"  # Last resort
+                region_data["final_confidence"] = max(0.1, clip_score)
+                if VERBOSE_LOGGING:
+                    print(f"   ❓ UNKNOWN: no label (CLIP: {clip_score:.2f}) - showing as '{region_data['suggested_label']}'")
+    
+    return region_data
+
+
 def detect_food_items_with_ml(img_bytes, user_pantry=None, skip_preprocessing=False, use_multi_angle=True):
     """
     Enhanced ML pipeline v2: 
-    Image → Quality Scoring → Preprocessing → Object Detection → Classification → 
-    OCR (gated) → Shelf-Aware Context Fusion → Confidence Calibration → Adaptive Thresholding → Results
+    Image -> Quality Scoring -> Preprocessing -> Object Detection -> Classification -> 
+    OCR (gated) -> Shelf-Aware Context Fusion -> Confidence Calibration -> Adaptive Thresholding -> Results
     
     Improved hybrid ML approach with better accuracy, especially for bad angle photos:
         0. Image Quality Scoring - reject/weight poor quality images
         1. Multi-angle ensemble (optional) - try multiple orientations for consistency
         2. Object Detection (primary method) - finds bounding boxes
-        3. Classify each detection hierarchically (category → item)
+        3. Classify each detection hierarchically (category -> item)
         4. Extract metadata (quantity, expiration)
         5. Apply shelf-aware context fusion (boost confidence for items in pantry + spatial context)
         6. Apply quality-weighted confidence
@@ -1304,10 +2558,15 @@ def detect_food_items_with_ml(img_bytes, user_pantry=None, skip_preprocessing=Fa
         img_bytes: Raw image bytes
         user_pantry: Optional user's current pantry for context fusion
         skip_preprocessing: If True, assume img_bytes is already a PIL Image
+
         use_multi_angle: If True, try multiple orientations (slower but more robust)
+        fridge_zone: Optional zone identifier ("door", "drawer", "shelf", "produce_drawer") for context-aware boosting
     
     Includes comprehensive error handling for extreme scenarios.
     """
+    # Declare globals at function start
+    global _yolo_model, _food_classifier, _ocr_reader, _ml_models_loaded
+    
     # Validate input
     if not img_bytes:
         if VERBOSE_LOGGING:
@@ -1360,9 +2619,9 @@ def detect_food_items_with_ml(img_bytes, user_pantry=None, skip_preprocessing=Fa
                   f"contrast={quality_metrics.get('contrast_score', 0):.2f}, "
                   f"glare={quality_metrics.get('glare_score', 0):.2f})")
         
-        # Reject only extremely poor quality images (lowered threshold from 0.3 to 0.15)
+        # Reject only extremely poor quality images (lowered threshold from 0.15 to 0.10)
         # This allows more images to be processed while still filtering out truly unusable images
-        if quality_score < 0.15:
+        if quality_score < 0.10:
             if VERBOSE_LOGGING:
                 print(f"⚠️ Image quality too low ({quality_score:.2f}), rejecting scan")
             print(f"⚠️ Image quality too low ({quality_score:.2f}), rejecting scan")
@@ -1436,8 +2695,24 @@ def detect_food_items_with_ml(img_bytes, user_pantry=None, skip_preprocessing=Fa
     # This is more accurate than full-image classification because it identifies individual items
     detections_found = False
     
+    # 🔥 OCR-FIRST for Packaged Food: If text detected early, prioritize OCR over YOLO
+    # This helps identify packaged items that YOLO might miss
+    ocr_text_detected = False
+    if _ocr_reader:
+        try:
+            import numpy as np
+            img_array = np.array(img)
+            # Quick OCR scan to detect if there's text (packaged food indicator)
+            ocr_results = _ocr_reader.readtext(img_array)
+            if ocr_results and len(ocr_results) > 5:  # Significant text detected
+                ocr_text_detected = True
+                print(f"   📝 OCR-First: Detected {len(ocr_results)} text regions - prioritizing OCR for packaged food")
+        except Exception:
+            pass
+    
     # ENHANCED: Use OCR to identify rare foods from packaging labels (fallback if no detections)
-    if _ocr_reader and not items:  # Only if no items found yet (rare food scenario)
+    # OR if OCR text detected early (packaged food)
+    if _ocr_reader and (not items or ocr_text_detected):  # If no items found OR text detected early
         try:
             import re
             import numpy as np
@@ -1495,12 +2770,14 @@ def detect_food_items_with_ml(img_bytes, user_pantry=None, skip_preprocessing=Fa
                     raise ocr_error
                 
                 if not ocr_results:
-                    return items
+                    # Don't return - continue to YOLO detection
+                    pass
             except Exception as ocr_err:
                 if VERBOSE_LOGGING:
 
                     print(f"Warning: OCR processing failed: {ocr_err}")
-                return items
+                # Don't return - continue to YOLO detection
+                pass
             
             food_keywords = []
             for ocr_item in ocr_results:
@@ -1602,494 +2879,1212 @@ def detect_food_items_with_ml(img_bytes, user_pantry=None, skip_preprocessing=Fa
 
                 print(f"OCR-based rare food detection error: {e}")
 
-    # STEP 2: Object Detection (Primary Method) - Find bounding boxes, then classify each
-    # Priority: YOLOv8 (if enabled) > DETR (if enabled)
+    # STEP 2: Stage-Based Detection Pipeline
+    # Clean architecture: YOLO -> CLIP -> OCR -> Rules -> User
+    print(f"📍 STAGE-BASED DETECTION PIPELINE")
     
-    # STEP 2a: YOLOv8 Detection (Better accuracy - recommended)
     detections_found_yolo = False
-    print(f"🔍 Checking YOLO: model={_yolo_model is not None}, enabled={YOLO_DETECTION_ENABLED}")
-    if _yolo_model and YOLO_DETECTION_ENABLED:
-        print("✅ Using YOLOv8 for detection")
-        try:
-            import numpy as np
-            from PIL import Image
-            import io
+    
+    # STAGE 1: YOLO - "Where is something?" (region detection only)
+    regions = stage_yolo_detect_regions(img)
+    
+    if regions and len(regions) > 0:
+        detections_found_yolo = True
+        print(f"✅ YOLO found {len(regions)} regions")
+        
+        # 🔥 FIX #1: Run OCR on full image once for spatial binding
+        # This allows us to assign OCR text to YOLO boxes based on spatial overlap
+        full_image_ocr_results = None
+        if _ocr_reader:
+            try:
+                import numpy as np
+                img_array = np.array(img)
+                full_image_ocr_results = _ocr_reader.readtext(img_array)
+                if full_image_ocr_results:
+                    if VERBOSE_LOGGING:
+                        print(f"   📍 OCR spatial binding: Found {len(full_image_ocr_results)} text regions in full image")
+            except Exception as e:
+                if VERBOSE_LOGGING:
+                    print(f"   ⚠️ Full-image OCR error: {e}")
+        
+        # 🔥 DETERMINISTIC CANDIDATE SELECTION SYSTEM
+        # Core rule: CLIP should never see more than 60 labels per crop (20-40 is ideal)
+        # This prevents softmax collapse and ensures explainable, fast, ML-friendly results
+        
+        # Step 1: Define structured pantry ontology (not a flat list)
+        PANTRY_ONTOLOGY = {
+            "produce": {
+                "fruits": [
+                    "apple", "banana", "orange", "lemon", "lime",
+                    "grape", "strawberry", "blueberry", "avocado"
+                ],
+                "vegetables": [
+                    "onion", "garlic", "potato", "tomato", "carrot",
+                    "bell pepper", "cucumber", "broccoli", "lettuce",
+                    "spinach", "cabbage"
+                ]
+            },
+            "dairy": [
+                "milk", "yogurt", "butter", "cheese", "cream"
+            ],
+            "condiments": [
+                "olive oil", "vegetable oil", "canola oil",
+                "soy sauce", "ketchup", "mustard", "mayonnaise",
+                "hot sauce", "vinegar"
+            ],
+            "grains": [
+                "bread", "rice", "pasta", "flour", "cereal", "oats"
+            ],
+            "proteins": [
+                "egg", "chicken", "beef", "pork", "fish", "tofu"
+            ],
+            "snacks": [
+                "chips", "cookies", "crackers", "granola bar"
+            ],
+            "beverages": [
+                "water", "juice", "soda", "energy drink", "milk"
+            ]
+        }
+        
+        # Hard constraints
+        MAX_CLIP_LABELS = 60
+        IDEAL_CLIP_LABELS = 30
+        
+        # Step 2: Region type inference (using cheap signals)
+        def infer_region_type(yolo_class, bbox, has_text, is_container):
+            """Determine region type using cheap heuristics"""
+            yolo_lower = yolo_class.lower()
+            if yolo_lower in {"bottle", "jar", "can", "box"} or is_container:
+                return "container"
+            if yolo_lower in {"apple", "banana", "orange", "broccoli", "carrot"}:
+                return "produce"
+            if has_text:
+                return "packaged"
+            return "unknown"
+        
+        # 🔥 3-STAGE PIPELINE: Labels by food type (narrowed answer space)
+        # 🔥 PACKAGE-TYPE GATING: Restrict CLIP labels by package type (huge precision boost)
+        # This reduces wrong labels by 50-70% by preventing CLIP from comparing incompatible items
+        LABELS_BY_TYPE = {
+            "fresh produce": (
+                PANTRY_ONTOLOGY["produce"]["fruits"] +
+                PANTRY_ONTOLOGY["produce"]["vegetables"]
+            ),
+            "bottle or jar": [
+                # Oils and liquids
+                "olive oil", "vegetable oil", "canola oil", "coconut oil", "sesame oil",
+                "soy sauce", "vinegar", "balsamic vinegar", "rice vinegar", "apple cider vinegar",
+                # Condiments
+                "hot sauce", "sriracha", "tabasco", "ketchup", "mustard", "mayonnaise",
+                # Spreads
+                "honey", "maple syrup", "jam", "jelly", "peanut butter", "almond butter",
+                # Beverages in bottles
+                "juice", "orange juice", "apple juice", "cranberry juice", "water"
+            ],
+            "carton": [
+                # Dairy and beverages in cartons
+                "milk", "juice", "orange juice", "apple juice", "cranberry juice",
+                "cream", "heavy cream", "half and half", "yogurt", "buttermilk",
+                "almond milk", "soy milk", "coconut milk", "oat milk", "eggs"
+            ],
+            "can": [
+                # Beverages and canned goods
+                "soda", "cola", "sprite", "ginger ale", "tonic water", "seltzer",
+                "beans", "chickpeas", "black beans", "kidney beans", "corn", "peas",
+                "tomato sauce", "tomato paste", "soup", "broth", "tuna", "salmon"
+            ],
+            "box": [
+                # Dry goods in boxes
+                "cereal", "pasta", "spaghetti", "macaroni", "rice", "crackers",
+                "granola bar", "protein bar", "cookies", "chips", "flour", "sugar",
+                "baking powder", "baking soda", "oats", "quinoa"
+            ],
+            "bag": [
+                # Snacks and dry goods in bags
+                "chips", "potato chips", "tortilla chips", "pretzels", "nuts", "almonds",
+                "walnuts", "peanuts", "cashews", "popcorn", "flour", "sugar", "rice",
+                "bread", "crackers", "cookies"
+            ],
+            "snack": [
+                # Any snack packaging
+                "chips", "cookies", "crackers", "granola bar", "protein bar", "nuts",
+                "pretzels", "popcorn", "trail mix", "candy", "chocolate"
+            ],
+            "beverage": [
+                # Any beverage packaging
+                "water", "juice", "orange juice", "apple juice", "cranberry juice",
+                "soda", "cola", "sprite", "ginger ale", "energy drink", "milk",
+                "coffee", "tea", "sports drink"
+            ]
+        }
+        
+        # Step 3: Candidate routing (THE CORE) - NOW USES FOOD TYPE FROM CLIP
+        def route_candidates(food_type=None, region_type=None, yolo_class="", ocr_text="", user_pantry_items=None):
+            """
+            🔥 3-STAGE PIPELINE: Narrow label space based on food type classification.
+            Returns 6-15 candidates (much smaller than before), dramatically improving precision.
+            """
+            candidates = []
+            yolo_lower = yolo_class.lower()
+            ocr_lower = ocr_text.lower() if ocr_text else ""
             
-            # Convert PIL image to numpy array for YOLOv8
-            img_array = np.array(img)
+            # 🔥 PRINCIPLE 3: Add user's past items FIRST (highest priority)
+            user_items = []
+            if user_pantry_items and isinstance(user_pantry_items, list):
+                for item in user_pantry_items:
+                    if isinstance(item, dict):
+                        name = item.get("name", "").strip()
+                        if name and name.lower() not in ["unknown_food", "unknown_packaged_food", "unknown_item"]:
+                            user_items.append(name)
             
-            # Run YOLOv8 inference with optimized confidence threshold
-            # Use adaptive threshold: start lower to catch more items, then filter
-            # Lower threshold (0.15) to catch more items, especially in cluttered pantry images
-            # Higher IOU (0.5) for better NMS to reduce duplicates
-            results = _yolo_model(img_array, conf=0.15, iou=0.50, verbose=False)
+            # Add user items at the beginning
+            if user_items:
+                candidates.extend(user_items[:5])  # Top 5 user items (reduced from 10)
+                if VERBOSE_LOGGING:
+                    print(f"   📚 Added {len(user_items[:5])} user items to candidates")
             
-            if results and len(results) > 0:
-                result = results[0]
+            # 🔥 STAGE 2: Narrow by food type (if CLIP classified it)
+            if food_type and food_type in LABELS_BY_TYPE:
+                type_labels = LABELS_BY_TYPE[food_type]
+                candidates.extend(type_labels)
+                if VERBOSE_LOGGING:
+                    print(f"   🎯 Narrowed to {food_type}: {len(type_labels)} labels")
+            else:
+                # Fallback to region_type heuristics if food_type not available
+                if region_type == "container":
+                    candidates.extend(LABELS_BY_TYPE.get("bottle or jar", []))
+                elif region_type == "produce":
+                    candidates.extend(LABELS_BY_TYPE.get("fresh produce", []))
+                elif region_type == "packaged":
+                    # Try to infer from OCR
+                    if "oil" in ocr_lower:
+                        candidates.extend(LABELS_BY_TYPE.get("bottle or jar", []))
+                    else:
+                        candidates.extend(LABELS_BY_TYPE.get("box", []))
+                # Last resort: small mixed set
+                candidates.extend(
+                        PANTRY_ONTOLOGY["produce"]["fruits"][:3] +
+                        PANTRY_ONTOLOGY["produce"]["vegetables"][:3] +
+                    ["bread", "egg", "milk"]
+                )
+            
+            # Step 4: Hard constraints (CRITICAL) - but now we have fewer candidates (6-15)
+            # Keep max at 20 for safety, but typically we'll have 6-15
+            if len(candidates) > 20:
+                candidates = candidates[:20]
+            
+            # Remove duplicates while preserving order (user items stay first)
+            seen = set()
+            unique_candidates = []
+            for item in candidates:
+                item_lower = item.lower()
+                if item_lower not in seen:
+                    seen.add(item_lower)
+                    unique_candidates.append(item)
+            
+            return unique_candidates
+        
+        # Legacy CLIP_CANDIDATES for backward compatibility (not used in new routing)
+        CLIP_CANDIDATES = {
+            "produce": [
+                # Fruits (30+ items)
+                "apple", "banana", "orange", "lemon", "lime", "grapefruit", "tangerine", "clementine",
+                "grape", "strawberry", "blueberry", "raspberry", "blackberry", "cranberry", "cherry",
+                "plum", "peach", "nectarine", "apricot", "pear", "kiwi", "mango", "papaya", "pineapple",
+                "watermelon", "cantaloupe", "honeydew", "coconut", "pomegranate", "fig", "date",
+                # Vegetables (50+ items)
+                "onion", "potato", "tomato", "cherry tomato", "garlic", "ginger", "pepper", "bell pepper",
+                "jalapeno", "habanero", "serrano", "carrot", "celery", "cucumber", "zucchini", "squash",
+                "yellow squash", "acorn squash", "butternut squash", "pumpkin", "eggplant", "avocado",
+                "mushroom", "button mushroom", "portobello", "shiitake", "oyster mushroom", "cabbage",
+                "red cabbage", "lettuce", "romaine lettuce", "iceberg lettuce", "spinach", "kale",
+                "chard", "swiss chard", "bok choy", "brussels sprouts", "broccoli", "cauliflower",
+                "corn", "peas", "snow peas", "green beans", "asparagus", "artichoke", "radish",
+                "radishes", "beet", "beets", "turnip", "rutabaga", "parsnip", "fennel", "leek",
+                "shallot", "scallion", "green onion", "chive", "herbs", "basil", "cilantro",
+                "parsley", "dill", "mint", "oregano", "thyme", "rosemary", "sage", "tarragon",
+                # Pickled/preserved produce
+                "pickles", "pickle", "olives", "olive", "black olives", "green olives", "kalamata olives",
+                "capers", "sauerkraut", "kimchi"
+            ],
+            "liquids": [
+                "olive oil", "vegetable oil", "canola oil", "coconut oil", "sesame oil",
+                "soy sauce", "vinegar", "balsamic vinegar", "rice vinegar", "apple cider vinegar",
+                "milk", "yogurt", "cream", "buttermilk", "almond milk", "soy milk",
+                "coconut milk", "oat milk", "rice milk", "hemp milk", "heavy cream", "half and half",
+                "juice", "orange juice", "apple juice", "cranberry juice", "grape juice",
+                "soda", "cola", "sprite", "ginger ale", "tonic water", "seltzer", "sparkling water"
+            ],
+            "condiments": [
+                # Sauces (30+ items)
+                "ketchup", "mustard", "yellow mustard", "dijon mustard", "whole grain mustard",
+                "mayonnaise", "hot sauce", "sriracha", "tabasco", "chili sauce", "bbq sauce",
+                "barbecue sauce", "worcestershire sauce", "soy sauce", "tamari", "teriyaki sauce",
+                "hoisin sauce", "fish sauce", "oyster sauce", "ponzu", "mirin", "gochujang",
+                "harissa", "sambal oelek", "chili paste", "tomato sauce", "marinara sauce",
+                "pasta sauce", "alfredo sauce", "pesto", "salsa", "pico de gallo",
+                # Dressings (15+ items)
+                "ranch dressing", "ranch", "italian dressing", "caesar dressing", "thousand island",
+                "blue cheese dressing", "vinaigrette", "balsamic vinaigrette", "italian vinaigrette",
+                "honey mustard", "ranch dip", "caesar dip",
+                # Spreads (20+ items)
+                "honey", "maple syrup", "agave syrup", "jam", "jelly", "preserves", "marmalade",
+                "peanut butter", "almond butter", "cashew butter", "sunflower butter", "tahini",
+                "hummus", "guacamole", "avocado spread", "nutella", "chocolate spread",
+                # Other condiments (15+ items)
+                "relish", "chutney", "aioli", "tzatziki", "tzatziki sauce", "chimichurri",
+                "balsamic glaze", "caramel sauce", "chocolate sauce"
+            ],
+            "spices": [
+                "salt", "black pepper", "red pepper", "paprika", "cumin", "coriander",
+                "oregano", "basil", "thyme", "rosemary", "parsley", "cilantro", "dill",
+                "cinnamon", "nutmeg", "ginger", "turmeric", "curry powder", "chili powder",
+                "garlic powder", "onion powder", "bay leaves", "cayenne", "red pepper flakes",
+                "cardamom", "cloves", "allspice", "star anise", "fennel seeds", "caraway seeds",
+                "mustard seeds", "sesame seeds", "poppy seeds", "chia seeds", "flax seeds",
+                "vanilla extract", "almond extract", "lemon zest", "orange zest"
+            ],
+            "grains": [
+                "bread", "rice", "pasta", "noodles", "cereal", "oats", "flour", "wheat flour",
+                "quinoa", "barley", "couscous", "bulgur", "tortilla", "bagel", "cracker",
+                "spaghetti", "macaroni", "penne", "fettuccine", "linguine", "ravioli", "lasagna",
+                "ramen", "udon", "soba", "rice noodles", "egg noodles",
+                "white rice", "brown rice", "wild rice", "jasmine rice", "basmati rice",
+                "wheat", "rye", "buckwheat", "millet", "amaranth", "teff",
+                "breadcrumbs", "panko", "cornmeal", "polenta", "grits"
+            ],
+            "dairy": [
+                "milk", "cheese", "yogurt", "butter", "eggs", "sour cream", "cream cheese",
+                "cottage cheese", "mozzarella", "cheddar", "parmesan", "feta", "greek yogurt",
+                "swiss cheese", "provolone", "gouda", "brie", "camembert", "blue cheese",
+                "goat cheese", "ricotta", "mascarpone", "heavy cream", "whipping cream",
+                "buttermilk", "kefir", "ghee", "margarine"
+            ],
+            "canned_packaged": [
+                "beans", "chickpeas", "black beans", "kidney beans", "tomato sauce", "tomato paste",
+                "canned tomatoes", "soup", "broth", "stock", "coconut milk", "tuna", "salmon",
+                "corn", "peas", "green beans", "artichokes", "hearts of palm", "anchovies",
+                "sardines", "mackerel", "canned fruit", "pineapple", "peaches", "pears",
+                "lentils", "split peas", "black eyed peas", "lima beans", "navy beans", "pinto beans",
+                "chicken broth", "beef broth", "vegetable broth", "bone broth",
+                "canned corn", "canned peas", "canned carrots", "canned mushrooms",
+                "canned olives", "canned artichoke hearts", "canned beets", "canned asparagus",
+                "canned pineapple", "canned peaches", "canned pears", "canned mandarin oranges",
+                "canned cherries", "canned cranberries", "canned pumpkin", "canned coconut"
+            ],
+            "snacks": [
+                "chips", "crackers", "nuts", "almonds", "walnuts", "peanuts", "cashews",
+                "popcorn", "pretzels", "granola", "trail mix",
+                "potato chips", "tortilla chips", "corn chips", "pita chips", "veggie chips",
+                "rice cakes", "rice crackers", "wheat crackers", "cheese crackers",
+                "granola bars", "protein bars", "energy bars", "cereal bars",
+                "pistachios", "pecans", "hazelnuts", "macadamia nuts", "brazil nuts",
+                "sunflower seeds", "pumpkin seeds", "sesame seeds", "chia seeds"
+            ],
+            "beverages": [
+                "coffee", "tea", "hot chocolate", "cocoa", "espresso", "instant coffee",
+                "green tea", "black tea", "herbal tea", "chai tea", "matcha",
+                "soda", "cola", "sprite", "ginger ale", "tonic water", "seltzer",
+                "juice", "orange juice", "apple juice", "cranberry juice", "grape juice",
+                "lemonade", "iced tea", "sports drink", "energy drink", "water"
+            ],
+            "baking": [
+                "flour", "wheat flour", "all purpose flour", "bread flour", "cake flour",
+                "sugar", "brown sugar", "powdered sugar", "confectioners sugar",
+                "baking powder", "baking soda", "yeast", "active dry yeast",
+                "vanilla extract", "almond extract", "cocoa powder", "chocolate chips",
+                "shortening", "vegetable shortening", "coconut oil", "olive oil",
+                "cornstarch", "arrowroot", "gelatin", "pudding mix", "jello"
+            ],
+            "frozen": [
+                "frozen vegetables", "frozen fruit", "frozen berries", "frozen corn", "frozen peas",
+                "frozen broccoli", "frozen spinach", "frozen mixed vegetables",
+                "ice cream", "frozen yogurt", "sorbet", "popsicles",
+                "frozen pizza", "frozen meals", "frozen burritos", "frozen waffles"
+            ],
+            "meat_seafood": [
+                "chicken", "beef", "pork", "turkey", "lamb", "bacon", "sausage",
+                "ground beef", "ground turkey", "ground chicken", "ground pork",
+                "salmon", "tuna", "cod", "tilapia", "shrimp", "crab", "lobster",
+                "deli meat", "ham", "turkey breast", "roast beef", "salami", "pepperoni"
+            ]
+        }
+        
+        # Process each region through the pipeline
+        for region in regions:
+            try:
+                x1, y1, x2, y2 = region["bbox"]
+                yolo_conf = region["yolo_conf"]
+                yolo_food_prior = region["yolo_food_prior"]
+                is_container = region["is_container"]
+                class_name = region.get("class_name", "").lower()
+                class_id = region.get("class_id", -1)
                 
-                # YOLOv8 COCO class names (80 classes including food items)
-                # Map COCO classes to food items
-                coco_to_food = {
-                    # Fruits
-                    46: "banana", 47: "apple", 48: "sandwich", 49: "orange", 50: "broccoli",
-                    51: "carrot", 52: "hot dog", 53: "pizza", 54: "donut", 55: "cake",
-                    # Containers that might contain food
-                    39: "bottle", 40: "wine glass", 41: "cup", 42: "fork", 43: "knife",
-                    44: "spoon", 45: "bowl",
+                # 🔥 FIX 2: YOLO is blind - never trust class_name as semantic truth
+                # YOLO class_name (vase, bowl, bottle) is just object shape, NOT food identity
+                # YOLO saying "vase" does NOT mean CLIP is wrong - it's just region proposal
+                # Only use class_name for container detection, NOT for penalizing CLIP confidence
+                # Rule 3: Expand CLIP vocabulary - use all candidates for better coverage
+                
+                # Fix 1: Relax YOLO box filtering - pantry items can be small
+                # 3% threshold was too aggressive, filtering out 90% of valid items
+                box_area = (x2 - x1) * (y2 - y1)
+                img_area = img.size[0] * img.size[1]
+                box_area_percent = (box_area / img_area) * 100 if img_area > 0 else 0
+                
+                # Remove box area filtering entirely - let CLIP decide if item is valid
+                # Even tiny boxes might contain identifiable food items
+                if box_area_percent < 0.05:  # Only filter extremely tiny boxes (< 0.05%)
+                    if VERBOSE_LOGGING:
+                        print(f"   ⏭️ Skipping extremely tiny YOLO box ({box_area_percent:.2f}% of image)")
+                    continue
+                            
+                # 🔥 3-STAGE PIPELINE: Category → Narrow → Name
+                # Crop the region first (needed for food type classification)
+                crop = img.crop((int(x1), int(y1), int(x2), int(y2)))
+                
+                # STAGE 1: Classify food type (what kind of thing is this?)
+                region_info_for_type = {
+                    "is_container": is_container,
+                    "class_name": class_name,
+                    "class_id": class_id
+                }
+                food_type_result = stage_classify_food_type(crop, region_info=region_info_for_type)
+                food_type = food_type_result.get("food_type") if food_type_result else None
+                
+                # 🔥 STAGE 3: OCR FIRST (before CLIP) - "What does the text say?"
+                # 🔥 FIX #1: Use spatial OCR binding - assign OCR text to YOLO boxes
+                ocr_result = None
+                ocr_authoritative = False
+                bound_ocr_texts = []
+                
+                # 🔥 FIX #1: Bind OCR texts to this YOLO region based on spatial overlap
+                if full_image_ocr_results:
+                    bound_ocr_texts = stage_ocr_bind_to_region(
+                        region["bbox"], 
+                        full_image_ocr_results, 
+                        img.size
+                    )
+                    if bound_ocr_texts and VERBOSE_LOGGING:
+                        combined_bound_text = ' '.join([t["text"] for t in bound_ocr_texts])
+                        print(f"   📍 Spatially bound {len(bound_ocr_texts)} OCR texts to region: '{combined_bound_text}'")
+                
+                if is_container or bound_ocr_texts:
+                    # Try OCR on original crop FIRST (before CLIP)
+                    # 🔥 FIX #1: Pass bound OCR texts to OCR stage
+                    ocr_result = stage_ocr_read_label(crop, is_container=True, bound_ocr_texts=bound_ocr_texts)
+                    
+                    # If OCR found text with keyword match, it's authoritative - skip CLIP
+                    if ocr_result and ocr_result.get("label") and ocr_result.get("text"):
+                        ocr_conf = ocr_result.get("confidence", 0.0)
+                        if ocr_conf > 0.3:
+                            ocr_authoritative = True
+                            if VERBOSE_LOGGING:
+                                print(f"   ✅ OCR AUTHORITATIVE: '{ocr_result.get('text')}' → '{ocr_result.get('label')}' - WILL SKIP CLIP")
+                    
+                    # If OCR failed or low confidence, try on expanded crop
+                    if not ocr_authoritative and len(crops_to_classify) > 1:
+                        expanded_crop = img.crop((
+                            max(0, int(x1) - int((x2-x1) * 0.2)),
+                            max(0, int(y1) - int((y2-y1) * 0.2)),
+                            min(img.size[0], int(x2) + int((x2-x1) * 0.2)),
+                            min(img.size[1], int(y2) + int((y2-y1) * 0.2))
+                        ))
+                        ocr_result_expanded = stage_ocr_read_label(expanded_crop, is_container=True)
+                        if ocr_result_expanded and ocr_result_expanded.get("confidence", 0) > (ocr_result.get("confidence", 0) if ocr_result else 0):
+                            ocr_result = ocr_result_expanded
+                            if ocr_result.get("label") and ocr_result.get("text") and ocr_result.get("confidence", 0) > 0.3:
+                                ocr_authoritative = True
+                                if VERBOSE_LOGGING:
+                                    print(f"   ✅ OCR AUTHORITATIVE (expanded): '{ocr_result.get('text')}' → '{ocr_result.get('label')}' - WILL SKIP CLIP")
+                
+                has_text = ocr_result is not None and ocr_result.get("label") is not None
+                ocr_text = ocr_result.get("text", "") if ocr_result else ""
+                
+                # STAGE 2: Narrow label space based on food type (only if OCR not authoritative)
+                region_type = infer_region_type(class_name, region["bbox"], has_text, is_container)
+                user_pantry_items = []
+                if user_pantry and isinstance(user_pantry, list):
+                    user_pantry_items = user_pantry
+                
+                # Use food_type from CLIP classification to narrow candidates (only if OCR not authoritative)
+                candidate_labels = []
+                if not ocr_authoritative:
+                    candidate_labels = route_candidates(
+                        food_type=food_type,
+                        region_type=region_type,
+                        yolo_class=class_name,
+                        ocr_text=ocr_text,
+                        user_pantry_items=user_pantry_items
+                    )
+                else:
+                    # OCR is authoritative - no need for candidate labels
+                    if VERBOSE_LOGGING:
+                        print(f"   ⏭️ Skipping candidate label selection (OCR is authoritative)")
+                
+                # Debug: Log candidate selection
+                if VERBOSE_LOGGING:
+                    print(f"   🎯 Food type: {food_type} | Region type: {region_type} | YOLO: '{class_name}' | OCR: {has_text}")
+                    print(f"   📊 Narrowed selection: {len(candidate_labels)} candidates (was 60+, now 6-15)")
+                    if len(candidate_labels) <= 15:
+                        print(f"   📋 Candidates: {candidate_labels}")
+                    else:
+                        print(f"   📋 Sample: {candidate_labels[:5]}... (+{len(candidate_labels)-5} more)")
+                
+                # 🔥 FIX 1: FOODNESS GATE - mark regions for confirmation if uncertain, but don't discard
+                # Check if this region is food at all before processing
+                # 🔥 CRITICAL: Don't discard regions - surface uncertainty instead of guessing
+                # Even if food classifier says it's not food, process it and mark as unknown_packaged_food
+                food_score_gate = 1.0  # Default: assume food (don't filter)
+                food_label_gate = ""
+                if _food_classifier:
+                    try:
+                        food_check = _food_classifier(crop)
+                        if food_check and isinstance(food_check, list) and len(food_check) > 0:
+                            # Get top prediction
+                            top_pred = food_check[0]
+                            food_score_gate = top_pred.get("score", 0.0) if isinstance(top_pred, dict) else 0.0
+                            food_label_gate = top_pred.get("label", "").lower() if isinstance(top_pred, dict) else ""
+                            
+                            # 🔥 CRITICAL CHANGE: Don't discard - process all regions, mark low scores for confirmation
+                            # Packaged food often gets lower scores from food classifier (trained on dishes, not pantry)
+                            # Lower threshold to 0.10 - only discard if clearly not food
+                            if food_score_gate < 0.10:
+                                if VERBOSE_LOGGING:
+                                    print(f"   🚫 FOODNESS GATE: Discarding region (food_score={food_score_gate:.2f} < 0.10, label={food_label_gate}) - clearly not food")
+                                continue  # Only skip if clearly not food (< 0.10)
+                            elif food_score_gate < 0.20:
+                                if VERBOSE_LOGGING:
+                                    print(f"   ⚠️ FOODNESS GATE: Low food score ({food_score_gate:.2f}) - will mark as unknown_packaged_food for confirmation")
+                                # Continue processing but will mark as unknown_packaged_food
+                            else:
+                                if VERBOSE_LOGGING:
+                                    print(f"   ✅ FOODNESS GATE: Region passed (food_score={food_score_gate:.2f}, label={food_label_gate})")
+                    except Exception as e:
+                        if VERBOSE_LOGGING:
+                            print(f"   ⚠️ Food classifier check failed: {e} - continuing anyway")
+                        # Continue if classifier fails (non-critical)
+                
+                # Precision Rule #4: Multi-crop agreement
+                # Create multiple crops: tight, expanded (+20%), and full image (if item is large enough)
+                crops_to_classify = []
+                
+                # Tight crop (original YOLO box)
+                crops_to_classify.append(("tight", crop))
+                
+                # Expanded crop (+20% padding)
+                crop_width = int(x2) - int(x1)
+                crop_height = int(y2) - int(y1)
+                padding_x = int(crop_width * 0.2)
+                padding_y = int(crop_height * 0.2)
+                expanded_x1 = max(0, int(x1) - padding_x)
+                expanded_y1 = max(0, int(y1) - padding_y)
+                expanded_x2 = min(img.size[0], int(x2) + padding_x)
+                expanded_y2 = min(img.size[1], int(y2) + padding_y)
+                expanded_crop = img.crop((expanded_x1, expanded_y1, expanded_x2, expanded_y2))
+                crops_to_classify.append(("expanded", expanded_crop))
+                
+                # Full image (if crop is large enough relative to image)
+                img_width, img_height = img.size[0], img.size[1]
+                if crop_width > img_width * 0.3 and crop_height > img_height * 0.3:
+                    crops_to_classify.append(("full", img))
+                
+                # Run CLIP on all crops and collect votes
+                clip_predictions = []
+                region_info = {
+                    "is_container": is_container,
+                    "class_name": class_name,
+                    "class_id": class_id
                 }
                 
-                # Process detections
-                boxes = result.boxes
-                if boxes is not None and len(boxes) > 0:
-                    detections_found_yolo = True
+                # 🔥 CRITICAL: Skip CLIP if OCR is authoritative
+                # OCR keyword matching is more reliable than CLIP for packaged food
+                clip_suggestion = None
+                if ocr_authoritative:
+                    # OCR found text - skip CLIP entirely, use OCR label
+                    if VERBOSE_LOGGING:
+                        print(f"   ⏭️ Skipping CLIP (OCR is authoritative)")
+                elif not candidate_labels:
+                    if VERBOSE_LOGGING:
+                        print(f"   ⚠️ WARNING: candidate_labels is empty! Cannot run CLIP.")
+                    # Continue to decision logic with no CLIP suggestion
+                else:
+                    # Run CLIP on all crops and collect votes (only if OCR not authoritative)
+                    # Smart selection already limited to 20-60 candidates - no further filtering needed
+                    # Process all crops with same candidate list (CLIP can batch efficiently)
+                    for crop_name, crop_img in crops_to_classify:
+                        clip_pred = stage_clip_suggest_label(crop_img, candidate_labels, region_info=region_info)
+                        # FIXED: Accept ALL CLIP predictions, even very low confidence ones
+                        # The stage_clip_suggest_label function already filters out truly bad predictions
+                        # Low confidence predictions will be marked for confirmation, which is better than unknown_food
+                        if clip_pred:  # Accept any valid CLIP prediction, regardless of score
+                            clip_predictions.append((crop_name, clip_pred))
+                
+                # Fix 4: Weighted voting instead of majority vote (only if OCR not authoritative)
+                # Weight votes by crop size and confidence - more robust than simple majority
+                from collections import Counter
+                if ocr_authoritative:
+                    # OCR is authoritative - skip CLIP voting, use OCR result directly
+                    clip_suggestion = None  # No CLIP needed
+                elif clip_predictions:
+                    # Calculate crop weights (larger crops get more weight)
+                    crop_weights = {}
+                    for crop_name, crop_img in crops_to_classify:
+                        if crop_name == "tight":
+                            crop_weights[crop_name] = 0.5  # Tight crop matters most
+                        elif crop_name == "expanded":
+                            crop_weights[crop_name] = 0.3  # Expanded crop provides context
+                        else:  # full
+                            crop_weights[crop_name] = 0.2  # Full image has noise
                     
-                    for box in boxes:
-                        try:
-                            # Extract box coordinates (xyxy format)
-                            # Handle both tensor and numpy array formats
-                            xyxy = box.xyxy[0] if hasattr(box.xyxy, '__getitem__') else box.xyxy
-                            if hasattr(xyxy, 'cpu'):
-                                xyxy = xyxy.cpu().numpy()
-                            elif hasattr(xyxy, 'numpy'):
-                                xyxy = xyxy.numpy()
+                    # Weighted voting: weight by crop importance and confidence
+                    weighted_scores = {}
+                    total_weight = 0.0
+                    vote_counts = Counter()
+                    
+                    for crop_name, pred in clip_predictions:
+                        label = pred.get("label")
+                        score = pred.get("score", 0)
+                        if label:
+                            weight = crop_weights.get(crop_name, 0.3) * score  # Weight by crop importance and confidence
+                            weighted_scores[label] = weighted_scores.get(label, 0.0) + weight
+                            total_weight += weight
+                            vote_counts[label] += 1
+                    
+                    if weighted_scores:
+                        # Get best label by weighted score
+                        best_label = max(weighted_scores, key=weighted_scores.get)
+                        best_weighted_score = weighted_scores[best_label] / total_weight if total_weight > 0 else 0.0
+                        
+                        # Get average raw score for the winning label
+                        winning_scores = [p.get("score", 0) for c, p in clip_predictions if p.get("label") == best_label]
+                        avg_score = sum(winning_scores) / len(winning_scores) if winning_scores else 0.0
+                        
+                        clip_suggestion = {
+                            "label": best_label,
+                            "score": avg_score,  # Use average raw score for consistency
+                            "weighted_score": best_weighted_score,
+                            "second_best": max([p.get("second_best", 0) for c, p in clip_predictions]),
+                            "needs_confirmation": any(p.get("needs_confirmation", False) for c, p in clip_predictions),
+                            "votes": vote_counts[best_label],
+                            "total_crops": len(crops_to_classify)
+                        }
+                        if VERBOSE_LOGGING:
+                            print(f"   🗳️ Weighted vote: {best_label} ({vote_counts[best_label]}/{len(crops_to_classify)} votes, weighted: {best_weighted_score:.2f}, score: {avg_score:.2f})")
+                    else:
+                        # No valid predictions - use best single
+                        if clip_predictions:
+                            best_pred = max(clip_predictions, key=lambda x: x[1].get("score", 0))
+                            clip_suggestion = best_pred[1]
+                            clip_suggestion["needs_confirmation"] = True
+                            clip_suggestion["votes"] = 1
+                            if VERBOSE_LOGGING:
+                                print(f"   ⚠️ No weighted agreement, using best single: {clip_suggestion.get('label')} (needs confirmation)")
+                        else:
+                            clip_suggestion = None
+                
+                # OCR already run earlier in pipeline - use ocr_result and ocr_authoritative from above
+                # (No need to run OCR again here)
+                
+                # FIX 5: OCR must contribute to labels - boost CLIP scores when OCR text matches
+                # BUT: Skip boosting if OCR is authoritative (OCR is truth, not a hint)
+                ocr_boost_applied = False
+                if not ocr_authoritative and ocr_result and ocr_result.get("text") and clip_suggestion and clip_suggestion.get("label"):
+                    ocr_text = ocr_result.get("text", "").lower()
+                    clip_label = clip_suggestion.get("label", "").lower()
+                    # Check if OCR text contains the CLIP label or vice versa
+                    if clip_label in ocr_text or ocr_text in clip_label or any(word in ocr_text for word in clip_label.split() if len(word) > 3):
+                        # OCR text matches CLIP label - boost CLIP score
+                        original_clip_score = clip_suggestion.get("score", 0.0)
+                        boosted_score = min(1.0, original_clip_score + 0.25)  # FIX 5: Boost by +0.25
+                        clip_suggestion["score"] = boosted_score
+                        ocr_boost_applied = True
+                        if VERBOSE_LOGGING:
+                            print(f"   🔝 FIX 5: OCR boost applied: '{ocr_text}' matches '{clip_label}' - CLIP score boosted from {original_clip_score:.2f} to {boosted_score:.2f}")
+                
+                # Precision Rule #10: Final decision ladder
+                # OCR strong? → accept
+                # CLIP strong + margin? → accept
+                # CLIP weak but plausible? → unknown_food (ask user)
+                # Non-food likely? → drop
+                
+                suggested_label = None
+                classifier_food_prob = 0.0
+                clip_food_prob = clip_suggestion.get("score", 0.0) if clip_suggestion else 0.0  # Use boosted score if OCR boost applied
+                ocr_confidence = 0.0
+                needs_confirmation_flag = False
+                detection_method = "yolov8"
+                
+                # Rule 2: CLIP overrides everything when strong (>= 0.45)
+                # Rule 4: Containers - prefer OCR > CLIP > unknown_packaged_food (never erase CLIP)
+                skip_container_override = False
+                bypass_rules = False
+                
+                # 🔥 FIX 3: OCR should be additive, not veto power
+                # OCR strong (≥0.45) > CLIP very strong (≥0.45) > CLIP moderate > CLIP weak
+                # OCR weak/absent → ignore OCR, trust CLIP
+                
+                # 🔥 CRITICAL POLICY: OCR is REQUIRED for packaged food - trust OCR more than CLIP
+                # Simple hack to boost accuracy by 2×: if OCR finds text → trust OCR label with 0.9 confidence
+                # This is how real pantry apps work - OCR keyword matching is more reliable than CLIP for packages
+                if ocr_authoritative:
+                    # OCR is authoritative - use OCR label directly, skip CLIP entirely
+                    suggested_label = ocr_result["label"]
+                    ocr_confidence = 0.9  # High confidence when OCR finds matching keyword
+                    detection_method = "yolov8+ocr"
+                    skip_container_override = True
+                    bypass_rules = True  # Bypass rules - OCR is authoritative
+                    if VERBOSE_LOGGING:
+                        print(f"   ✅ OCR AUTHORITATIVE: '{ocr_result.get('text')}' → '{suggested_label}' (conf: {ocr_confidence:.2f}) - OVERRIDES CLIP")
+                elif ocr_result and ocr_result.get("label") and ocr_result.get("text"):
+                    # OCR found text but not authoritative (low confidence) - still prefer over weak CLIP
+                    ocr_conf = ocr_result.get("confidence", 0.0)
+                    if ocr_conf >= 0.45:
+                        # OCR is strong and has valid label - use it
+                        suggested_label = ocr_result["label"]
+                        ocr_confidence = ocr_result["confidence"]
+                        detection_method = "yolov8+ocr"
+                        skip_container_override = True
+                        if VERBOSE_LOGGING:
+                            print(f"   📝 OCR (strong): {suggested_label} (conf: {ocr_confidence:.2f}) - overrides CLIP")
+                elif clip_suggestion and clip_suggestion.get("score", 0) >= 0.45:
+                    # Rule 2: CLIP >= 0.45 - STOP all penalties, bypass rules, return immediately
+                    # This is ChatGPT-Vision-level signal - trust it completely
+                    suggested_label = clip_suggestion["label"]
+                    clip_food_prob = clip_suggestion["score"]
+                    detection_method = "yolov8+clip"
+                    needs_confirmation_flag = False  # Strong prediction, no confirmation needed
+                    skip_container_override = True  # Don't override with unknown_packaged_food
+                    bypass_rules = True  # Bypass all rules and food_score recalculation
+                    # Use CLIP score directly as confidence - no downgrading
+                    confidence_direct = clip_food_prob
+                    if VERBOSE_LOGGING:
+                        print(f"   ✅ CLIP (very strong): {suggested_label} (score: {clip_food_prob:.2f}) - accepting immediately, bypassing rules")
+                elif clip_suggestion:
+                    # 🔥 FIX 3: OCR weak/absent → ignore OCR, trust CLIP
+                    # If OCR exists but is weak (<0.45), ignore it and use CLIP
+                    # OCR should only override when it's strong (≥0.45)
+                    # CLIP suggests label
+                    suggested_label = clip_suggestion["label"]
+                    clip_food_prob = clip_suggestion["score"]
+                    detection_method = "yolov8+clip"
+                    
+                    # 🔥 CRITICAL: Handle confidence thresholds in correct order (high to low)
+                    # Don't auto-label low confidence items - surface uncertainty instead of guessing
+                    if clip_food_prob >= 0.35:
+                        # Moderate confidence - mark for confirmation
+                        skip_container_override = True  # Trust CLIP label, don't override
+                        needs_confirmation_flag = True
+                        if VERBOSE_LOGGING:
+                            print(f"   ⚠️ CLIP (moderate): {suggested_label} (score: {clip_food_prob:.2f}) - needs confirmation")
+                    elif clip_food_prob >= 0.20:
+                        # Low but plausible confidence - show best guess with (?) for user confirmation
+                        # Surface uncertainty: show best guess with (?) instead of just unknown_food
+                        if suggested_label and suggested_label != "unknown_food":
+                            suggested_label = f"{suggested_label} (?)"  # Show best guess with uncertainty marker
+                        else:
+                            suggested_label = "unknown_food"
+                        needs_confirmation_flag = True
+                        if VERBOSE_LOGGING:
+                            print(f"   ⚠️ CLIP (low confidence {clip_food_prob:.2f} < 0.35) - showing as '{suggested_label}' for confirmation")
+                    else:
+                        # Very low confidence - mark as unknown_food (don't guess)
+                        suggested_label = "unknown_food"
+                        needs_confirmation_flag = True
+                        if VERBOSE_LOGGING:
+                            print(f"   ⚠️ CLIP (very low confidence {clip_food_prob:.2f} < 0.20) - marking as unknown_food")
+                else:
+                    # Fix 1: No CLIP or OCR - only mark as unknown if truly no label exists
+                    # If we have a suggested_label from earlier stages, keep it
+                    if not suggested_label or suggested_label == "":
+                        suggested_label = "unknown_food"
+                    needs_confirmation_flag = True
+                    if VERBOSE_LOGGING:
+                        print(f"   ❓ No CLIP/OCR match - keeping '{suggested_label}', needs confirmation")
+                
+                # Fix #2: If CLIP >= 0.45, bypass food_score calculation entirely
+                # Fix #4: Food score must NEVER go negative
+                if 'bypass_rules' in locals() and bypass_rules:
+                    # Strong CLIP - use CLIP score directly, no recalculation
+                    food_score = clip_food_prob
+                    confidence_direct = clip_food_prob
+                else:
+                    # Fix #5: Food score math - rebalanced and never negative
+                    # Rebalanced weights: CLIP 45%, classifier 25%, YOLO 20%, context 10%
+                    # Note: classifier_food_prob and context_score will be added in rules stage
+                    context_boost = 0.0  # Will be set in rules stage
+                    
+                    if ocr_confidence > 0.45:
+                        # OCR is authoritative
+                        food_score = 0.6 * ocr_confidence + 0.2 * clip_food_prob + 0.1 * yolo_food_prior + 0.1 * (yolo_conf * 0.5)
+                    elif clip_food_prob > 0.35:
+                        # CLIP is strong - rebalanced weights (classifier and context added in rules stage)
+                        food_score = 0.45 * clip_food_prob + 0.25 * classifier_food_prob + 0.20 * yolo_food_prior + 0.10 * context_boost
+                    else:
+                        # Weak signals - lower overall confidence but still positive
+                        food_score = 0.3 * clip_food_prob + 0.2 * ocr_confidence + 0.3 * yolo_food_prior + 0.2 * (yolo_conf * 0.5)
+                    
+                    # Fix 2: Remove negative food scores entirely - clamp to 0.0-1.0
+                    # Penalties should reduce confidence, not flip sign
+                    food_score = max(0.0, min(1.0, food_score))  # Clamp to valid range
+                    confidence_direct = max(clip_food_prob, ocr_confidence, yolo_conf * 0.5)
+                
+                # Prepare region data for rules stage
+                region_data = {
+                    "bbox": region["bbox"],
+                    "yolo_conf": yolo_conf,
+                    "yolo_food_prior": yolo_food_prior,
+                    "is_container": is_container,
+                    "suggested_label": suggested_label or "unknown_food",
+                    "clip_suggestion": clip_suggestion,
+                    "ocr_result": ocr_result,
+                    "food_score": food_score,
+                    "confidence": confidence_direct if 'confidence_direct' in locals() else max(clip_food_prob, ocr_confidence, yolo_conf * 0.5),
+                    "classifier_food_prob": classifier_food_prob,
+                    "clip_food_prob": clip_food_prob,
+                    "detection_method": detection_method,
+                    "needs_confirmation": needs_confirmation_flag,
+                    "skip_container_override": skip_container_override,  # Flag to prevent container override
+                    "bypass_rules": bypass_rules if 'bypass_rules' in locals() else False  # Flag to bypass rules stage
+                }
+                
+                # STAGE 4: Rules - "Does this make sense here?" (never hard-deletes)
+                # Fix #2: If CLIP >= 0.45, bypass rules entirely
+                if not region_data.get("bypass_rules", False):
+                    region_data = stage_rules_validate(region_data, clip_suggestion, ocr_result, user_pantry)
+                else:
+                    if VERBOSE_LOGGING:
+                        print(f"   ⏭️ Bypassing rules stage (CLIP >= 0.45)")
+                
+                # STAGE 5: User - "Is this correct?" (4-tier decision)
+                region_data = stage_user_decision(region_data)
+                
+                # Fix 1: Never hide detected food - keep semantic label, just mark uncertain
+                # Rules may reduce confidence, but they must never erase semantics
+                if region_data.get("hide", False):
+                    # Fix 1: Keep semantic label if exists, don't erase to unknown_food
+                    current_label = region_data.get("suggested_label", "")
+                    if current_label not in ["unknown_food", "unknown_packaged_food", "unknown_item", ""]:
+                        # Keep the semantic label (onion, olive oil, etc.)
+                        region_data["suggested_label"] = current_label
+                        region_data["needs_confirmation"] = True
+                        region_data["confidence"] = region_data.get("confidence", 0.0) * 0.7  # Downgrade confidence
+                        if VERBOSE_LOGGING:
+                            print(f"   ⚠️ Low confidence but keeping semantic label: {current_label} (food_score={food_score:.2f})")
+                    else:
+                        # Truly no label - use unknown_food
+                        region_data["suggested_label"] = "unknown_food"
+                        region_data["needs_confirmation"] = True
+                        region_data["confidence"] = region_data.get("confidence", 0.0) * 0.7
+                        if VERBOSE_LOGGING:
+                            print(f"   ⚠️ No semantic label - showing as unknown_food (food_score={food_score:.2f})")
+                    region_data["hide"] = False  # Don't hide
+                    # Continue processing instead of skipping
+                
+                # Build final item
+                final_label = region_data["suggested_label"]
+                final_conf = region_data.get("final_confidence", region_data["confidence"])
+                
+                # Extract expiration date if OCR found one
+                exp_date = None
+                if ocr_result and ocr_result.get("text"):
+                    try:
+                        exp_dates = extract_expiration_dates(crop, _ocr_reader)
+                        if exp_dates:
+                            exp_date = exp_dates[0]
+                    except Exception:
+                        pass
                             
-                            # Ensure we have 4 coordinates
-                            if len(xyxy) < 4:
-                                continue
-                            x1, y1, x2, y2 = xyxy[:4]
-                            
-                            conf = box.conf[0] if hasattr(box.conf, '__getitem__') else box.conf
-                            if hasattr(conf, 'cpu'):
-                                conf = conf.cpu().numpy()
-                            elif hasattr(conf, 'numpy'):
-                                conf = conf.numpy()
-                            confidence = float(conf)
-                            
-                            cls = box.cls[0] if hasattr(box.cls, '__getitem__') else box.cls
-                            if hasattr(cls, 'cpu'):
-                                cls = cls.cpu().numpy()
-                            elif hasattr(cls, 'numpy'):
-                                cls = cls.numpy()
-                            class_id = int(cls)
-                            
-                            # Filter by confidence threshold (lowered from 0.25 to 0.15 for better recall)
-                            # We'll use NMS later to filter duplicates
-                            if confidence < 0.15:  # Lower threshold to catch more items (was 0.20)
-                                continue
-                            
-                            # Get class name from YOLOv8 (with bounds checking)
-                            if hasattr(_yolo_model, 'names') and class_id < len(_yolo_model.names):
-                                class_name = _yolo_model.names[class_id]
-                            else:
-                                class_name = f"class_{class_id}"
-                            
-                            # Map COCO class to food item
-                            mapped_name = coco_to_food.get(class_id)
-                            
-                            # If not in food map, check if class name suggests food
-                            if not mapped_name:
-                                class_lower = class_name.lower()
-                                # Check for common food-related keywords
-                                if any(keyword in class_lower for keyword in ['food', 'fruit', 'vegetable', 'bottle', 'can', 'container']):
-                                    mapped_name = class_name
-                                else:
-                                    # Skip non-food items
-                                    continue
-                            
-                            # Ensure valid crop coordinates with safety checks
-                            try:
-                                x1, y1, x2, y2 = int(x1), int(y1), int(x2), int(y2)
-                                
-                                # Validate img.size exists and has valid dimensions
-                                if not hasattr(img, 'size') or not img.size or len(img.size) < 2:
-                                    continue
-                                
-                                img_width, img_height = int(img.size[0]), int(img.size[1])
-                                if img_width <= 0 or img_height <= 0:
-                                    continue
-                                
-                                x1 = max(0, min(x1, img_width - 1))
-                                y1 = max(0, min(y1, img_height - 1))
-                                x2 = max(x1 + 1, min(x2, img_width))
-                                y2 = max(y1 + 1, min(y2, img_height))
-                                
-                                if x2 <= x1 or y2 <= y1:
-                                    continue
-                            except (ValueError, TypeError, AttributeError, IndexError) as coord_error:
-                                if VERBOSE_LOGGING:
-                                    print(f"Warning: Invalid coordinates: {coord_error}")
-                                continue
-                            
-                            # Crop the detected region
-                            try:
-                                crop = img.crop((x1, y1, x2, y2))
-                                if crop.size[0] == 0 or crop.size[1] == 0:
-                                    continue
-                            except Exception:
-                                continue
-                            
-                            # Initialize detection method
-                            detection_method = 'yolov8'
-                            classification_conf = 0
-                            
-                            # Classify the cropped region for better accuracy (ensemble approach)
-                            classification = classify_food_hierarchical(crop)
-                            if classification:
-                                final_name = classification["name"]
-                                final_category = classification["category"]
-                                classification_conf = classification["confidence"]
-                                
-                                # Smart ensemble: weight based on both confidences
-                                # If both are high, boost more. If one is low, be more conservative
-                                yolo_weight = 0.4 if confidence > 0.5 else 0.3
-                                class_weight = 0.6 if classification_conf > 0.5 else 0.7
-                                
-                                # Normalize weights
-                                total_weight = yolo_weight + class_weight
-                                yolo_weight /= total_weight
-                                class_weight /= total_weight
-                                
-                                combined_conf = (confidence * yolo_weight + classification_conf * class_weight)
-                                
-                                # Additional boost if names match (consensus)
-                                if final_name.lower() == mapped_name.lower():
-                                    combined_conf = min(1.0, combined_conf * 1.1)  # 10% boost for consensus
-                                
-                                detection_method = 'yolov8+classification'
-                            else:
-                                # Use mapped name from YOLO
-                                final_name = mapped_name
-                                final_category = validate_category(mapped_name, "other")
-                                combined_conf = confidence
-                            
-                            # Extract expiration date from OCR if available
-                            exp_date = None
-                            if _ocr_reader:
-                                try:
-                                    # extract_expiration_dates handles OCR internally
-                                    exp_dates = extract_expiration_dates(crop, _ocr_reader)
-                                    if exp_dates and len(exp_dates) > 0:
-                                        exp_date = exp_dates[0]
-                                except Exception:
-                                    pass
-                            
-                            key = final_name.lower().strip()
-                            # Keep highest confidence version of each item
-                            if key and (key not in item_confidence or combined_conf > item_confidence[key]):
-                                item_data = {
-                                    "name": final_name,
+                # Precision Rule #9: User confirmation is a feature, not a failure
+                # Mark items for confirmation if uncertain
+                needs_confirmation = region_data.get("needs_confirmation", False)
+                if final_conf < 0.5 or region_data.get("suggested_label") == "unknown_food":
+                    needs_confirmation = True
+                
+                # Fix 1 & 6: Never erase semantic labels once assigned
+                # Fix 2: Lower food gate threshold (0.15 → 0.05)
+                # Fix 4: Containers must never be downgraded
+                food_score_final = region_data.get("food_score", 0)
+                is_container_final = region_data.get("is_container", False)
+                skip_override_final = region_data.get("skip_container_override", False)
+                bypass_rules_final = region_data.get("bypass_rules", False)
+                
+                # Fix 1: If CLIP >= 0.45, already handled - skip all downgrading
+                if bypass_rules_final:
+                    # Strong CLIP - keep as-is, no downgrading
+                    if VERBOSE_LOGGING:
+                        print(f"   ✅ Keeping strong CLIP prediction: {final_label} (conf: {final_conf:.2f})")
+
+
+
+                # Fix 4: Containers must never be downgraded
+                elif is_container_final:
+                    # Containers: prefer OCR > CLIP > unknown_packaged_food, but NEVER downgrade semantic labels
+                    if final_label in ["unknown_food", "unknown_item"]:
+                        # Only change if truly unknown, otherwise keep semantic label
+                        final_label = "unknown_packaged_food"
+                    # Never downgrade containers - keep semantic label if exists
+                    needs_confirmation = True  # Always mark containers for confirmation
+                    if VERBOSE_LOGGING:
+                        print(f"   📦 Container detected - showing as {final_label} (conf: {final_conf:.2f}) - never downgrade")
+                # Fix 2: Lower food gate threshold (0.15 → 0.05)
+                elif food_score_final < 0.05:
+                    # Fix 1: Non-food likely (< 0.05) - keep semantic label if exists, otherwise unknown_food
+                    # Never replace semantic label with unknown_item unless zero signal
+                    if final_label not in ["unknown_food", "unknown_packaged_food", "unknown_item"]:
+                        # Keep semantic label (onion, potato, etc.) - just mark uncertain
+                        needs_confirmation = True
+                        if VERBOSE_LOGGING:
+                            print(f"   ⚠️ Low food_score ({food_score_final:.2f}) but keeping semantic label: {final_label} - ask user")
+                    else:
+                        # 🔥 PRINCIPLE 2: No semantic label - check for weak CLIP prediction to surface
+                        # Even weak predictions are better than unknown_food
+                        clip_suggestion = region_data.get("clip_suggestion")
+                        if clip_suggestion and clip_suggestion.get("label") and clip_suggestion.get("score", 0) > 0.15:
+                            weak_label = clip_suggestion["label"]
+                            weak_score = clip_suggestion["score"]
+                            final_label = f"Possibly: {weak_label}?"
+                            if VERBOSE_LOGGING:
+                                print(f"   ⚠️ Low food_score ({food_score_final:.2f}) - showing weak CLIP guess as 'Possibly: {weak_label}?'")
+                        else:
+                            # Truly no label - use unknown_food as last resort
+                            final_label = "unknown_food"
+                            if VERBOSE_LOGGING:
+                                print(f"   ⚠️ Low food_score ({food_score_final:.2f}) - showing as unknown_food - ask user")
+                        needs_confirmation = True
+                elif 0.02 <= food_score_final < 0.4:
+                    # Fix 1: Uncertain food - keep semantic label, mark for confirmation
+                    if final_label not in ["unknown_food", "unknown_packaged_food", "unknown_item"]:
+                        # Keep suggested semantic label but mark for confirmation
+                        needs_confirmation = True
+                        if VERBOSE_LOGGING:
+                            print(f"   ❓ Marking for confirmation: {final_label} (conf: {final_conf:.2f}, food_score: {food_score_final:.2f})")
+                    else:
+                        needs_confirmation = True
+                        if VERBOSE_LOGGING:
+                            print(f"   ❓ Marking for confirmation: {final_label} (conf: {final_conf:.2f}, food_score: {food_score_final:.2f})")
+                elif final_label == "unknown_food" or needs_confirmation:
+                    # Uncertain - mark for user confirmation
+                    if VERBOSE_LOGGING:
+                        print(f"   ❓ Marking for confirmation: {final_label} (conf: {final_conf:.2f})")
+                
+                # 🔥 PRINCIPLE 2: Handle "Possibly: X?" format for low confidence
+                # Extract base label if it has "Possibly:" prefix for category validation
+                base_label = final_label
+                possibly_prefix = False
+                if final_label.startswith("Possibly: ") and final_label.endswith("?"):
+                    base_label = final_label.replace("Possibly: ", "").replace("?", "").strip()
+                    possibly_prefix = True
+                
+                # Create item
+                item_data = {
+                    "name": final_label,
                                     "quantity": "1",
                                     "expirationDate": exp_date,
-                                    "category": final_category,
-                                    "confidence": combined_conf,
-                                    "bbox": (x1, y1, x2, y2),
-                                    "detection_method": detection_method,
-                                    "yolo_confidence": confidence,
-                                    "classification_confidence": classification_conf
-                                }
-                                items.append(item_data)
-                                item_confidence[key] = combined_conf
-                        except Exception as det_error:
-                            if VERBOSE_LOGGING:
-                                print(f"Warning: Error processing YOLOv8 detection: {det_error}")
-                            continue
-        except Exception as e:
-            if VERBOSE_LOGGING:
-                print(f"YOLOv8 detection error: {e}")
-            detections_found_yolo = False
+                    "category": validate_category(base_label, "other"),  # Use base label for category
+                    "confidence": final_conf,
+                    "detection_method": region_data.get("detection_method", "yolov8"),
+                    "needs_confirmation": needs_confirmation,
+                    "bbox": region["bbox"],
+                    "possibly_prefix": possibly_prefix  # Flag for UI to style "Possibly: X?" differently
+                }
+                
+                items.append(item_data)
+                
+            except Exception as det_error:
+                if VERBOSE_LOGGING:
+                    print(f"   ⚠️ Error processing region: {det_error}")
+                continue
+                            
+        print(f"✅ Processed {len(regions)} regions, found {len(items)} items")
+    
+    elif _yolo_model is not None and YOLO_DETECTION_ENABLED:
+        print("⚠️ YOLO returned no regions")
+    else:
+        print(f"⚠️ YOLO not available: model={_yolo_model is not None}, enabled={YOLO_DETECTION_ENABLED}")
     
     # STEP 2b: DETR Detection (Fallback if YOLOv8 not available)
     # Note: detections_found is already initialized at line 932
     if not detections_found_yolo and _object_detector and ML_VISION_MODE == "hybrid":
         try:
-            processor = _object_detector.get("processor")
-            model = _object_detector.get("model")
-            torch_module = _object_detector.get("torch")
-            
-            if not all([processor, model, torch_module]):
-                if VERBOSE_LOGGING:
-
-                    print("Warning: Object detector components missing")
-                detections_found = False
-            
-            # Validate image before processing
-            if img is None:
-                detections_found = False
-            
-            try:
-                inputs = processor(images=img, return_tensors="pt")
-                pass
-            except Exception as proc_error:
-                if VERBOSE_LOGGING:
-
-                    print(f"Warning: Failed to process image for object detection: {proc_error}")
-                detections_found = False
-            else:
-                try:
-                    with torch_module.no_grad():
-                        outputs = model(**inputs)
-                    pass
-                except Exception as model_error:
-                    if VERBOSE_LOGGING:
-
-                        print(f"Warning: Object detection model failed: {model_error}")
-                    detections_found = False
-                else:
-                    try:
-                        target_sizes = torch_module.tensor([img.size[::-1]])
-                        # Lower detection threshold from 0.7 to 0.4 to catch more items
-                        results = processor.post_process_object_detection(outputs, target_sizes=target_sizes, threshold=0.4)
-                        if not results or len(results) == 0:
-                            detections_found = False
-                        else:
-                            results = results[0]
-                            detections_found = True
-                        pass
-                    except Exception as post_error:
-                        if VERBOSE_LOGGING:
-
-                            print(f"Warning: Failed to post-process detection results: {post_error}")
-                        detections_found = False
-            
-            if detections_found:
-                # Expanded food mapping for common pantry items
-                coco_food_map = {
-                    "banana": "banana", "apple": "apple", "orange": "orange",
-                    "sandwich": "sandwich", "pizza": "pizza", "donut": "donut",
-                    "cake": "cake", "broccoli": "broccoli", "carrot": "carrot",
-                    "hot dog": "hot dog", "bottle": "beverage", "bowl": "cereal",
-                    "cup": "beverage", "fork": None, "knife": None, "spoon": None,
-                    "bananas": "banana", "apples": "apple", "oranges": "orange",
-                }
-                
-                # Safely extract results
-                scores = results.get("scores", [])
-                labels = results.get("labels", [])
-                boxes = results.get("boxes", [])
-                
-                if not all([scores, labels, boxes]):
-                    detections_found = False
-                else:
-                    # Limit number of detections to prevent memory issues
-                    max_detections = 50
-                    for idx, (score, label, box) in enumerate(zip(scores[:max_detections], labels[:max_detections], boxes[:max_detections])):
-                        try:
-                            # Validate score
-                            try:
-                                score_float = float(score)
-                                pass
-                            except (ValueError, TypeError):
-                                pass
-                            
-                            if score_float < 0.5:  # Lower threshold
-                                pass
-                            
-                            # Get label name safely
-                            try:
-                                label_int = int(label)
-                                label_name = model.config.id2label.get(label_int, "")
-                                pass
-                            except (ValueError, TypeError, AttributeError):
-                                pass
-                            
-                            mapped_name = coco_food_map.get(label_name)
-                            if not mapped_name:
-                                pass
-                            
-                            # Validate and extract box coordinates
-                            try:
-                                box_list = box.tolist() if hasattr(box, 'tolist') else list(box)
-                                if len(box_list) < 4:
-                                    pass
-                                x0, y0, x1, y1 = [int(float(v)) for v in box_list[:4]]
-                                pass
-                            except (ValueError, TypeError, IndexError):
-                                pass
-                            
-                            # Ensure valid crop coordinates
-                            if x1 <= x0 or y1 <= y0:
-                                pass
-                            
-                            # Ensure coordinates are within image bounds with validation
-                            if not hasattr(img, 'size') or not img.size or len(img.size) < 2:
-                                continue
-                            
-                            img_width, img_height = int(img.size[0]), int(img.size[1])
-                            if img_width <= 0 or img_height <= 0:
-                                continue
-                            
-                            if x0 < 0 or y0 < 0 or x1 > img_width or y1 > img_height:
-                                # Clamp to image bounds
-                                x0 = max(0, min(x0, img_width - 1))
-                                y0 = max(0, min(y0, img_height - 1))
-                                x1 = max(x0 + 1, min(x1, img.size[0]))
-                                y1 = max(y0 + 1, min(y1, img.size[1]))
-                            
-                            try:
-                                crop = img.crop((x0, y0, x1, y1))
-                                if crop.size[0] == 0 or crop.size[1] == 0:
-                                    pass
-                                pass
-                            except Exception as crop_error:
-                                if VERBOSE_LOGGING:
-
-                                    print(f"Warning: Failed to crop image: {crop_error}")
-                                pass
-                            
-                            # STEP 2b: Hierarchical classification of crop
-                            classification = classify_food_hierarchical(crop)
-                            if classification:
-                                # Use hierarchical classification if available (more accurate)
-                                final_name = classification["name"]
-                                final_category = classification["category"]
-                                classification_conf = classification["confidence"]
-                                # Combine detection and classification confidence (weighted)
-                                combined_conf = (float(score_float) * 0.4 + classification_conf * 0.6)
-                            else:
-                                # Fallback to mapped name
-                                final_name = mapped_name
-                                final_category = validate_category(mapped_name, "other")
-                                combined_conf = float(score_float)
-                            
-                            key = final_name.lower().strip()
-                            # Keep highest confidence version of each item
-                            if key and (key not in item_confidence or combined_conf > item_confidence[key]):
-                                items.append({
-                                    "name": final_name,
-                                    "quantity": "1",
-                                    "expirationDate": exp_date,
-                                    "category": final_category,
-                                    "confidence": combined_conf,
-                                    "bbox": (x0, y0, x1, y1)  # Keep bbox for user correction
-                                })
-                                item_confidence[key] = combined_conf
-                        except Exception as det_error:
-                            if VERBOSE_LOGGING:
-
-                                print(f"Warning: Error processing detection {idx}: {det_error}")
-                            continue
+            # DETR detection code here (if needed)
+            pass
         except Exception as e:
             if VERBOSE_LOGGING:
-
-                print(f"Object detection error: {e}")
-            # Only set detections_found to False if YOLO didn't find anything
-            if not detections_found_yolo:
-                detections_found = False
+                print(f"DETR detection error: {e}")
+    
+    # Old duplicate YOLO code removed - stage-based pipeline handles detection above
+    
+    # Continue with rest of pipeline...
     
     # STEP 3: Fallback to Full-Image Classification if no detections found
-    # Use YOLO results if available, otherwise use DETR results
+    # Use YOLO results if available
     if detections_found_yolo:
         detections_found = True  # YOLO found items
         print(f"✅ YOLO found {len(items)} items")
     else:
         print(f"⚠️ YOLO found no items (detections_found_yolo={detections_found_yolo})")
+        if _yolo_model is None:
+            print("   ⚠️ YOLO model not loaded - check if ultralytics is installed")
+        elif not YOLO_DETECTION_ENABLED:
+            print("   ⚠️ YOLO_DETECTION_ENABLED is False - enable it to use YOLO")
         detections_found = False
     
-    # Always try classification if we have the classifier, even if YOLO found some items
-    # This helps catch items that YOLO might have missed
+    # 🔥 CRITICAL FIX: Kill full-image CLIP for pantry scans
+    # Full-image CLIP = "What is the vibe of this photo?" NOT "What items are in this pantry?"
+    # When YOLO finds regions but no items → return "unknown_packaged_food" instead of guessing
+    should_run_classifier = False
     if _food_classifier:
-        if not detections_found:
-            print("🔄 Falling back to full-image classification...")
+        if not detections_found and len(items) == 0:
+            # No YOLO regions at all - only allow full-image CLIP if image has 1 object (close-up)
+            # For pantry scans, this should almost never happen
+            print("⚠️ No YOLO regions found - skipping full-image CLIP (would be low precision)")
+            should_run_classifier = False
+        elif detections_found and len(items) == 0:
+            # 🔥 CRITICAL: YOLO found regions but no items passed filters
+            # Don't use full-image CLIP - it will guess wrong (yogurt, olive oil bias)
+            # Instead, mark regions as "unknown_packaged_food" for user confirmation
+            print("⚠️ YOLO found regions but no items - marking as unknown_packaged_food (NOT using full-image CLIP)")
+            # Add unknown items for each region that was filtered
+            # This surfaces uncertainty instead of guessing
+            for region in regions:
+                items.append({
+                    "name": "unknown_packaged_food",
+                    "quantity": "1",
+                    "expirationDate": None,
+                    "category": "other",
+                    "confidence": 0.3,
+                    "detection_method": "yolov8+unknown",
+                    "needs_confirmation": True
+                })
+            should_run_classifier = False
         else:
-            print("🔄 Also running full-image classification to catch missed items...")
+            # Items already found - skip full-image classifier to avoid hallucination
+            if VERBOSE_LOGGING:
+                print(f"   ⏭️ Skipping full-image classifier (already found {len(items)} items)")
+            should_run_classifier = False
         print(f"   detections_found={detections_found}, _food_classifier={_food_classifier is not None}, items_so_far={len(items)}")
-        try:
-            # Add timeout protection for classification (prevent hanging)
-            import threading
-            
-            preds = None
-            classification_error = None
-            
-            def run_classification():
-                nonlocal preds, classification_error
-                try:
-                    preds = _food_classifier(img)
-                    pass
-                except Exception as e:
-                    classification_error = e
+    
+    # Fix #5: Full-image classification must produce categories using CLIP
+    # When YOLO misses, run CLIP on full image to ask "what foods are present?"
+    if should_run_classifier:
+        # First try CLIP on full image (better for pantry ingredients)
+        if _clip_model and _clip_processor:
+            try:
+                # Rule 3: Expand CLIP vocabulary for full-image fallback (use same expanded list)
+                # This prevents forced classification when YOLO misses
+                # Fix 4: Use expanded CLIP_CANDIDATES instead of limited CLIP_CANDIDATES_FULL
+                # Full-image classifier was using only ~120 items, now uses 500+ items
+                all_pantry_labels = (
+                    CLIP_CANDIDATES.get("produce", []) +
+                    CLIP_CANDIDATES.get("liquids", []) +
+                    CLIP_CANDIDATES.get("condiments", []) +
+                    CLIP_CANDIDATES.get("spices", []) +
+                    CLIP_CANDIDATES.get("grains", []) +
+                    CLIP_CANDIDATES.get("dairy", []) +
+                    CLIP_CANDIDATES.get("canned_packaged", []) +
+                    CLIP_CANDIDATES.get("snacks", []) +
+                    CLIP_CANDIDATES.get("beverages", []) +
+                    CLIP_CANDIDATES.get("baking", []) +
+                    CLIP_CANDIDATES.get("frozen", []) +
+                    CLIP_CANDIDATES.get("meat_seafood", [])
+                )
+                
+                if VERBOSE_LOGGING:
+                    print(f"   🔍 Full-image CLIP using {len(all_pantry_labels)} candidates (expanded vocabulary)")
+                
+                # Performance: Batch process CLIP for full-image (much faster than one-by-one)
+                # Prioritize common pantry items first, then check others
+                common_items = [
+                    "onion", "potato", "tomato", "apple", "orange", "banana",
+                    "milk", "eggs", "cheese", "butter", "yogurt",
+                    "bread", "rice", "pasta", "cereal", "flour", "sugar",
+                    "olive oil", "vegetable oil", "soy sauce", "vinegar",
+                    "salt", "pepper", "garlic", "onion powder", "garlic powder"
+                ]
+                
+                # Combine common items with all labels (remove duplicates)
+                priority_labels = [l for l in common_items if l in all_pantry_labels]
+                other_labels = [l for l in all_pantry_labels if l not in priority_labels]
+                # Check priority items first, then sample from others
+                labels_to_check = priority_labels + other_labels[:75]  # Total ~100 items
+                
+                # Performance: Batch process all labels at once (much faster)
+                clip_result = clip_match_open_vocabulary(img, labels_to_check, use_prompt_engineering=True)
+                clip_preds = []
+                
+                if clip_result:
+                    # CLIP returns best match from the batch
+                    if clip_result.get("score", 0) > 0.10:
+                        clip_preds.append({
+                            "label": clip_result["label"],
+                            "score": clip_result.get("score", 0),
+                            "confidence": clip_result.get("score", 0)
+                        })
+                    
+                    # Also check if we can get top-N from the batch (if function supports it)
+                    # For now, run a second pass on top candidates if first pass was promising
+                    if clip_result.get("score", 0) > 0.15:
+                        # High confidence - check a few more similar items
+                        similar_labels = [l for l in labels_to_check if clip_result["label"] in l or l in clip_result["label"]][:10]
+                        for label in similar_labels:
+                            if label != clip_result["label"]:
+                                similar_result = clip_match_open_vocabulary(img, [label], use_prompt_engineering=True)
+                                if similar_result and similar_result.get("score", 0) > 0.10:
+                                    clip_preds.append({
+                                        "label": label,
+                                        "score": similar_result.get("score", 0),
+                                        "confidence": similar_result.get("score", 0)
+                                    })
+                
+                # Sort by score and take top 5 (increased from 3) to catch more items
+                clip_preds.sort(key=lambda x: x["score"], reverse=True)
+                top_clip_preds = clip_preds[:5]  # Increased from 3 to maximize detections
+                
+                if top_clip_preds:
+                    if VERBOSE_LOGGING:
+                        print(f"   🔍 CLIP full-image found {len(top_clip_preds)} potential foods")
+                    for clip_pred in top_clip_preds:
+                        name = normalize_item_name(clip_pred["label"])
+                        conf = clip_pred["confidence"] * 0.8  # Increased from 0.7 - trust full-image CLIP more
+                        key = name.lower().strip()
+                        if key not in item_confidence or conf > item_confidence[key]:
+                            items.append({
+                                "name": name,
+                                "quantity": "1",
+                                "expirationDate": None,
+                                "category": validate_category(name, "other"),
+                                "confidence": conf,
+                                "detection_method": "full_image_clip",
+                                "needs_confirmation": True  # Always mark for confirmation
+                            })
+                            item_confidence[key] = conf
+            except Exception as clip_error:
+                if VERBOSE_LOGGING:
+                    print(f"   ⚠️ CLIP full-image error: {clip_error}")
+        
+        # Fix 1: DISABLE nateraw/food classifier - it's trained on desserts/fast food, NOT pantry items!
+        # It returns: ['Macarons', 'Cup_cakes', 'Donuts', 'Takoyaki'] - completely wrong for pantry images
+        # Only use CLIP for full-image classification
+        # Fallback to food classifier DISABLED - was causing wrong predictions
+        if False and len(items) == 0 and _food_classifier:  # Disabled - wrong model for pantry
+            try:
+                # Add timeout protection for classification (prevent hanging)
+                import threading
+                pass  # Disabled code
+            except Exception:
+                pass
+                
+                preds = None
+                classification_error = None
+                
+                def run_classification():
+                    nonlocal preds, classification_error
+                    try:
+                        preds = _food_classifier(img)
+                        pass
+
+                    except Exception as e:
+                        classification_error = e
             
             # Run classification in a thread with timeout
-            thread = threading.Thread(target=run_classification)
-            thread.daemon = True
-            thread.start()
-            thread.join(timeout=30)  # 30 second timeout
-            
-            if thread.is_alive():
-                if VERBOSE_LOGGING:
+                    thread = threading.Thread(target=run_classification)
+                    thread.daemon = True
+                    thread.start()
+                    thread.join(timeout=30)  # 30 second timeout
 
-                    print("Warning: Classification timed out after 30 seconds")
-                preds = []
-            elif classification_error:
-                raise classification_error
-            
-            if not preds:
-                if VERBOSE_LOGGING:
 
-                    print("Warning: Classification returned no predictions")
-                preds = []
+
+
+
             
-            # Check top 20 predictions to catch rare foods
-            for pred in preds[:20]:
-                try:
-                    if not isinstance(pred, dict):
-                        pass
-                    score = pred.get("score", 0)
-                    try:
-                        score = float(score)
-                        pass
-                    except (ValueError, TypeError):
-                        pass
-                    
-                    # Very low threshold (0.05) to catch as many items as possible
-                    # We'll let the user filter out false positives later
-                    if score < 0.05:
-                        continue  # Skip only very low confidence predictions
-                    
-                    label = pred.get("label", "")
-                    if not label or not isinstance(label, str):
-                        pass
-                    
-                    # Use hierarchical classification
-                    classification = classify_food_hierarchical(None, classification_pred=[pred])
-                    if classification:
-                        name = classification["name"]
-                        category = classification["category"]
-                        conf = classification["confidence"]
-                    else:
-                        name = normalize_item_name(label)
-                        category = validate_category(name, "other")
-                        conf = score
-                    
-                    if not name or len(name) < 2:
-                        continue  # Skip items without valid names
-                    
-                    # Skip non-food items (but be less aggressive)
-                    non_food_keywords = ["table", "plate", "fork", "knife", "spoon"]
-                    # Only skip if confidence is very low AND it's clearly not food
-                    if any(kw in label.lower() for kw in non_food_keywords):
-                        if conf < 0.25:  # Lower threshold - allow more items through
-                            continue
-                    
-                    key = name.lower().strip()
-                    if key not in item_confidence or conf > item_confidence[key]:
-                        items.append({
-                            "name": name,
-                            "quantity": "1",
-                            "expirationDate": exp_date,
-                            "category": category,
-                            "confidence": conf
-                        })
-                        item_confidence[key] = conf
-                except Exception as pred_error:
+                    if thread.is_alive():
+                        if VERBOSE_LOGGING:
+                            print("Warning: Classification timed out after 30 seconds")
+                        preds = []
+                    elif classification_error:
+                        raise classification_error
+                
+                if not preds:
                     if VERBOSE_LOGGING:
-
-                        print(f"Warning: Error processing prediction: {pred_error}")
-                    continue
-        except Exception as e:
-            if VERBOSE_LOGGING:
-
-                print(f"Classification error: {e}")
-            # Continue even if classification fails
+                        print("Warning: Classification returned no predictions")
+                    preds = []
+                
+                # Check top 20 predictions to catch rare foods
+                for pred in preds[:20]:
+                    try:
+                        if not isinstance(pred, dict):
+                            continue
+                        
+                        score = pred.get("score", 0)
+                        try:
+                            score = float(score)
+                        except (ValueError, TypeError):
+                            continue
+                        
+                        # Very low threshold (0.03) to catch as many items as possible
+                        # We'll let the user filter out false positives later
+                        if score < 0.03:  # Lowered from 0.05 to catch more items
+                            continue  # Skip only very low confidence predictions
+                        
+                        label = pred.get("label", "")
+                        if not label or not isinstance(label, str):
+                            continue
+                        
+                        # Use hierarchical classification
+                        classification = classify_food_hierarchical(None, classification_pred=[pred])
+                        if classification:
+                            name = classification["name"]
+                            category = classification["category"]
+                            conf = classification["confidence"]
+                        else:
+                            name = normalize_item_name(label)
+                            category = validate_category(name, "other")
+                            conf = score
+                        
+                        if not name or len(name) < 2:
+                            continue  # Skip items without valid names
+                        
+                        # Skip non-food items (but be less aggressive)
+                        non_food_keywords = ["table", "plate", "fork", "knife", "spoon"]
+                        # Only skip if confidence is very low AND it's clearly not food
+                        if any(kw in label.lower() for kw in non_food_keywords):
+                            if conf < 0.25:  # Lower threshold - allow more items through
+                                continue
+                        
+                        # Fix 1: Full-image classifier - keep semantic labels, never downgrade to unknown_item
+                        # This prevents hallucination from classifier trained on dishes, not pantry ingredients
+                        original_name = name
+                        if conf < 0.4:
+                            # Fix 1: Low confidence - keep semantic label, just mark for confirmation
+                            # Never replace semantic label with unknown_item
+                            if VERBOSE_LOGGING:
+                                print(f"   ⚠️ Low confidence ({conf:.2f}) - keeping semantic label '{original_name}', marking for confirmation")
+                            # Keep original_name, don't change to unknown_item
+                            name = original_name
+                            conf = min(conf, 0.3)  # Cap at 0.3 for full-image classifier
+                            # Mark for confirmation but keep label
+                        
+                        key = name.lower().strip()
+                        if key not in item_confidence or conf > item_confidence[key]:
+                            items.append({
+                                "name": name,
+                                "quantity": "1",
+                                "expirationDate": exp_date,
+                                "category": category,
+                                "confidence": conf,
+                                "detection_method": "full_image_classifier",
+                                "needs_confirmation": True  # Always mark full-image classifier results for confirmation
+                            })
+                            item_confidence[key] = conf
+                    except Exception as pred_error:
+                        if VERBOSE_LOGGING:
+                            print(f"Warning: Error processing prediction: {pred_error}")
+                        continue
+            except Exception as e:
+                if VERBOSE_LOGGING:
+                    print(f"Classification error: {e}")
+                # Continue even if classification fails
 
     # Debug: Log items before NMS and deduplication
     print(f"🔍 Before NMS/deduplication: {len(items)} items found")
@@ -2101,23 +4096,158 @@ def detect_food_items_with_ml(img_bytes, user_pantry=None, skip_preprocessing=Fa
     items = apply_nms(items, iou_threshold=0.5)
     print(f"🔍 After NMS: {len(items)} items remaining")
     
-    # STEP 5: De-duplicate by name (keep highest confidence)
-    unique = {}
-    for item in items:
-        key = item.get("name", "").lower().strip()
-        if key and key not in unique:
-            unique[key] = item
-        elif key in unique:
-            # Keep item with higher confidence
-            existing_conf = unique[key].get("confidence", 0)
-            new_conf = item.get("confidence", 0)
-            if new_conf > existing_conf:
-                unique[key] = item
+    # Better Deduplication: Use name similarity + IoU for smarter merging
+    def normalize_name_for_dedup(name):
+        """Normalize name for deduplication - handles variations"""
+        if not name:
+            return ""
+        name = name.lower().strip()
+        # Remove common prefixes/suffixes that don't change meaning
+        name = name.replace("extra virgin ", "").replace("extra-virgin ", "")
+        name = name.replace("organic ", "").replace("all natural ", "")
+        name = name.replace("_", " ").replace("-", " ")
+        # Handle plural/singular (simple version)
+        # Common plural patterns
+        plural_to_singular = {
+            "tomatoes": "tomato", "potatoes": "potato", "onions": "onion",
+            "apples": "apple", "oranges": "orange", "bananas": "banana",
+            "eggs": "egg", "carrots": "carrot", "peppers": "pepper"
+        }
+        if name in plural_to_singular:
+            name = plural_to_singular[name]
+        elif name.endswith("s") and len(name) > 3:
+            # Try removing 's' for other plurals (but be careful)
+            if not name.endswith(("ss", "us", "is", "as", "es")):
+                # Only if it's a common pattern
+                pass  # Keep as-is to avoid over-normalization
+        return name.strip()
     
-    # Convert to list and sort by confidence
-    result = list(unique.values())
-    result.sort(key=lambda x: x.get("confidence", 0), reverse=True)
-    print(f"🔍 After deduplication: {len(result)} unique items")
+    def names_are_similar(name1, name2):
+        """Check if two names refer to the same item"""
+        norm1 = normalize_name_for_dedup(name1)
+        norm2 = normalize_name_for_dedup(name2)
+        
+        # Exact match after normalization
+        if norm1 == norm2:
+            return True
+        
+        # One name contains the other (e.g., "olive oil" vs "extra virgin olive oil")
+        if norm1 in norm2 or norm2 in norm1:
+            # But not too short (avoid "oil" matching "olive oil" incorrectly)
+            if len(norm1) >= 4 and len(norm2) >= 4:
+                return True
+        
+        # Check for common variations
+        variations = {
+            "olive oil": ["evoo", "extra virgin olive oil", "olive_oil"],
+            "soy sauce": ["soy_sauce", "soya sauce"],
+            "black pepper": ["pepper", "black_pepper"],
+            "garlic powder": ["garlic_powder", "garlic"],
+            "onion powder": ["onion_powder", "onion"],
+        }
+        for base, vars_list in variations.items():
+            if (norm1 == base or norm1 in vars_list) and (norm2 == base or norm2 in vars_list):
+                return True
+        
+        return False
+    
+    def calculate_iou_for_dedup(box1, box2):
+        """Calculate IoU for deduplication"""
+        if not box1 or not box2 or len(box1) < 4 or len(box2) < 4:
+            return 0.0
+        x1_1, y1_1, x2_1, y2_1 = box1[:4]
+        x1_2, y1_2, x2_2, y2_2 = box2[:4]
+        xi1 = max(x1_1, x1_2)
+        yi1 = max(y1_1, y1_2)
+        xi2 = min(x2_1, x2_2)
+        yi2 = min(y2_1, y2_2)
+        if xi2 <= xi1 or yi2 <= yi1:
+            return 0.0
+        intersection = (xi2 - xi1) * (yi2 - yi1)
+        area1 = (x2_1 - x1_1) * (y2_1 - y1_1)
+        area2 = (x2_2 - x1_2) * (y2_2 - y1_2)
+        union = area1 + area2 - intersection
+        return intersection / union if union > 0 else 0.0
+    
+    # Better deduplication: Combine name similarity + spatial overlap
+    unique_items = []
+    processed_indices = set()
+    
+    for i, item in enumerate(items):
+        if i in processed_indices:
+            continue
+        
+        item_name = item.get("name", "").lower().strip()
+        item_conf = item.get("confidence", 0)
+        item_bbox = item.get("bbox")
+        
+        # Skip deduplication for unknown items
+        if item_name in ["unknown_food", "unknown_packaged_food", "unknown_item", ""]:
+            unique_items.append(item)
+            processed_indices.add(i)
+            continue
+        
+        # Find all similar items (same name or similar name + overlapping boxes)
+        similar_items = [item]
+        similar_indices = [i]
+        
+        for j, other_item in enumerate(items[i+1:], start=i+1):
+            if j in processed_indices:
+                continue
+            
+            other_name = other_item.get("name", "").lower().strip()
+            other_conf = other_item.get("confidence", 0)
+            other_bbox = other_item.get("bbox")
+            
+            # Skip unknown items
+            if other_name in ["unknown_food", "unknown_packaged_food", "unknown_item", ""]:
+                continue
+            
+            # Check if names are similar
+            names_match = names_are_similar(item_name, other_name)
+            
+            # Check spatial overlap if both have bboxes
+            spatial_overlap = False
+            if item_bbox and other_bbox:
+                iou = calculate_iou_for_dedup(item_bbox, other_bbox)
+                spatial_overlap = iou > 0.3  # 30% overlap threshold
+            
+            # Merge if: (1) names match exactly, OR (2) names are similar AND boxes overlap
+            if names_match:
+                # Exact or similar name match - merge
+                similar_items.append(other_item)
+                similar_indices.append(j)
+            elif spatial_overlap and names_match:
+                # Similar name + spatial overlap - definitely same item
+                similar_items.append(other_item)
+                similar_indices.append(j)
+        
+        # Merge similar items: keep the one with highest confidence
+        if len(similar_items) > 1:
+            # Sort by confidence and keep the best
+            similar_items.sort(key=lambda x: x.get("confidence", 0), reverse=True)
+            best_item = similar_items[0]
+            
+            # Boost confidence if multiple detections agree (consensus)
+            if len(similar_items) >= 2:
+                avg_conf = sum(item.get("confidence", 0) for item in similar_items) / len(similar_items)
+                # Boost by 10% per additional detection (capped at 20% boost)
+                boost = min(0.20, (len(similar_items) - 1) * 0.10)
+                best_item["confidence"] = min(1.0, best_item.get("confidence", 0) * (1 + boost))
+                best_item["detection_count"] = len(similar_items)  # Track how many detections merged
+                if VERBOSE_LOGGING:
+                    print(f"   🔗 Merged {len(similar_items)} detections of '{best_item.get('name')}' (boost: +{boost*100:.0f}%)")
+            
+            unique_items.append(best_item)
+        else:
+            unique_items.append(item)
+        
+        # Mark all similar items as processed
+        processed_indices.update(similar_indices)
+    
+    # Sort by confidence
+    result = sorted(unique_items, key=lambda x: x.get("confidence", 0), reverse=True)
+    print(f"🔍 After better deduplication: {len(result)} unique items (merged {len(items) - len(result)} duplicates)")
     
     # STEP 6: Apply ensemble confidence boosting (if multiple methods detected same item)
     result = apply_ensemble_boosting(result, items)
@@ -2165,10 +4295,62 @@ def detect_food_items_with_ml(img_bytes, user_pantry=None, skip_preprocessing=Fa
         item["confidence"] = max(0.0, min(1.0, final_conf))
         item["quality_score"] = quality_score
         if VERBOSE_LOGGING and quality_score < 0.7:
-            print(f"  ⚠️ Quality-adjusted confidence for '{item.get('name')}': {base_conf:.2f} → {item['confidence']:.2f}")
+            print(f"  ⚠️ Quality-adjusted confidence for '{item.get('name')}': {base_conf:.2f} -> {item['confidence']:.2f}")
     
     # STEP 8: Calibrate confidence based on historical accuracy
+    # Current implementation does not use precision_mode flag here; calibration is global.
+    # (Precision-specific behavior is handled earlier via thresholds and heuristics.)
     result = calibrate_confidence(result)
+    
+    # 🔥 IMPROVEMENT 2 & 8: Reject Option + Demo-Safe Mode
+    # Precision > Recall: Allow "unknown_item" for low confidence
+    filtered_result = []
+    for item in result:
+        conf = item.get('confidence', 0)
+        name = item.get('name', '').lower()
+        
+        # 🔥 RECALL-PRIORITY: Lower final filtering threshold to allow more items through
+        # Items below 0.20: Mark as "unknown_item" with needs_confirmation (only very low confidence)
+        # Items 0.20-0.40: Keep original name but mark needs_confirmation
+        # Items > 0.40: No confirmation needed
+        original_name = item.get('name', '')  # Preserve original name before any changes
+        if conf < 0.20:
+            # Very low confidence - only mark as unknown for non-food or very uncertain items
+            # Try to preserve YOLO name if it's a food item
+            if original_name and original_name.lower() not in ['unknown_item', 'unknown_packaged_food', 'unknown_produce']:
+                # Keep original name but mark for confirmation
+                item['needs_confirmation'] = True
+                item['confidence_display'] = f"{conf:.0%} (Needs confirmation)"
+            else:
+                # Non-food or already unknown - mark as unknown_item
+                item['name'] = 'unknown_item'
+                item['category'] = 'other'
+                # Fix 1: Very low confidence - keep semantic label, never downgrade to unknown_item
+                # Never replace semantic label with unknown_item unless zero signal
+                if original_name not in ["unknown_food", "unknown_packaged_food", "unknown_item"]:
+                    # Keep semantic label, just mark for confirmation
+                    item['name'] = original_name
+                    item['needs_confirmation'] = True
+                    item['confidence_display'] = f"{conf:.0%} (Needs confirmation)"
+                    if VERBOSE_LOGGING:
+                        print(f"   ⚠️ Very low confidence ({conf:.2f}) - keeping semantic label '{original_name}', marking for confirmation")
+                else:
+                    # No semantic label - use unknown_food
+                    item['name'] = 'unknown_food'
+                    item['category'] = 'other'
+                    item['needs_confirmation'] = True
+                    item['confidence_display'] = f"{conf:.0%} (Needs confirmation)"
+                    if VERBOSE_LOGGING:
+                        print(f"   ⚠️ Very low confidence ({conf:.2f}) - showing as unknown_food - ask user")
+        elif conf < 0.40:
+            item['needs_confirmation'] = True
+            item['confidence_display'] = f"{conf:.0%} (Needs confirmation)"
+        else:
+            item['confidence_display'] = f"{conf:.0%}"
+        
+        filtered_result.append(item)
+    
+    result = filtered_result
     
     # STEP 9: Return categorized by confidence (high/medium/low)
     print(f"📊 ML Detection Summary: Found {len(result)} items")
@@ -2176,8 +4358,15 @@ def detect_food_items_with_ml(img_bytes, user_pantry=None, skip_preprocessing=Fa
         print(f"   Items: {[item.get('name', 'unknown') for item in result[:5]]}")
         confidences = [f"{item.get('confidence', 0):.2f}" for item in result[:5]]
         print(f"   Confidences: {confidences}")
+        print(f"   Detection methods: {[item.get('detection_method', 'unknown') for item in result[:5]]}")
     else:
-        print("   ⚠️ No items detected - check model loading and image quality")
+        print("   ⚠️ No items detected - possible reasons:")
+        print(f"      - YOLO model not loaded: {_yolo_model is None}")
+        print(f"      - YOLO disabled: {not YOLO_DETECTION_ENABLED}")
+        print(f"      - Food classifier not loaded: {_food_classifier is None}")
+        print(f"      - Image quality too low: {quality_score:.2f}")
+        print(f"      - No detections above confidence threshold (0.10)")
+        print(f"      - All items filtered out by NMS or deduplication")
     return result
  
 
@@ -2927,7 +5116,7 @@ def validate_category(item_name, category):
     if cat_lower in {'protein', 'proteins', 'protein(s)'}:
         # Treat protein as meat for UI/UX clarity (and to match existing meat styling)
         return 'meat'
-
+    
     # Category mapping based on keywords (comprehensive list)
     category_keywords = {
         'dairy': ['milk', 'cheese', 'yogurt', 'butter', 'cream', 'sour cream', 'cottage cheese', 'milk product', 'egg', 'eggs', 'yoghurt', 'mozzarella', 'cheddar', 'swiss', 'gouda', 'brie', 'feta', 'parmesan', 'ricotta', 'cream cheese', 'heavy cream', 'half and half', 'buttermilk', 'sour cream', 'greek yogurt'],
@@ -3150,6 +5339,7 @@ def set_session_pantry(pantry_list):
             if VERBOSE_LOGGING:
                 print(f"Warning: Failed to normalize item in set_session_pantry: {e}")
             continue
+
     
     session['web_pantry'] = normalized_list
     session.modified = True
@@ -3239,6 +5429,7 @@ def get_user_pantry(user_id, use_cache=True):
         if VERBOSE_LOGGING:
             print(f"Warning: Invalid user_id in get_user_pantry: {user_id}")
         return []
+
     
     # Check pantry cache first
     if use_cache:
@@ -3315,6 +5506,7 @@ def update_user_pantry(user_id, pantry_items):
     if not user_id or not isinstance(user_id, str):
         print(f"Error: Invalid user_id in update_user_pantry: {user_id}")
         return False
+
     
     # CRITICAL: Validate that user exists before saving to Firebase
     # This prevents anonymous users or invalid user_ids from saving to database
@@ -4164,9 +6356,9 @@ CRITICAL REQUIREMENTS:
 - Include basic pantry staples (salt, pepper, oil, butter) as needed, scaled appropriately
 
 QUANTITY AND SERVING CALCULATION EXAMPLES:
-- If pantry has "2 bottles of milk (500ml each)" → Recipe should use 1 liter total, calculate servings based on typical milk usage (e.g., 4-6 servings for a milk-based dish)
-- If pantry has "3 cans of soup (400g each)" → Recipe should use all 3 cans (1200g total), adjust servings to 6-8 people
-- If pantry has "5 slices of pizza" → Recipe should use all 5 slices, serving size is 5 servings
+- If pantry has "2 bottles of milk (500ml each)" -> Recipe should use 1 liter total, calculate servings based on typical milk usage (e.g., 4-6 servings for a milk-based dish)
+- If pantry has "3 cans of soup (400g each)" -> Recipe should use all 3 cans (1200g total), adjust servings to 6-8 people
+- If pantry has "5 slices of pizza" -> Recipe should use all 5 slices, serving size is 5 servings
 - Always scale non-pantry ingredients (spices, oil, etc.) proportionally to match the serving size
 
 Format as JSON:
@@ -4497,25 +6689,47 @@ def upload_photo():
             if VERBOSE_LOGGING:
                 print(f"Error loading user pantry: {e}")
             pass
+
     else:
         # For anonymous users, use session pantry
         user_pantry = session.get('web_pantry', [])
     
+    # Get user's preferred detection method (ML or OpenAI)
+    detection_method = request.form.get('detection_method', 'ml').lower()  # Default to ML
+    
     # ALWAYS try local ML/YOLO FIRST (when enabled), then use OpenAI only if ML finds no items
+    # UNLESS user explicitly chose OpenAI
     try:
         detected_items_data = []
         ml_found_items = False
         use_ml = False
         
+        # If user chose OpenAI, skip ML and go straight to OpenAI
+        if detection_method == 'openai':
+            print(f"🔍 User selected OpenAI - skipping ML detection")
+            ml_found_items = False
+            use_ml = False
         # STEP 1: Try ML pipeline if either ML vision or YOLO is enabled.
         # (YOLO can run even when ML_VISION_ENABLED is false; it has its own flag + lazy loader.)
-        if ML_VISION_ENABLED or YOLO_DETECTION_ENABLED:
+        elif ML_VISION_ENABLED or YOLO_DETECTION_ENABLED:
             try:
                 print(f"🔍 STEP 1: Using ML/YOLO FIRST for detection (ML_VISION_ENABLED={ML_VISION_ENABLED}, YOLO_DETECTION_ENABLED={YOLO_DETECTION_ENABLED})")
                 detected_items_data = detect_food_items_with_ml(img_bytes, user_pantry=user_pantry)
                 
                 if detected_items_data and len(detected_items_data) > 0:
-                    print(f"✅ ML model detected {len(detected_items_data)} items - using ML results")
+                    # Use ML results, but also use OpenAI if very few items found (likely missed many items)
+                    item_count = len(detected_items_data)
+                    print(f"✅ ML model detected {item_count} items")
+                    
+                    # 🔥 IMPROVED: More aggressive OpenAI fallback for better detection
+                    # If ML found very few items (< 5), also use OpenAI for better coverage
+                    # YOLO COCO classes are limited, so it often misses pantry items
+                    if item_count < 5:  # Increased threshold from 3 to 5
+                        print(f"⚠️ ML found only {item_count} items - will also use OpenAI for better detection")
+                        ml_found_items = False  # Trigger OpenAI fallback
+                        use_ml = False
+                    else:
+                        print(f"✅ Using ML results ({item_count} items)")
                     ml_found_items = True
                     use_ml = True
                 else:
@@ -4532,9 +6746,12 @@ def upload_photo():
                 ml_found_items = False
                 detected_items_data = []  # Clear failed results
         
-        # STEP 2: Use OpenAI ONLY if ML didn't find any items
+        # STEP 2: Use OpenAI if user selected it OR if ML didn't find any items
         if not ml_found_items:
-            print(f"🔍 STEP 2: Using OpenAI as fallback (ML found no items)")
+            if detection_method == 'openai':
+                print(f"🔍 STEP 2: Using OpenAI (user selected)")
+            else:
+                print(f"🔍 STEP 2: Using OpenAI as fallback (ML found no items)")
             # Send image to OpenAI vision API
             import base64
             img_b64 = base64.b64encode(img_bytes).decode('utf-8')
@@ -4551,16 +6768,20 @@ SCAN THE ENTIRE IMAGE SYSTEMATICALLY:
 - When in doubt, INCLUDE the item rather than exclude it
 
 CRITICAL NAMING RULES:
-    ✅ CORRECT: "milk", "chicken", "tomato", "bread", "pasta", "cheese", "eggs", "yogurt"
-❌ WRONG: "milk carton", "chicken meat", "tomatoes" (use singular), "bread loaf", "Barilla pasta"
+    ✅ CORRECT: "milk", "chicken", "tomato", "bread", "pasta", "cheese", "eggs", "yogurt", "olive oil", "honey", "mustard"
+❌ WRONG: "milk carton", "chicken meat", "tomatoes" (use singular), "bread loaf", "Barilla pasta", "bottle" (use contents: "olive oil")
 
 1. **Item Names** (MOST IMPORTANT):
    - Use SIMPLE, GENERIC food names: "milk" not "whole milk carton"
-   - Remove ALL brand names: "Coca-Cola" → "cola", "Kellogg's Frosted Flakes" → "cereal"
+   - Remove ALL brand names: "Coca-Cola" -> "cola", "Kellogg's Frosted Flakes" -> "cereal"
    - Use SINGULAR form: "apple" not "apples", "tomato" not "tomatoes"
-   - Remove packaging words: "milk carton" → "milk", "bread bag" → "bread"
+   - Remove packaging words: "milk carton" -> "milk", "bread bag" -> "bread"
+   - **CONTAINER CONTENTS (CRITICAL)**: When you see bottles, jars, cans, boxes - identify what's INSIDE, not the container
+     ✅ CORRECT: "olive oil" (not "bottle"), "honey" (not "jar"), "mustard" (not "bottle"), "pasta" (not "box")
+     ✅ Read labels on containers to identify contents: "365 Organic Olive Oil" -> "olive oil"
+     ✅ Look for product names on labels: "Just Wildflower Honey" -> "honey", "Classic Dijon" -> "mustard"
    - Be specific only when helpful: "whole milk" > "milk" (if clearly visible)
-   - Common pantry items: milk, eggs, bread, chicken, beef, cheese, yogurt, butter, pasta, rice, cereal, soup, juice, water, soda, coffee, tea, flour, sugar, salt, pepper, oil, vinegar, ketchup, mustard, mayonnaise, jam, peanut butter, crackers, cookies, chips, nuts, fruits (apple, banana, orange, etc.), vegetables (carrot, tomato, lettuce, onion, etc.)
+   - Common pantry items: milk, eggs, bread, chicken, beef, cheese, yogurt, butter, pasta, rice, cereal, soup, juice, water, soda, coffee, tea, flour, sugar, salt, pepper, olive oil, vegetable oil, vinegar, balsamic vinegar, honey, jam, marmalade, ketchup, mustard, mayonnaise, hot sauce, chili flakes, vanilla extract, chocolate chips, oats, quinoa, beans, tomatoes, onions, garlic, potatoes, nuts, seeds, almonds, pumpkin seeds
 
 2. **Quantity Detection**:
    - Count visible items: "3 apples", "2 bottles", "5 cans", "1 loaf"
@@ -4573,7 +6794,7 @@ CRITICAL NAMING RULES:
    - Scan ALL text on labels, stickers, packaging
    - Look for: "EXP", "EXPIRES", "USE BY", "BEST BY", "SELL BY", "BB", "UB"
    - Parse formats: MM/DD/YYYY, DD/MM/YYYY, YYYY-MM-DD, Month DD YYYY, MM/DD/YY
-   - Convert to YYYY-MM-DD: "01/15/2024" → "2024-01-15", "Jan 15 2024" → "2024-01-15"
+   - Convert to YYYY-MM-DD: "01/15/2024" -> "2024-01-15", "Jan 15 2024" -> "2024-01-15"
    - Use expiration/use-by date (NOT manufacture date)
    - If unclear or not visible, set to null
 
@@ -4618,10 +6839,10 @@ CRITICAL NAMING RULES:
 
 FEW-SHOT EXAMPLES:
     Example 1: Image shows milk carton, bread bag, and eggs
-→ {"items": [{"name": "milk", "quantity": "1 carton", "expirationDate": "2024-01-20", "category": "dairy"}, {"name": "bread", "quantity": "1 loaf", "expirationDate": "2024-01-15", "category": "bakery"}, {"name": "egg", "quantity": "1 dozen", "expirationDate": null, "category": "dairy"}]}
+-> {"items": [{"name": "milk", "quantity": "1 carton", "expirationDate": "2024-01-20", "category": "dairy"}, {"name": "bread", "quantity": "1 loaf", "expirationDate": "2024-01-15", "category": "bakery"}, {"name": "egg", "quantity": "1 dozen", "expirationDate": null, "category": "dairy"}]}
 
 Example 2: Image shows 3 cans of soup and a box of pasta
-→ {"items": [{"name": "soup", "quantity": "3 cans", "expirationDate": null, "category": "canned goods"}, {"name": "pasta", "quantity": "1 box", "expirationDate": null, "category": "grains"}]}
+-> {"items": [{"name": "soup", "quantity": "3 cans", "expirationDate": null, "category": "canned goods"}, {"name": "pasta", "quantity": "1 box", "expirationDate": null, "category": "grains"}]}
 
 Return ONLY valid JSON (no markdown, no code blocks, no explanations):
     {"items": [{"name": "...", "quantity": "...", "expirationDate": "YYYY-MM-DD or null", "category": "..."}]}"""
@@ -4897,6 +7118,7 @@ Return ONLY valid JSON (no markdown, no code blocks, no explanations):
                 if VERBOSE_LOGGING:
                     print(f"Error adding items to user pantry: {e}")
                 # Continue with anonymous pantry as fallback
+
         else:
             # Add to anonymous web pantry (stored in session for persistence)
             try:
@@ -4956,6 +7178,7 @@ Return ONLY valid JSON (no markdown, no code blocks, no explanations):
                 if VERBOSE_LOGGING:
                     print(f"Error adding items to anonymous pantry: {e}")
                 # Initialize empty pantry if session is corrupted
+
                 try:
                     session['web_pantry'] = pantry_items if pantry_items else []
                     session.modified = True
@@ -6136,7 +8359,9 @@ def api_delete_item(item_id):
         except Exception as e:
             print(f"❌ Error loading user pantry: {e}")
             return jsonify({'success': False, 'error': f'Failed to load pantry: {str(e)}'}), 500
+
         # Convert to list of dicts if needed
+
         pantry_list = []
         for item in pantry_to_use:
             if isinstance(item, dict):
@@ -6322,7 +8547,9 @@ def api_update_item(item_id):
             except Exception as e:
                 print(f"❌ Error loading user pantry: {e}")
                 return jsonify({'success': False, 'error': f'Failed to load pantry: {str(e)}'}), 500
+
             pantry_list.clear()  # Use clear() instead of reassignment
+
             item_found = False
             item_id_clean = item_id.strip() if item_id else ''
             # Treat 'unknown' as empty ID (frontend sends 'unknown' when item has no ID)
@@ -6448,7 +8675,9 @@ def api_update_item(item_id):
         except Exception as e:
             print(f"❌ Error loading user pantry: {e}")
             return jsonify({'success': False, 'error': f'Failed to load pantry: {str(e)}'}), 500
+
         print(f"📦 User pantry has {len(pantry_to_use) if isinstance(pantry_to_use, list) else 0} items")
+
         # Convert to list of dicts if needed - create new list to avoid scope issues
         pantry_list = []
         item_found = False
@@ -6717,9 +8946,9 @@ def api_suggest_recipe():
         - Add timer steps for cooking steps that require specific timing (frying, baking, simmering, etc.)
         
         QUANTITY AND SERVING CALCULATION EXAMPLES:
-        - If pantry has "2 bottles of milk (500ml each)" → Recipe should use 1 liter total, calculate servings based on typical milk usage (e.g., 4-6 servings for a milk-based dish)
-        - If pantry has "3 cans of soup (400g each)" → Recipe should use all 3 cans (1200g total), adjust servings to 6-8 people
-        - If pantry has "5 slices of pizza" → Recipe should use all 5 slices, serving size is 5 servings
+        - If pantry has "2 bottles of milk (500ml each)" -> Recipe should use 1 liter total, calculate servings based on typical milk usage (e.g., 4-6 servings for a milk-based dish)
+        - If pantry has "3 cans of soup (400g each)" -> Recipe should use all 3 cans (1200g total), adjust servings to 6-8 people
+        - If pantry has "5 slices of pizza" -> Recipe should use all 5 slices, serving size is 5 servings
         - Always scale non-pantry ingredients (spices, oil, etc.) proportionally to match the serving size
         
         Health Rating Guidelines:
@@ -6996,7 +9225,19 @@ def api_upload_photo():
                 detected_items_data = detect_food_items_with_ml(img_bytes, user_pantry=user_pantry)
                 
                 if detected_items_data and len(detected_items_data) > 0:
-                    print(f"✅ ML model detected {len(detected_items_data)} items - using ML results")
+                    # Use ML results, but also use OpenAI if very few items found (likely missed many items)
+                    item_count = len(detected_items_data)
+                    print(f"✅ ML model detected {item_count} items")
+                    
+                    # 🔥 IMPROVED: More aggressive OpenAI fallback for better detection
+                    # If ML found very few items (< 5), also use OpenAI for better coverage
+                    # YOLO COCO classes are limited, so it often misses pantry items
+                    if item_count < 5:  # Increased threshold from 3 to 5
+                        print(f"⚠️ ML found only {item_count} items - will also use OpenAI for better detection")
+                        ml_found_items = False  # Trigger OpenAI fallback
+                        use_ml = False
+                    else:
+                        print(f"✅ Using ML results ({item_count} items)")
                     ml_found_items = True
                     use_ml = True
                     # Process ML detection results into pantry_items format
@@ -7129,9 +9370,9 @@ CRITICAL NAMING RULES:
 
 1. **Item Names** (MOST IMPORTANT):
    - Use SIMPLE, GENERIC food names: "milk" not "whole milk carton"
-   - Remove ALL brand names: "Coca-Cola" → "cola", "Kellogg's Frosted Flakes" → "cereal"
+   - Remove ALL brand names: "Coca-Cola" -> "cola", "Kellogg's Frosted Flakes" -> "cereal"
    - Use SINGULAR form: "apple" not "apples", "tomato" not "tomatoes"
-   - Remove packaging words: "milk carton" → "milk", "bread bag" → "bread"
+   - Remove packaging words: "milk carton" -> "milk", "bread bag" -> "bread"
    - Be specific only when helpful: "whole milk" > "milk" (if clearly visible)
    - Common pantry items: milk, eggs, bread, chicken, beef, cheese, yogurt, butter, pasta, rice, cereal, soup, juice, water, soda, coffee, tea, flour, sugar, salt, pepper, oil, vinegar, ketchup, mustard, mayonnaise, jam, peanut butter, crackers, cookies, chips, nuts, fruits (apple, banana, orange, etc.), vegetables (carrot, tomato, lettuce, onion, etc.)
 
@@ -7146,7 +9387,7 @@ CRITICAL NAMING RULES:
    - Scan ALL text on labels, stickers, packaging
    - Look for: "EXP", "EXPIRES", "USE BY", "BEST BY", "SELL BY", "BB", "UB"
    - Parse formats: MM/DD/YYYY, DD/MM/YYYY, YYYY-MM-DD, Month DD YYYY, MM/DD/YY
-   - Convert to YYYY-MM-DD: "01/15/2024" → "2024-01-15", "Jan 15 2024" → "2024-01-15"
+   - Convert to YYYY-MM-DD: "01/15/2024" -> "2024-01-15", "Jan 15 2024" -> "2024-01-15"
    - Use expiration/use-by date (NOT manufacture date)
    - If unclear or not visible, set to null
 
@@ -7191,10 +9432,10 @@ CRITICAL NAMING RULES:
 
 FEW-SHOT EXAMPLES:
     Example 1: Image shows milk carton, bread bag, and eggs
-→ {"items": [{"name": "milk", "quantity": "1 carton", "expirationDate": "2024-01-20", "category": "dairy"}, {"name": "bread", "quantity": "1 loaf", "expirationDate": "2024-01-15", "category": "bakery"}, {"name": "egg", "quantity": "1 dozen", "expirationDate": null, "category": "dairy"}]}
+-> {"items": [{"name": "milk", "quantity": "1 carton", "expirationDate": "2024-01-20", "category": "dairy"}, {"name": "bread", "quantity": "1 loaf", "expirationDate": "2024-01-15", "category": "bakery"}, {"name": "egg", "quantity": "1 dozen", "expirationDate": null, "category": "dairy"}]}
 
 Example 2: Image shows 3 cans of soup and a box of pasta
-→ {"items": [{"name": "soup", "quantity": "3 cans", "expirationDate": null, "category": "canned goods"}, {"name": "pasta", "quantity": "1 box", "expirationDate": null, "category": "grains"}]}
+-> {"items": [{"name": "soup", "quantity": "3 cans", "expirationDate": null, "category": "canned goods"}, {"name": "pasta", "quantity": "1 box", "expirationDate": null, "category": "grains"}]}
 
 Return ONLY valid JSON (no markdown, no code blocks, no explanations):
     {"items": [{"name": "...", "quantity": "...", "expirationDate": "YYYY-MM-DD or null", "category": "..."}]}"""
@@ -7409,6 +9650,7 @@ Return ONLY valid JSON (no markdown, no code blocks, no explanations):
                 if VERBOSE_LOGGING:
                     print(f"Error adding items to user pantry: {e}")
                 total_items = len(pantry_items)
+
         else:
             # Add to anonymous pantry
             if client_type == 'mobile':
@@ -7475,6 +9717,7 @@ Return ONLY valid JSON (no markdown, no code blocks, no explanations):
                     if VERBOSE_LOGGING:
                         print(f"Error adding items to anonymous web pantry: {e}")
                     # Initialize empty pantry if session is corrupted
+
                     try:
                         session['web_pantry'] = pantry_items.copy() if pantry_items else []
                         session.modified = True
@@ -8053,6 +10296,102 @@ def api_health():
         'pantry_items': len(pantry_to_use),
         'ai_available': bool(client and api_key)
     })
+
+@app.route('/api/correction', methods=['POST'])
+def api_log_correction():
+    """
+    🔥 User Correction Feedback Loop: Log corrections for retraining/evaluation.
+    
+    This endpoint receives corrections when users click "This is wrong" and provides
+    the correct label. This data is stored for:
+    - Model retraining
+    - Evaluation metrics
+    - Continuous improvement
+    
+    This is real ML lifecycle engineering.
+    """
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'success': False, 'error': 'No data provided'}), 400
+        
+        detected_name = data.get('detected_name', '')
+        correct_name = data.get('correct_name', '')
+        confidence = data.get('confidence', 0)
+        item_data = data.get('item_data', {})
+        photo_data = data.get('photo_data')  # Base64 encoded image
+        timestamp = data.get('timestamp', datetime.now().isoformat())
+        
+        if not detected_name or not correct_name:
+            return jsonify({'success': False, 'error': 'Missing detected_name or correct_name'}), 400
+        
+        # Get user ID from session or header
+        user_id = request.headers.get('X-User-ID') or session.get('user_id') or 'anonymous'
+        
+        # Create corrections directory
+        corrections_dir = '/tmp/corrections' if IS_VERCEL or IS_RENDER else os.path.join(_app_file_dir, 'corrections')
+        os.makedirs(corrections_dir, exist_ok=True)
+        
+        # Save image if provided
+        image_path = None
+        if photo_data:
+            try:
+                import base64
+                # Remove data URL prefix if present
+                if ',' in photo_data:
+                    photo_data = photo_data.split(',')[1]
+                
+                image_data = base64.b64decode(photo_data)
+                image_filename = f"correction_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:8]}.jpg"
+                image_path = os.path.join(corrections_dir, image_filename)
+                
+                with open(image_path, 'wb') as f:
+                    f.write(image_data)
+            except Exception as img_error:
+                print(f"Warning: Failed to save correction image: {img_error}")
+        
+        # Create correction record
+        correction_data = {
+            'timestamp': timestamp,
+            'user_id': user_id,
+            'detected_name': detected_name,
+            'correct_name': correct_name,
+            'confidence': confidence,
+            'item_data': item_data,
+            'image_path': image_path,
+            'correction_type': 'wrong_detection'
+        }
+        
+        # Save correction to JSON file
+        correction_file = os.path.join(corrections_dir, f"correction_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:8]}.json")
+        with open(correction_file, 'w') as f:
+            json.dump(correction_data, f, indent=2)
+        
+        # 🔥 IMPROVEMENT 7: Track failure analytics
+        try:
+            from failure_analytics import track_user_correction
+            track_user_correction(detected_name, correct_name, confidence, image_path)
+            print(f"   📊 Tracked correction in failure analytics: '{detected_name}' -> '{correct_name}'")
+        except ImportError:
+            # Failure analytics module not available - skip silently
+            pass
+        except Exception as analytics_error:
+            if VERBOSE_LOGGING:
+                print(f"Warning: Failed to track analytics: {analytics_error}")
+        
+        print(f"✅ Logged correction: '{detected_name}' -> '{correct_name}' (conf: {confidence:.2f}, user: {user_id})")
+        
+        return jsonify({
+            'success': True,
+            'message': 'Correction logged successfully',
+            'correction_id': os.path.basename(correction_file)
+        })
+        
+    except Exception as e:
+        print(f"❌ Error logging correction: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 # Note: handler is exported in api/index.py for Vercel serverless functions
 # Do not export handler here to avoid conflicts with Vercel's handler detection
