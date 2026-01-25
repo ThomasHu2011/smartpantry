@@ -2482,21 +2482,21 @@ def stage_ocr_read_label(crop, is_container=False, bound_ocr_texts=None):
                         print(f"   ⚠️ OCR error on {crop_name}/{enh_name}: {e}")
                     continue
         
-            if not best_ocr_result:
-                # If we have bound texts, use them even if OCR on crop failed
-                if bound_ocr_texts and len(bound_ocr_texts) > 0:
-                    combined_text = ' '.join([item["text"] for item in bound_ocr_texts]).lower()
-                    avg_conf = sum(item["confidence"] for item in bound_ocr_texts) / len(bound_ocr_texts)
-                    ocr_text = combined_text
-                    ocr_confidence = avg_conf
-                else:
-                    return None
+        if not best_ocr_result:
+            # If we have bound texts, use them even if OCR on crop failed
+            if bound_ocr_texts and len(bound_ocr_texts) > 0:
+                combined_text = ' '.join([item["text"] for item in bound_ocr_texts]).lower()
+                avg_conf = sum(item["confidence"] for item in bound_ocr_texts) / len(bound_ocr_texts)
+                ocr_text = combined_text
+                ocr_confidence = avg_conf
             else:
-                ocr_text = best_ocr_result["text"]
-                ocr_confidence = best_ocr_result["confidence"]
-            
-            if not ocr_text or len(ocr_text) < 2:
                 return None
+        else:
+            ocr_text = best_ocr_result["text"]
+            ocr_confidence = best_ocr_result["confidence"]
+        
+        if not ocr_text or len(ocr_text) < 2:
+            return None
         
         # Remove common label text
         common_label_text = [
@@ -3447,7 +3447,7 @@ def detect_food_items_with_ml(img_bytes, user_pantry=None, skip_preprocessing=Fa
                     # Try to infer from OCR keywords
                     if "oil" in ocr_lower:
                         candidates.extend(LABELS_BY_TYPE.get("bottle or jar", []))
-                    else:
+                else:
                         candidates.extend(LABELS_BY_TYPE.get("box", []))
                 # Last resort: small mixed set
                 candidates.extend(
@@ -4023,8 +4023,6 @@ def detect_food_items_with_ml(img_bytes, user_pantry=None, skip_preprocessing=Fa
                         # Surface uncertainty: show best guess with (?) instead of just unknown_food
                         if suggested_label and suggested_label != "unknown_food":
                             suggested_label = f"{suggested_label} (?)"  # Show best guess with uncertainty marker
-                        else:
-                            suggested_label = "unknown_food"
                         needs_confirmation_flag = True
                         if VERBOSE_LOGGING:
                             print(f"   ⚠️ CLIP (low confidence {clip_food_prob:.2f} < 0.35) - showing as '{suggested_label}' for confirmation")
@@ -4153,7 +4151,7 @@ def detect_food_items_with_ml(img_bytes, user_pantry=None, skip_preprocessing=Fa
                 else:
                     confidence_band = "low"
                     needs_confirmation = True
-                
+                            
                 # Precision Rule #9: User confirmation is a feature, not a failure
                 # Mark items for confirmation if uncertain
                 if region_data.get("suggested_label") == "unknown_food":
@@ -4239,8 +4237,8 @@ def detect_food_items_with_ml(img_bytes, user_pantry=None, skip_preprocessing=Fa
                 # Create item
                 item_data = {
                     "name": final_label,
-                    "quantity": "1",
-                    "expirationDate": exp_date,
+                                    "quantity": "1",
+                                    "expirationDate": exp_date,
                     "category": validate_category(base_label, "other"),  # Use base label for category
                     "confidence": final_conf,
                     "confidence_band": confidence_band,  # "high", "medium", or "low"
@@ -4251,7 +4249,6 @@ def detect_food_items_with_ml(img_bytes, user_pantry=None, skip_preprocessing=Fa
                 }
                 
                 items.append(item_data)
-                
             except Exception as det_error:
                 if VERBOSE_LOGGING:
                     print(f"   ⚠️ Error processing region: {det_error}")
@@ -4479,7 +4476,7 @@ def detect_food_items_with_ml(img_bytes, user_pantry=None, skip_preprocessing=Fa
         if VERBOSE_LOGGING:
             print(f"   ⏭️ Skipping full-image classifier (already found {len(items)} items)")
         should_run_classifier = False
-    print(f"   detections_found={detections_found}, _food_classifier={_food_classifier is not None}, items_so_far={len(items)}")
+        print(f"   detections_found={detections_found}, _food_classifier={_food_classifier is not None}, items_so_far={len(items)}")
     
     # Fix #5: Full-image classification must produce categories using CLIP
     # When YOLO misses, run CLIP on full image to ask "what foods are present?"
@@ -4590,9 +4587,6 @@ def detect_food_items_with_ml(img_bytes, user_pantry=None, skip_preprocessing=Fa
             try:
                 # Add timeout protection for classification (prevent hanging)
                 import threading
-                pass  # Disabled code
-            except Exception:
-                pass
                 
                 preds = None
                 classification_error = None
@@ -4605,24 +4599,23 @@ def detect_food_items_with_ml(img_bytes, user_pantry=None, skip_preprocessing=Fa
 
                     except Exception as e:
                         classification_error = e
-            
-            # Run classification in a thread with timeout
-                    thread = threading.Thread(target=run_classification)
-                    thread.daemon = True
-                    thread.start()
-                    thread.join(timeout=30)  # 30 second timeout
+                
+                # Run classification in a thread with timeout
+                thread = threading.Thread(target=run_classification)
+                thread.daemon = True
+                thread.start()
+                thread.join(timeout=30)  # 30 second timeout
 
 
 
 
-
-            
-                    if thread.is_alive():
-                        if VERBOSE_LOGGING:
-                            print("Warning: Classification timed out after 30 seconds")
-                        preds = []
-                    elif classification_error:
-                        raise classification_error
+                
+                if thread.is_alive():
+                    if VERBOSE_LOGGING:
+                        print("Warning: Classification timed out after 30 seconds")
+                    preds = []
+                elif classification_error:
+                    raise classification_error
                 
                 if not preds:
                     if VERBOSE_LOGGING:
@@ -6009,6 +6002,18 @@ def set_session_pantry(pantry_list):
     session['web_pantry'] = normalized_list
     session.modified = True
     session.permanent = True
+    
+    # 🔥 FIX: Force session save by accessing session
+    try:
+        # Touch session to ensure it's saved
+        _ = session.get('web_pantry')
+        if VERBOSE_LOGGING:
+            print(f"✅ Session pantry saved: {len(normalized_list)} items")
+            print(f"   Session keys: {list(session.keys())}")
+    except Exception as e:
+        if VERBOSE_LOGGING:
+            print(f"⚠️ Warning: Could not verify session save: {e}")
+    
     return normalized_list
 
 def normalize_pantry_item(item):
@@ -7392,15 +7397,9 @@ def upload_photo():
                     item_count = len(detected_items_data)
                     print(f"✅ ML model detected {item_count} items")
                     
-                    # 🔥 IMPROVED: More aggressive OpenAI fallback for better detection
-                    # If ML found very few items (< 5), also use OpenAI for better coverage
-                    # YOLO COCO classes are limited, so it often misses pantry items
-                    if item_count < 5:  # Increased threshold from 3 to 5
-                        print(f"⚠️ ML found only {item_count} items - will also use OpenAI for better detection")
-                        ml_found_items = False  # Trigger OpenAI fallback
-                        use_ml = False
-                    else:
-                        print(f"✅ Using ML results ({item_count} items)")
+                    # 🔥 FIX: Always use ML results if any items found
+                    # Only fall back to OpenAI if ML found ZERO items
+                    print(f"✅ Using ML results ({item_count} items)")
                     ml_found_items = True
                     use_ml = True
                 else:
@@ -7823,81 +7822,86 @@ Return ONLY valid JSON (no markdown, no code blocks, no explanations):
                     if VERBOSE_LOGGING:
                         print(f"Error adding items to user pantry: {e}")
                     # Continue with anonymous pantry as fallback
+
+        else:
+            # Add to anonymous web pantry (stored in session for persistence)
+            try:
+                # CRITICAL: Mark session as permanent for anonymous users
+                session.permanent = True
                 
-            else:
-                # Add to anonymous web pantry (stored in session for persistence)
-                try:
-                    # CRITICAL: Mark session as permanent for anonymous users
-                    session.permanent = True
-                    
-                    if 'web_pantry' not in session:
-                        session['web_pantry'] = []
-                    
-                    # Validate session['web_pantry'] is a list
-                    web_pantry = session.get('web_pantry', [])
-                    if not isinstance(web_pantry, list):
-                        web_pantry = []
-                    
-                    # Convert to list of dicts if needed
-                    pantry_list = []
-                    for item in web_pantry:
-                        try:
-                            if isinstance(item, dict):
-                                pantry_list.append(item)
-                            else:
-                                item_str = str(item).strip() if item else ''
-                                if item_str:
-                                    pantry_list.append({
-                                        'id': str(uuid.uuid4()),
-                                        'name': item_str,
-                                        'quantity': '1',
-                                        'expirationDate': None,
-                                        'addedDate': datetime.now().isoformat()
-                                    })
-                        except (TypeError, AttributeError):
-                            pass
-                    
-                    # Add new items (check for duplicates first)
+                if 'web_pantry' not in session:
+                    session['web_pantry'] = []
+                
+                # Validate session['web_pantry'] is a list
+                web_pantry = session.get('web_pantry', [])
+                if not isinstance(web_pantry, list):
+                    web_pantry = []
+                
+                # Convert to list of dicts if needed
+                pantry_list = []
+                for item in web_pantry:
+                    try:
+                        if isinstance(item, dict):
+                            pantry_list.append(item)
+                        else:
+                            item_str = str(item).strip() if item else ''
+                            if item_str:
+                                pantry_list.append({
+                                    'id': str(uuid.uuid4()),
+                                    'name': item_str,
+                                    'quantity': '1',
+                                    'expirationDate': None,
+                                    'addedDate': datetime.now().isoformat()
+                                })
+                    except (TypeError, AttributeError):
+                        pass
+                
+                # Add new items (check for duplicates first)
                     existing_names = {
                         item.get('name', '').strip().lower()
                         for item in pantry_list
                         if isinstance(item, dict) and item.get('name')
                     }
-                    new_items = []
-                    for item in pantry_items:
-                        try:
-                            if not isinstance(item, dict):
-                                continue
-                            item_name = item.get('name', '')
-                            if not isinstance(item_name, str):
-                                item_name = str(item_name) if item_name else ''
-                            item_name = item_name.strip().lower()
-                            if item_name and item_name not in existing_names:
-                                pantry_list.append(item)
-                                existing_names.add(item_name)
-                                new_items.append(item)
-                        except (AttributeError, TypeError):
-                            pass
-                    
-                    if new_items:
-                        session['web_pantry'] = pantry_list
-                        # Mark session as modified to ensure it's saved
-                        session.modified = True
-                except (KeyError, TypeError, AttributeError) as e:
-                    if VERBOSE_LOGGING:
-                        print(f"Error adding items to anonymous pantry: {e}")
-                    # Initialize empty pantry if session is corrupted
-
+                new_items = []
+                for item in pantry_items:
                     try:
-                        session['web_pantry'] = pantry_items if pantry_items else []
-                        session.modified = True
-                    except Exception:
+                        if not isinstance(item, dict):
+                                continue
+                        item_name = item.get('name', '')
+                        if not isinstance(item_name, str):
+                            item_name = str(item_name) if item_name else ''
+                        item_name = item_name.strip().lower()
+                        if item_name and item_name not in existing_names:
+                            pantry_list.append(item)
+                            existing_names.add(item_name)
+                            new_items.append(item)
+                    except (AttributeError, TypeError):
                         pass
+                
+                if new_items:
+                    session['web_pantry'] = pantry_list
+                    # Mark session as modified to ensure it's saved
+                    session.modified = True
+            except (KeyError, TypeError, AttributeError) as e:
+                if VERBOSE_LOGGING:
+                    print(f"Error adding items to anonymous pantry: {e}")
+                # Initialize empty pantry if session is corrupted
+
+                try:
+                    session['web_pantry'] = pantry_items if pantry_items else []
+                    session.modified = True
+                except Exception:
+                    pass
         
         # Separate high-confidence and low-confidence items
-        HIGH_CONFIDENCE_THRESHOLD = 0.7  # Auto-add items with 70%+ confidence
+        # 🔥 FIX: Lower threshold to ensure more items are returned
+        HIGH_CONFIDENCE_THRESHOLD = 0.6  # Auto-add items with 60%+ confidence (lowered from 0.7)
         high_conf_items = [item for item in pantry_items if item.get('confidence', 0) >= HIGH_CONFIDENCE_THRESHOLD]
         low_conf_items = [item for item in pantry_items if item.get('confidence', 0) < HIGH_CONFIDENCE_THRESHOLD]
+        
+        # 🔥 FIX: Ensure ALL items are included in response, even if confidence is very low
+        # Combine all items for the response
+        all_items_for_response = pantry_items.copy()  # Include ALL items
         
         # Auto-add high-confidence items
         auto_added = []
@@ -8624,10 +8628,15 @@ def api_get_pantry():
                 pantry_to_use = mobile_pantry if 'mobile_pantry' in globals() else []
             else:
                 # For web, ALWAYS use session (this is where items are saved by confirm_items)
+                # 🔥 FIX: Force refresh session pantry to get latest data
                 pantry_to_use = get_session_pantry()
                 # Sync global variable for backward compatibility
                 global web_pantry
                 web_pantry = pantry_to_use.copy()
+                if VERBOSE_LOGGING:
+                    print(f"📦 GET /api/pantry: Retrieved {len(pantry_to_use)} items from session")
+                    print(f"   Session keys: {list(session.keys())}")
+                    print(f"   Session modified: {session.modified}")
         
         # Ensure pantry_to_use is a list
         if not isinstance(pantry_to_use, list):
@@ -8941,6 +8950,9 @@ def api_confirm_items():
             }
             items_to_add.append(pantry_item)
         
+        # Initialize pantry_list early to avoid scope issues
+        pantry_list = []
+        
         # Batch add all items at once to avoid overwriting
         if user_id:
             # Add to user's pantry
@@ -8972,6 +8984,7 @@ def api_confirm_items():
                 update_user_pantry(user_id, pantry_list)
                 if VERBOSE_LOGGING:
                     print(f"✅ Added {items_added} items to user {user_id}'s pantry via confirm_items")
+                    print(f"   User pantry now has {len(pantry_list)} items")
         else:
             # Add to anonymous pantry (session)
             web_pantry = get_session_pantry()
@@ -8995,12 +9008,19 @@ def api_confirm_items():
                 else:
                     skipped_duplicates += 1
             
+            # 🔥 FIX: Always save session pantry, even if no new items (to ensure session is persisted)
             # Save all items at once using helper function
-            if items_added > 0:
-                set_session_pantry(pantry_list)
-                if VERBOSE_LOGGING:
-                    print(f"✅ Added {items_added} items to anonymous pantry via confirm_items")
-                    print(f"   Session pantry now has {len(pantry_list)} items")
+            set_session_pantry(pantry_list)
+            # Force session to be saved (already done in set_session_pantry, but ensure it's set)
+            session.modified = True
+            session.permanent = True
+            if VERBOSE_LOGGING:
+                print(f"✅ Added {items_added} items to anonymous pantry via confirm_items")
+                print(f"   Session pantry now has {len(pantry_list)} items")
+                print(f"   Session modified: {session.modified}, Session permanent: {session.permanent}")
+                # Verify session was saved
+                verify_pantry = get_session_pantry()
+                print(f"   Verification: Session pantry has {len(verify_pantry)} items after save")
         
         # Debug logging
         if VERBOSE_LOGGING:
@@ -9021,11 +9041,14 @@ def api_confirm_items():
                 if VERBOSE_LOGGING:
                     print(f"Warning: Failed to log feedback: {e}")
         
+        # 🔥 FIX: Get final pantry count to ensure accurate response
+        final_pantry_count = len(pantry_list) if pantry_list else 0
+        
         return jsonify({
             'success': True,
             'items_added': items_added,
             'skipped_duplicates': skipped_duplicates,
-            'total_items': len(pantry_list) if 'pantry_list' in locals() else 0,
+            'total_items': final_pantry_count,
             'message': f'Added {items_added} items to pantry' + (f' ({skipped_duplicates} duplicates skipped)' if skipped_duplicates > 0 else '')
         }), 200
         
@@ -9979,15 +10002,9 @@ def api_upload_photo():
                     item_count = len(detected_items_data)
                     print(f"✅ ML model detected {item_count} items")
                     
-                    # 🔥 IMPROVED: More aggressive OpenAI fallback for better detection
-                    # If ML found very few items (< 5), also use OpenAI for better coverage
-                    # YOLO COCO classes are limited, so it often misses pantry items
-                    if item_count < 5:  # Increased threshold from 3 to 5
-                        print(f"⚠️ ML found only {item_count} items - will also use OpenAI for better detection")
-                        ml_found_items = False  # Trigger OpenAI fallback
-                        use_ml = False
-                    else:
-                        print(f"✅ Using ML results ({item_count} items)")
+                    # 🔥 FIX: Always use ML results if any items found
+                    # Only fall back to OpenAI if ML found ZERO items
+                    print(f"✅ Using ML results ({item_count} items)")
                     ml_found_items = True
                     use_ml = True
                     # Process ML detection results into pantry_items format
