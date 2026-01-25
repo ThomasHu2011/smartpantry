@@ -2495,25 +2495,25 @@
                                     <div class="item-header">
                                         <div class="item-icon-wrapper">
                                             {% if item_category == 'dairy' %}
-                                            <i class="bi bi-cup-straw" style="color: #3B82F6;"></i>
+                                            <i class="bi bi-cup-hot" style="color: #3B82F6;"></i>
                                             {% elif item_category == 'vegetables' or item_category == 'produce' %}
-                                            <i class="bi bi-flower1" style="color: #10B981;"></i>
+                                            <i class="bi bi-pepper-hot" style="color: #10B981;"></i>
                                             {% elif item_category == 'fruits' %}
                                             <i class="bi bi-apple" style="color: #F59E0B;"></i>
                                             {% elif item_category == 'meat' or item_category == 'proteins' %}
-                                            <i class="bi bi-heart-fill" style="color: #EF4444;"></i>
+                                            <i class="bi bi-fire" style="color: #EF4444;"></i>
                                             {% elif item_category == 'beverages' %}
-                                            <i class="bi bi-cup-hot-fill" style="color: #06B6D4;"></i>
+                                            <i class="bi bi-cup-straw" style="color: #06B6D4;"></i>
                                             {% elif item_category == 'bakery' %}
                                             <i class="bi bi-bread-slice" style="color: #D97706;"></i>
                                             {% elif item_category == 'canned goods' or item_category == 'canned_goods' %}
-                                            <i class="bi bi-box-seam-fill" style="color: #8B5CF6;"></i>
+                                            <i class="bi bi-box" style="color: #8B5CF6;"></i>
                                             {% elif item_category == 'snacks' %}
                                             <i class="bi bi-cookie" style="color: #EC4899;"></i>
                                             {% elif item_category == 'condiments' %}
-                                            <i class="bi bi-droplet-fill" style="color: #F97316;"></i>
+                                            <i class="bi bi-droplet-half" style="color: #F97316;"></i>
                                             {% elif item_category == 'grains' %}
-                                            <i class="bi bi-circle-fill" style="color: #A855F7;"></i>
+                                            <i class="bi bi-grid-3x3" style="color: #A855F7;"></i>
                                             {% elif item_category == 'frozen' %}
                                             <i class="bi bi-snow" style="color: #06B6D4;"></i>
                                             {% else %}
@@ -3006,6 +3006,27 @@
                         </div>
                         <label for="mobileCameraInput" class="visually-hidden">Take photo with camera</label>
                         <input type="file" id="mobileCameraInput" accept="image/*" capture="environment" style="position: absolute; width: 1px; height: 1px; opacity: 0; overflow: hidden; pointer-events: none;">
+                        
+                        <!-- Detection Method Selection -->
+                        <div class="mt-4 p-3" style="background: rgba(59, 130, 246, 0.05); border-radius: 12px; border: 1px solid rgba(59, 130, 246, 0.15);">
+                            <label class="form-label fw-semibold mb-2" style="color: #1e293b;">
+                                <i class="bi bi-cpu me-2"></i>Detection Method
+                            </label>
+                            <div class="form-check mb-2">
+                                <input class="form-check-input" type="radio" name="detection_method_modal" id="method_ml_modal_take" value="ml" checked>
+                                <label class="form-check-label" for="method_ml_modal_take">
+                                    <strong>My ML Model</strong> (Fast, Free, Local)
+                                    <small class="text-muted d-block ms-4">Uses YOLO + CLIP + OCR for detection</small>
+                                </label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="detection_method_modal" id="method_openai_modal_take" value="openai">
+                                <label class="form-check-label" for="method_openai_modal_take">
+                                    <strong>ChatGPT/OpenAI</strong> (More Accurate, Uses API Credits)
+                                    <small class="text-muted d-block ms-4">Uses GPT-4 Vision for advanced recognition</small>
+                                </label>
+                            </div>
+                        </div>
                     </div>
 
                     <!-- Upload Image Section -->
@@ -3019,6 +3040,27 @@
                         </button>
                             <label for="photoInput" class="visually-hidden">Select photo file</label>
                             <input type="file" id="photoInput" accept="image/*" style="position: absolute; width: 1px; height: 1px; opacity: 0; overflow: hidden; pointer-events: none;">
+                        </div>
+                        
+                        <!-- Detection Method Selection -->
+                        <div class="mt-4 p-3" style="background: rgba(59, 130, 246, 0.05); border-radius: 12px; border: 1px solid rgba(59, 130, 246, 0.15);">
+                            <label class="form-label fw-semibold mb-2" style="color: #1e293b;">
+                                <i class="bi bi-cpu me-2"></i>Detection Method
+                            </label>
+                            <div class="form-check mb-2">
+                                <input class="form-check-input" type="radio" name="detection_method_modal" id="method_ml_modal_upload" value="ml" checked>
+                                <label class="form-check-label" for="method_ml_modal_upload">
+                                    <strong>My ML Model</strong> (Fast, Free, Local)
+                                    <small class="text-muted d-block ms-4">Uses YOLO + CLIP + OCR for detection</small>
+                                </label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="detection_method_modal" id="method_openai_modal_upload" value="openai">
+                                <label class="form-check-label" for="method_openai_modal_upload">
+                                    <strong>ChatGPT/OpenAI</strong> (More Accurate, Uses API Credits)
+                                    <small class="text-muted d-block ms-4">Uses GPT-4 Vision for advanced recognition</small>
+                                </label>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -4312,6 +4354,11 @@
             
             const formData = new FormData();
             let uploadEndpoint;
+            
+            // Get selected detection method from modal
+            const detectionMethod = document.querySelector('input[name="detection_method_modal"]:checked')?.value || 'ml';
+            formData.append('detection_method', detectionMethod);
+            
             if (multiPhotoMode && photoFiles.length > 1) {
                 // Multi-photo mode: use batch endpoint
                 uploadEndpoint = '/api/upload_photos_batch';
@@ -4676,8 +4723,8 @@
                         showAIConfidenceModal(allItems, autoAdded, highConfItems, lowConfItems, true);
                     } catch (retryError) {
                         console.error('❌ Modal recreation also failed:', retryError);
-                    alert('Error: Could not show verification window. Detected ' + allItems.length + ' items. Please refresh and try again.');
-                    showFeedback('Error displaying detected items. Please try again.', 'danger');
+                    alert('Unable to display items. We detected ' + allItems.length + ' items in your photo. Please refresh the page and try again.');
+                    showFeedback('Unable to display detected items. Please refresh the page and try again.', 'warning');
                     resetPhotoUploadState();
                     }
                 }
@@ -5051,6 +5098,84 @@
                 document.body.appendChild(backdrop);
             }
             
+        // 🔥 FIX #4: Handle item confirmation - "Is this X?" button
+        function handleItemConfirmation(button) {
+            const itemDataStr = button.getAttribute('data-item');
+            const itemName = button.getAttribute('data-item-name');
+            const itemConfidence = button.getAttribute('data-item-confidence');
+            
+            if (!itemDataStr) {
+                console.error('No item data found for confirmation');
+                return;
+            }
+            
+            try {
+                // Decode HTML entities and parse JSON
+                const decodedStr = itemDataStr.replace(/&#39;/g, "'").replace(/&quot;/g, '"');
+                const item = JSON.parse(decodedStr);
+                
+                // Find the checkbox for this item and check it
+                const card = button.closest('.card');
+                const checkbox = card.querySelector('input[type="checkbox"]');
+                if (checkbox) {
+                    checkbox.checked = true;
+                    checkbox.dispatchEvent(new Event('change', { bubbles: true }));
+                    
+                    // Update selected count
+                    const countEl = document.getElementById('selectedCount');
+                    if (countEl) {
+                        const checked = document.querySelectorAll('#aiConfidenceModal input[type="checkbox"]:checked:not([disabled])').length;
+                        countEl.textContent = checked;
+                    }
+                }
+                
+                // Update button to show confirmation
+                button.disabled = true;
+                button.innerHTML = '<i class="bi bi-check-circle-fill me-2"></i>Confirmed!';
+                button.style.background = 'linear-gradient(135deg, #10B981 0%, #059669 100%)';
+                button.style.opacity = '0.8';
+                button.style.cursor = 'default';
+                
+                // Update card styling to show it's confirmed
+                card.style.borderLeft = '4px solid #10B981';
+                card.style.background = 'rgba(16, 185, 129, 0.05)';
+                
+                // Show feedback
+                showFeedback(`✅ Confirmed: ${itemName}`, 'success');
+                
+                // Optionally send confirmation to backend for training data
+                const photoData = window.uploadedPhotoData || null;
+                fetch('/api/confirmation', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        item_name: itemName,
+                        confirmed: true,
+                        confidence: parseFloat(itemConfidence) || 0,
+                        item_data: item,
+                        photo_data: photoData,
+                        timestamp: new Date().toISOString()
+                    })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        console.log('✅ Confirmation logged successfully');
+                    }
+                })
+                .catch(error => {
+                    console.error('Error logging confirmation:', error);
+                    // Don't show error to user - confirmation still worked
+                });
+                
+            } catch (error) {
+                console.error('Error processing confirmation:', error);
+                showFeedback('⚠️ Error processing confirmation. Please try again.', 'danger');
+            }
+        }
+        
         // 🔥 User Correction Feedback Loop: Handle "This is wrong" button
         function handleItemCorrection(button) {
             const itemDataStr = button.getAttribute('data-item');
@@ -5247,8 +5372,25 @@
                         
                         const data = await response.json();
                     console.log('✅ API response:', data);
+                    console.log('✅ Response data:', {
+                        success: data.success,
+                        items_added: data.items_added,
+                        skipped_duplicates: data.skipped_duplicates,
+                        total_items: data.total_items
+                    });
                         
-                        if (data.success && data.items_added > 0) {
+                        if (data.success) {
+                            // Show success message even if items_added is 0 (might be duplicates)
+                            const itemsAdded = data.items_added || 0;
+                            const skipped = data.skipped_duplicates || 0;
+                            
+                            if (itemsAdded > 0) {
+                                showFeedback(`✅ Added ${itemsAdded} item${itemsAdded !== 1 ? 's' : ''} to your pantry${skipped > 0 ? ` (${skipped} duplicate${skipped !== 1 ? 's' : ''} skipped)` : ''}`, 'success');
+                            } else if (skipped > 0) {
+                                showFeedback(`⚠️ All items were duplicates and were skipped`, 'warning');
+                            } else {
+                                showFeedback(`⚠️ No items were added. Please try again.`, 'warning');
+                            }
                             showFeedback(`✅ Added ${data.items_added} item${data.items_added !== 1 ? 's' : ''} to your pantry${data.skipped_duplicates > 0 ? ` (${data.skipped_duplicates} duplicate${data.skipped_duplicates !== 1 ? 's' : ''} skipped)` : ''}`, 'success');
                             
                             // Close confidence modal first
@@ -5432,6 +5574,18 @@
                             const errorMsg = data.error || 'Failed to add items. They may already exist in your pantry.';
                         console.error('❌ API returned error:', errorMsg);
                             showFeedback('❌ ' + errorMsg, 'danger');
+                            // Still try to reload pantry in case some items were added
+                            setTimeout(async () => {
+                                try {
+                                    if (typeof reloadPantryItemsFromAPI === 'function') {
+                                        await reloadPantryItemsFromAPI();
+                                    } else if (typeof reloadPantryItems === 'function') {
+                                        await reloadPantryItems();
+                                    }
+                                } catch (reloadError) {
+                                    console.error('Error reloading pantry after error:', reloadError);
+                                }
+                            }, 500);
                         }
                     } catch (error) {
                         console.error('❌ Error adding items:', error);
@@ -5531,7 +5685,7 @@
                 console.log('✅ Created itemsList as fallback');
             } else {
                 console.error('❌ Modal body not found, cannot create items list');
-                showFeedback('Error: Could not create verification window. Please refresh and try again.', 'danger');
+                showFeedback('Unable to create verification window. Please refresh the page and try again.', 'warning');
                 return;
             }
         }
@@ -5542,6 +5696,15 @@
         function createItemCard(item, confidenceLevel) {
             const conf = item.confidence || 0;
             const confPercent = Math.round(conf * 100);
+            
+            // 🔥 FIX #4: Auto-detect items that need confirmation
+            // Items with "unknown_food (likely X)" or "Possibly: X?" format should always show confirmation
+            const itemName = String(item.name || '');
+            const needsConfirmation = item.needs_confirmation || 
+                                     itemName.includes('unknown_food') || 
+                                     itemName.includes('likely') ||
+                                     itemName.startsWith('Possibly:') ||
+                                     itemName.endsWith('?');
             
             // Determine colors based on confidence level
             let confColor, confLabel, borderColor, bgColor, buttonBgColor;
@@ -5728,6 +5891,21 @@
                                     </label>
                                 </div>
                             </div>
+                            <!-- 🔥 FIX #4: Confirmation button for items that need confirmation -->
+                            ${needsConfirmation ? `
+                            <div class="mt-2 mb-2">
+                                <button type="button" class="btn btn-sm btn-success confirmation-btn" 
+                                        data-item='${itemDataStr}'
+                                        data-item-name="${String(item.name || '').replace(/"/g, '&quot;').replace(/'/g, '&#39;')}"
+                                        data-item-confidence="${conf}"
+                                        onclick="event.stopPropagation(); handleItemConfirmation(this);"
+                                        style="width: 100%; border-radius: 8px; font-size: 0.85rem; padding: 8px 16px; border: none; color: white; background: linear-gradient(135deg, #10B981 0%, #059669 100%); font-weight: 600; box-shadow: 0 2px 8px rgba(16, 185, 129, 0.3); transition: all 0.2s ease;"
+                                        onmouseover="this.style.transform='translateY(-1px)'; this.style.boxShadow='0 4px 12px rgba(16, 185, 129, 0.4)';"
+                                        onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 2px 8px rgba(16, 185, 129, 0.3)';">
+                                    <i class="bi bi-check-circle-fill me-2"></i>Is this ${String(item.name || '').replace(/"/g, '&quot;').replace(/'/g, '&#39;')}?
+                                </button>
+                            </div>
+                            ` : ''}
                             <!-- 🔥 User Correction Feedback Loop: "This is wrong" button -->
                             <div class="mt-2">
                                 <button type="button" class="btn btn-sm btn-outline-danger correction-btn" 
@@ -7585,16 +7763,16 @@
             // Helper to get category icon - More symbolic and colorful icons
             const getCategoryIcon = (category) => {
                 const catLower = (category || 'other').toLowerCase().trim();
-                if (catLower === 'dairy') return '<i class="bi bi-cup-straw" style="font-size: 1.5rem; color: #3B82F6;"></i>'; // Blue milk bottle
-                if (catLower === 'produce' || catLower === 'vegetables') return '<i class="bi bi-flower1" style="font-size: 1.5rem; color: #10B981;"></i>'; // Green vegetable
+                if (catLower === 'dairy') return '<i class="bi bi-cup-hot" style="font-size: 1.5rem; color: #3B82F6;"></i>'; // Blue cup (milk/dairy)
+                if (catLower === 'produce' || catLower === 'vegetables') return '<i class="bi bi-pepper-hot" style="font-size: 1.5rem; color: #10B981;"></i>'; // Green pepper (vegetables)
                 if (catLower === 'fruits') return '<i class="bi bi-apple" style="font-size: 1.5rem; color: #F59E0B;"></i>'; // Orange apple
-                if (catLower === 'meat' || catLower === 'proteins' || catLower === 'protein') return '<i class="bi bi-heart-fill" style="font-size: 1.5rem; color: #EF4444;"></i>'; // Red meat
-                if (catLower === 'beverages') return '<i class="bi bi-cup-hot-fill" style="font-size: 1.5rem; color: #06B6D4;"></i>'; // Cyan beverage
+                if (catLower === 'meat' || catLower === 'proteins' || catLower === 'protein') return '<i class="bi bi-fire" style="font-size: 1.5rem; color: #EF4444;"></i>'; // Red fire (cooked meat)
+                if (catLower === 'beverages') return '<i class="bi bi-cup-straw" style="font-size: 1.5rem; color: #06B6D4;"></i>'; // Cyan cup with straw
                 if (catLower === 'bakery') return '<i class="bi bi-bread-slice" style="font-size: 1.5rem; color: #D97706;"></i>'; // Brown bread
-                if (catLower === 'canned goods' || catLower === 'canned_goods') return '<i class="bi bi-box-seam-fill" style="font-size: 1.5rem; color: #8B5CF6;"></i>'; // Purple can
+                if (catLower === 'canned goods' || catLower === 'canned_goods') return '<i class="bi bi-box" style="font-size: 1.5rem; color: #8B5CF6;"></i>'; // Purple box
                 if (catLower === 'snacks') return '<i class="bi bi-cookie" style="font-size: 1.5rem; color: #EC4899;"></i>'; // Pink cookie
-                if (catLower === 'condiments') return '<i class="bi bi-droplet-fill" style="font-size: 1.5rem; color: #F97316;"></i>'; // Orange condiment
-                if (catLower === 'grains') return '<i class="bi bi-circle-fill" style="font-size: 1.5rem; color: #A855F7;"></i>'; // Purple grain
+                if (catLower === 'condiments') return '<i class="bi bi-droplet-half" style="font-size: 1.5rem; color: #F97316;"></i>'; // Orange droplet (sauce)
+                if (catLower === 'grains') return '<i class="bi bi-grid-3x3" style="font-size: 1.5rem; color: #A855F7;"></i>'; // Purple grid (cereal/grains)
                 if (catLower === 'frozen') return '<i class="bi bi-snow" style="font-size: 1.5rem; color: #06B6D4;"></i>'; // Cyan snowflake
                 return '<i class="bi bi-box-seam-fill" style="font-size: 1.5rem; color: #64748B;"></i>'; // Gray default
             };
@@ -8225,34 +8403,34 @@
                                     let categoryIcon = 'bi-box-seam-fill';
                                     let categoryColor = '#64748B';
                                     if (itemCategory === 'dairy') {
-                                        categoryIcon = 'bi-cup-straw';
+                                        categoryIcon = 'bi-cup-hot';
                                         categoryColor = '#3B82F6';
                                     } else if (itemCategory === 'vegetables' || itemCategory === 'produce') {
-                                        categoryIcon = 'bi-flower1';
+                                        categoryIcon = 'bi-pepper-hot';
                                         categoryColor = '#10B981';
                                     } else if (itemCategory === 'fruits') {
                                         categoryIcon = 'bi-apple';
                                         categoryColor = '#F59E0B';
                                     } else if (itemCategory === 'meat' || itemCategory === 'proteins') {
-                                        categoryIcon = 'bi-heart-fill';
+                                        categoryIcon = 'bi-fire';
                                         categoryColor = '#EF4444';
                                     } else if (itemCategory === 'beverages') {
-                                        categoryIcon = 'bi-cup-hot-fill';
+                                        categoryIcon = 'bi-cup-straw';
                                         categoryColor = '#06B6D4';
                                     } else if (itemCategory === 'bakery') {
                                         categoryIcon = 'bi-bread-slice';
                                         categoryColor = '#D97706';
                                     } else if (itemCategory === 'canned goods' || itemCategory === 'canned_goods') {
-                                        categoryIcon = 'bi-box-seam-fill';
+                                        categoryIcon = 'bi-box';
                                         categoryColor = '#8B5CF6';
                                     } else if (itemCategory === 'snacks') {
                                         categoryIcon = 'bi-cookie';
                                         categoryColor = '#EC4899';
                                     } else if (itemCategory === 'condiments') {
-                                        categoryIcon = 'bi-droplet-fill';
+                                        categoryIcon = 'bi-droplet-half';
                                         categoryColor = '#F97316';
                                     } else if (itemCategory === 'grains') {
-                                        categoryIcon = 'bi-circle-fill';
+                                        categoryIcon = 'bi-grid-3x3';
                                         categoryColor = '#A855F7';
                                     } else if (itemCategory === 'frozen') {
                                         categoryIcon = 'bi-snow';
@@ -8815,17 +8993,49 @@
                         }
                     }
                     
-                    // Reload pantry items to reflect the change
-                    try {
-                        await reloadPantryItems();
-                    } catch (reloadError) {
-                        console.error('Error reloading after update:', reloadError);
-                        // Show warning but don't fail completely
-                        const feedback = document.getElementById('addItemFeedback');
-                        if (feedback) {
-                            showFeedback('Item updated but failed to refresh. Please refresh the page.', 'warning');
+                    // Reload pantry items to reflect the change - with retries
+                    let reloadAttempts = 0;
+                    const maxReloadAttempts = 3;
+                    const reloadWithRetry = async () => {
+                        reloadAttempts++;
+                        try {
+                            console.log(`🔄 Reloading pantry (attempt ${reloadAttempts}/${maxReloadAttempts})...`);
+                            // Prefer API-based reload for consistency with other flows
+                            if (typeof reloadPantryItemsFromAPI === 'function') {
+                                await reloadPantryItemsFromAPI();
+                            } else if (typeof reloadPantryItems === 'function') {
+                                await reloadPantryItems();
+                            } else {
+                                // Fallback: full page reload if no helper is available
+                                console.warn('No pantry reload function available after edit, reloading page');
+                                window.location.reload();
+                                return;
+                            }
+                            
+                            // Verify items were reloaded
+                            setTimeout(() => {
+                                const container = document.getElementById('pantryItemsContainer');
+                                if (container && container.children.length === 0 && reloadAttempts < maxReloadAttempts) {
+                                    console.warn('Pantry appears empty after reload, retrying...');
+                                    reloadWithRetry();
+                                }
+                            }, 500);
+                        } catch (reloadError) {
+                            console.error(`Error reloading after update (attempt ${reloadAttempts}):`, reloadError);
+                            if (reloadAttempts < maxReloadAttempts) {
+                                setTimeout(reloadWithRetry, 1000 * reloadAttempts);
+                            } else {
+                                // Show warning but don't fail completely
+                                const feedback = document.getElementById('addItemFeedback');
+                                if (feedback) {
+                                    showFeedback('Item updated but failed to refresh. Please refresh the page.', 'warning');
+                                }
+                            }
                         }
-                    }
+                    };
+                    
+                    // Start reload with delay to ensure backend saved
+                    setTimeout(reloadWithRetry, 300);
                 } else {
                     throw new Error(data.error || 'Failed to update item');
                 }

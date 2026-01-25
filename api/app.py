@@ -285,7 +285,9 @@ ML_VISION_MODE = os.getenv("ML_VISION_MODE", "classify_only").lower()  # hybrid 
 # Enable this for better detection accuracy (recommended over DETR)
 _default_yolo_enabled = "false" if (IS_VERCEL or IS_RENDER) else "true"
 YOLO_DETECTION_ENABLED = os.getenv("YOLO_DETECTION_ENABLED", _default_yolo_enabled).lower() == "true"
-YOLO_MODEL_SIZE = os.getenv("YOLO_MODEL_SIZE", "n").lower()  # n (nano), s (small), m (medium), l (large), x (xlarge)
+# 🔥 FIX #1: Upgrade default YOLO from nano to small for better recall
+# YOLOv8s has significantly better recall for pantry scenes with dense items
+YOLO_MODEL_SIZE = os.getenv("YOLO_MODEL_SIZE", "s").lower()  # n (nano), s (small), m (medium), l (large), x (xlarge)
 
 # Lazy-loaded ML models (keep memory usage lower in serverless)
 _ml_models_loaded = False
@@ -537,8 +539,9 @@ def load_ml_models():
                     yolo_error = None
                     _yolo_model_local = None
                     
-                    # Use YOLOv8n (nano) by default for faster inference
+                    # 🔥 FIX #1: Use YOLOv8s (small) by default for better recall on pantry scenes
                     # Options: yolov8n.pt (nano), yolov8s.pt (small), yolov8m.pt (medium), yolov8l.pt (large), yolov8x.pt (xlarge)
+                    # Small model provides better recall for dense pantry items while still being fast
                     model_name = f"yolov8{YOLO_MODEL_SIZE}.pt"
                     
                     def load_yolo():
@@ -1528,6 +1531,111 @@ def get_adaptive_confidence_threshold(item_name, category):
 # Each stage answers one question only, following clean architecture
 # ============================================================================
 
+def stage_yolo_detect_regions_multi_crop(img, use_multi_crop=False):
+    """
+    🔥 FIX #2: Multi-crop zooming - split image into overlapping tiles when YOLO fails
+    Mimics human zooming behavior for better detection on dense pantry scenes
+    """
+    global _yolo_model
+    regions = []
+    
+    if not _yolo_model or not YOLO_DETECTION_ENABLED:
+        return regions
+    
+    if not use_multi_crop:
+        # Standard single-pass detection
+        return stage_yolo_detect_regions(img)
+    
+    try:
+        import numpy as np
+        img_width, img_height = img.size
+        
+        # Split into 2x2 overlapping tiles (50% overlap)
+        tile_width = img_width // 2
+        tile_height = img_height // 2
+        overlap = 0.5  # 50% overlap
+        
+        tiles = []
+        for i in range(2):
+            for j in range(2):
+                x1 = max(0, int(i * tile_width * (1 - overlap)))
+                y1 = max(0, int(j * tile_height * (1 - overlap)))
+                x2 = min(img_width, x1 + tile_width + int(tile_width * overlap))
+                y2 = min(img_height, y1 + tile_height + int(tile_height * overlap))
+                tiles.append((x1, y1, x2, y2))
+        
+        # Run YOLO on each tile
+        for tile_idx, (x1, y1, x2, y2) in enumerate(tiles):
+            try:
+                tile = img.crop((x1, y1, x2, y2))
+                tile_regions = stage_yolo_detect_regions(tile)
+                
+                # Adjust bbox coordinates to full image space
+                for region in tile_regions:
+                    bbox = region["bbox"]
+                    region["bbox"] = [
+                        bbox[0] + x1,  # x1
+                        bbox[1] + y1,  # y1
+                        bbox[2] + x1,  # x2
+                        bbox[3] + y1   # y2
+                    ]
+                    region["tile_source"] = tile_idx  # Track which tile found this
+                    regions.append(region)
+                
+                if VERBOSE_LOGGING and tile_regions:
+                    print(f"   🔍 Tile {tile_idx}: Found {len(tile_regions)} regions")
+            except Exception as tile_error:
+                if VERBOSE_LOGGING:
+                    print(f"   ⚠️ Error processing tile {tile_idx}: {tile_error}")
+                continue
+        
+        # Deduplicate overlapping detections from different tiles
+        if len(regions) > 1:
+            # Simple IoU-based deduplication
+            unique_regions = []
+            for region in regions:
+                is_duplicate = False
+                bbox1 = region["bbox"]
+                for existing in unique_regions:
+                    bbox2 = existing["bbox"]
+                    # Calculate IoU
+                    x1_inter = max(bbox1[0], bbox2[0])
+                    y1_inter = max(bbox1[1], bbox2[1])
+                    x2_inter = min(bbox1[2], bbox2[2])
+                    y2_inter = min(bbox1[3], bbox2[3])
+                    
+                    if x1_inter < x2_inter and y1_inter < y2_inter:
+                        inter_area = (x2_inter - x1_inter) * (y2_inter - y1_inter)
+                        area1 = (bbox1[2] - bbox1[0]) * (bbox1[3] - bbox1[1])
+                        area2 = (bbox2[2] - bbox2[0]) * (bbox2[3] - bbox2[1])
+                        union_area = area1 + area2 - inter_area
+                        iou = inter_area / union_area if union_area > 0 else 0
+                        
+                        if iou > 0.5:  # Same detection
+                            is_duplicate = True
+                            # Keep the one with higher confidence
+                            if region["yolo_conf"] > existing["yolo_conf"]:
+                                unique_regions.remove(existing)
+                                unique_regions.append(region)
+                            break
+                
+                if not is_duplicate:
+                    unique_regions.append(region)
+            
+            regions = unique_regions
+        
+        if VERBOSE_LOGGING:
+            print(f"   🔍 Multi-crop: Found {len(regions)} unique regions across {len(tiles)} tiles")
+        
+    except Exception as e:
+        if VERBOSE_LOGGING:
+            print(f"   ⚠️ Multi-crop error: {e}")
+        # Fallback to single-pass
+        return stage_yolo_detect_regions(img)
+    
+    return regions
+
+
 def stage_yolo_detect_regions(img):
     """
     STAGE 1: YOLO - "Where is something?"
@@ -1543,11 +1651,12 @@ def stage_yolo_detect_regions(img):
     try:
         import numpy as np
         img_array = np.array(img)
-        # 🔥 FIX 4: Optimize YOLO for pantry images
+        # 🔥 FIX #2: Optimize YOLO for pantry images
         # Pantry scenes: stacked items, small packages, low contrast shelves
         # Use lower confidence, higher IoU, filter small/nested/thin boxes
         scene_type = "pantry"  # Default to pantry (more permissive)
-        yolo_conf_threshold = 0.15  # FIX 4: Lower threshold for pantry (0.20 was too high, causing missed detections)
+        # 🔥 FIX #2: Lower threshold for pantry scenes (0.05) - want loose boxes, not precise ones
+        yolo_conf_threshold = 0.05 if scene_type == "pantry" else 0.25  # FIX #2: 0.05 for pantry, 0.25 for other scenes
         yolo_iou_threshold = 0.50  # FIX 4: Slightly lower IoU to catch more items (0.55 was too aggressive)
         
         # Get image dimensions for area filtering
@@ -2003,6 +2112,97 @@ def stage_ocr_bind_to_region(yolo_bbox, full_image_ocr_results, img_size):
             continue
     
     return bound_texts
+
+
+def stage_ocr_propose_candidates(ocr_text, clip_model=None, clip_processor=None, crop=None):
+    """
+    🔥 FIX #3: OCR proposes candidates → CLIP verifies
+    Instead of OCR → hypothesis only, use OCR text to propose candidate labels
+    Then CLIP verifies which candidate matches the image
+    
+    Example: OCR sees "Kellogg" → candidate = "cereal" → CLIP confirms cereal
+    """
+    if not ocr_text or len(ocr_text.strip()) < 2:
+        return None
+    
+    # Brand-to-food mapping (common pantry brands)
+    brand_to_food = {
+        "kellogg": "cereal",
+        "general mills": "cereal",
+        "quaker": "cereal",
+        "cheerios": "cereal",
+        "frosted flakes": "cereal",
+        "rice krispies": "cereal",
+        "barilla": "pasta",
+        "ronzoni": "pasta",
+        "de cecco": "pasta",
+        "kraft": "macaroni",
+        "hunts": "tomato sauce",
+        "rao": "pasta sauce",
+        "prego": "pasta sauce",
+        "heinz": "ketchup",
+        "del monte": "canned goods",
+        "campbell": "soup",
+        "progresso": "soup"
+    }
+    
+    ocr_lower = ocr_text.lower()
+    proposed_candidates = []
+    
+    # Check for brand names
+    for brand, food_type in brand_to_food.items():
+        if brand in ocr_lower:
+            proposed_candidates.append(food_type)
+            if VERBOSE_LOGGING:
+                print(f"   📝 OCR brand '{brand}' → candidate: {food_type}")
+    
+    # Check for generic food keywords
+    food_keywords = {
+        "cereal": ["cereal", "granola", "oatmeal", "breakfast"],
+        "pasta": ["pasta", "spaghetti", "macaroni", "noodles", "penne", "rigatoni"],
+        "rice": ["rice", "jasmine", "basmati", "brown rice"],
+        "snacks": ["chips", "crackers", "cookies", "pretzels", "snacks"],
+        "sauce": ["sauce", "marinara", "tomato sauce", "pasta sauce"],
+        "juice": ["juice", "orange juice", "apple juice", "cranberry juice"]
+    }
+    
+    for food_type, keywords in food_keywords.items():
+        if any(kw in ocr_lower for kw in keywords):
+            if food_type not in proposed_candidates:
+                proposed_candidates.append(food_type)
+                if VERBOSE_LOGGING:
+                    print(f"   📝 OCR keyword → candidate: {food_type}")
+    
+    # If we have candidates and CLIP model, verify with CLIP
+    if proposed_candidates and clip_model and clip_processor and crop:
+        try:
+            # Import clip_match_open_vocabulary from current module
+            clip_result = clip_match_open_vocabulary(crop, proposed_candidates, use_prompt_engineering=True)
+            if clip_result and clip_result.get("score", 0) > 0.25:
+                verified_label = clip_result.get("label", proposed_candidates[0])
+                verified_conf = clip_result.get("score", 0.0)
+                if VERBOSE_LOGGING:
+                    print(f"   ✅ CLIP verified OCR candidate: {verified_label} (conf: {verified_conf:.2f})")
+                return {
+                    "label": verified_label,
+                    "confidence": verified_conf,
+                    "text": ocr_text,
+                    "method": "ocr_clip_verified"
+                }
+        except Exception as clip_error:
+            if VERBOSE_LOGGING:
+                print(f"   ⚠️ CLIP verification error: {clip_error}")
+    
+    # If no CLIP verification, return top candidate with lower confidence
+    if proposed_candidates:
+        return {
+            "label": proposed_candidates[0],
+            "confidence": 0.4,  # Lower confidence without CLIP verification
+            "text": ocr_text,
+            "method": "ocr_proposed"
+        }
+    
+    return None
 
 
 def stage_ocr_read_label(crop, is_container=False, bound_ocr_texts=None):
@@ -2888,6 +3088,12 @@ def detect_food_items_with_ml(img_bytes, user_pantry=None, skip_preprocessing=Fa
     # STAGE 1: YOLO - "Where is something?" (region detection only)
     regions = stage_yolo_detect_regions(img)
     
+    # 🔥 FIX #2: If YOLO finds nothing, try multi-crop zooming
+    if not regions or len(regions) == 0:
+        if VERBOSE_LOGGING:
+            print("   🔍 YOLO found no regions - trying multi-crop zooming")
+        regions = stage_yolo_detect_regions_multi_crop(img, use_multi_crop=True)
+    
     if regions and len(regions) > 0:
         detections_found_yolo = True
         print(f"✅ YOLO found {len(regions)} regions")
@@ -3043,6 +3249,25 @@ def detect_food_items_with_ml(img_bytes, user_pantry=None, skip_preprocessing=Fa
                 if VERBOSE_LOGGING:
                     print(f"   📚 Added {len(user_items[:5])} user items to candidates")
             
+            # 🔥 FIX #3: Use OCR text as a hint to narrow candidates
+            # OCR keywords → likely food categories → narrow CLIP candidates
+            ocr_hints = []
+            if ocr_lower:
+                # Map OCR keywords to likely food categories
+                if any(kw in ocr_lower for kw in ["cereal", "granola", "oats", "quinoa"]):
+                    ocr_hints.extend(["cereal", "oats", "quinoa", "granola bar"])
+                if any(kw in ocr_lower for kw in ["pasta", "spaghetti", "macaroni", "noodles"]):
+                    ocr_hints.extend(["pasta", "spaghetti", "macaroni"])
+                if any(kw in ocr_lower for kw in ["rice", "jasmine", "basmati"]):
+                    ocr_hints.extend(["rice"])
+                if any(kw in ocr_lower for kw in ["flour", "baking", "sugar"]):
+                    ocr_hints.extend(["flour", "sugar", "baking powder", "baking soda"])
+                if any(kw in ocr_lower for kw in ["chips", "crackers", "cookies", "snacks"]):
+                    ocr_hints.extend(["chips", "crackers", "cookies", "snacks"])
+                if any(kw in ocr_lower for kw in ["original", "family", "size"]):
+                    # Generic packaging text - likely cereal, snacks, or crackers
+                    ocr_hints.extend(["cereal", "snacks", "chips", "crackers"])
+            
             # 🔥 STAGE 2: Narrow by food type (if CLIP classified it)
             if food_type and food_type in LABELS_BY_TYPE:
                 type_labels = LABELS_BY_TYPE[food_type]
@@ -3056,7 +3281,13 @@ def detect_food_items_with_ml(img_bytes, user_pantry=None, skip_preprocessing=Fa
                 elif region_type == "produce":
                     candidates.extend(LABELS_BY_TYPE.get("fresh produce", []))
                 elif region_type == "packaged":
-                    # Try to infer from OCR
+                    # 🔥 FIX #3: Use OCR hints to narrow packaged food candidates
+                    if ocr_hints:
+                        # Prioritize OCR-hinted items
+                        candidates.extend(ocr_hints)
+                        if VERBOSE_LOGGING:
+                            print(f"   💡 OCR hints narrowed to: {ocr_hints}")
+                    # Try to infer from OCR keywords
                     if "oil" in ocr_lower:
                         candidates.extend(LABELS_BY_TYPE.get("bottle or jar", []))
                     else:
@@ -3067,6 +3298,13 @@ def detect_food_items_with_ml(img_bytes, user_pantry=None, skip_preprocessing=Fa
                         PANTRY_ONTOLOGY["produce"]["vegetables"][:3] +
                     ["bread", "egg", "milk"]
                 )
+            
+            # 🔥 FIX #3: Add OCR hints to candidates (prioritize them)
+            if ocr_hints:
+                # Add OCR hints at the beginning (higher priority)
+                candidates = ocr_hints + [c for c in candidates if c not in ocr_hints]
+                if VERBOSE_LOGGING:
+                    print(f"   💡 OCR hints added to candidates: {ocr_hints}")
             
             # Step 4: Hard constraints (CRITICAL) - but now we have fewer candidates (6-15)
             # Keep max at 20 for safety, but typically we'll have 6-15
@@ -3274,13 +3512,40 @@ def detect_food_items_with_ml(img_bytes, user_pantry=None, skip_preprocessing=Fa
                     # 🔥 FIX #1: Pass bound OCR texts to OCR stage
                     ocr_result = stage_ocr_read_label(crop, is_container=True, bound_ocr_texts=bound_ocr_texts)
                     
-                    # If OCR found text with keyword match, it's authoritative - skip CLIP
+                    # 🔥 FIX #3: If OCR didn't find a label, try OCR candidate proposal → CLIP verification
+                    if (not ocr_result or not ocr_result.get("label")) and bound_ocr_texts:
+                        combined_ocr_text = ' '.join([t["text"] for t in bound_ocr_texts])
+                        ocr_candidate_result = stage_ocr_propose_candidates(
+                            combined_ocr_text, 
+                            clip_model=_clip_model, 
+                            clip_processor=_clip_processor, 
+                            crop=crop
+                        )
+                        if ocr_candidate_result:
+                            # Use OCR-proposed candidate (verified by CLIP if available)
+                            ocr_result = {
+                                "label": ocr_candidate_result.get("label"),
+                                "confidence": ocr_candidate_result.get("confidence", 0.4),
+                                "text": ocr_candidate_result.get("text"),
+                                "method": ocr_candidate_result.get("method", "ocr_proposed")
+                            }
+                            if VERBOSE_LOGGING:
+                                print(f"   📝 OCR candidate proposal: '{ocr_result.get('text')}' → '{ocr_result.get('label')}' (method: {ocr_result.get('method')})")
+                    
+                    # 🔥 FIX #3: Treat OCR as a hint, not a decision
+                    # Only use OCR authoritatively if confidence is very high (> 0.7)
+                    # Otherwise, use OCR text to narrow CLIP candidates
                     if ocr_result and ocr_result.get("label") and ocr_result.get("text"):
                         ocr_conf = ocr_result.get("confidence", 0.0)
-                        if ocr_conf > 0.3:
+                        if ocr_conf > 0.7:  # Only authoritative if very high confidence
                             ocr_authoritative = True
                             if VERBOSE_LOGGING:
-                                print(f"   ✅ OCR AUTHORITATIVE: '{ocr_result.get('text')}' → '{ocr_result.get('label')}' - WILL SKIP CLIP")
+                                print(f"   ✅ OCR AUTHORITATIVE: '{ocr_result.get('text')}' → '{ocr_result.get('label')}' (conf: {ocr_conf:.2f}) - WILL SKIP CLIP")
+                        else:
+                            # OCR is a hint - will be used to narrow CLIP candidates
+                            ocr_authoritative = False
+                            if VERBOSE_LOGGING:
+                                print(f"   💡 OCR HINT: '{ocr_result.get('text')}' (conf: {ocr_conf:.2f}) - will narrow CLIP candidates")
                     
                     # If OCR failed or low confidence, try on expanded crop
                     if not ocr_authoritative and len(crops_to_classify) > 1:
@@ -3293,10 +3558,17 @@ def detect_food_items_with_ml(img_bytes, user_pantry=None, skip_preprocessing=Fa
                         ocr_result_expanded = stage_ocr_read_label(expanded_crop, is_container=True)
                         if ocr_result_expanded and ocr_result_expanded.get("confidence", 0) > (ocr_result.get("confidence", 0) if ocr_result else 0):
                             ocr_result = ocr_result_expanded
-                            if ocr_result.get("label") and ocr_result.get("text") and ocr_result.get("confidence", 0) > 0.3:
+                            # 🔥 FIX #3: Only authoritative if very high confidence (> 0.7)
+                            ocr_conf_expanded = ocr_result.get("confidence", 0.0)
+                            if ocr_result.get("label") and ocr_result.get("text") and ocr_conf_expanded > 0.7:
                                 ocr_authoritative = True
                                 if VERBOSE_LOGGING:
-                                    print(f"   ✅ OCR AUTHORITATIVE (expanded): '{ocr_result.get('text')}' → '{ocr_result.get('label')}' - WILL SKIP CLIP")
+                                    print(f"   ✅ OCR AUTHORITATIVE (expanded): '{ocr_result.get('text')}' → '{ocr_result.get('label')}' (conf: {ocr_conf_expanded:.2f}) - WILL SKIP CLIP")
+                            elif ocr_result.get("label") and ocr_result.get("text"):
+                                # OCR is a hint - update ocr_text for candidate narrowing
+                                ocr_authoritative = False
+                                if VERBOSE_LOGGING:
+                                    print(f"   💡 OCR HINT (expanded): '{ocr_result.get('text')}' (conf: {ocr_conf_expanded:.2f}) - will narrow CLIP candidates")
                 
                 has_text = ocr_result is not None and ocr_result.get("label") is not None
                 ocr_text = ocr_result.get("text", "") if ocr_result else ""
@@ -3836,18 +4108,167 @@ def detect_food_items_with_ml(img_bytes, user_pantry=None, skip_preprocessing=Fa
     should_run_classifier = False
     if _food_classifier:
         if not detections_found and len(items) == 0:
-            # No YOLO regions at all - only allow full-image CLIP if image has 1 object (close-up)
-            # For pantry scans, this should almost never happen
-            print("⚠️ No YOLO regions found - skipping full-image CLIP (would be low precision)")
+            # No YOLO regions at all - use OCR text clustering + shelf-level fallback
+            print("⚠️ No YOLO regions found - using OCR text clustering + shelf-level fallback")
             should_run_classifier = False
+            
+            # 🔥 FIX #4: Use OCR text even when YOLO fails (text clustering + spatial grouping)
+            if _ocr_reader:
+                try:
+                    import numpy as np
+                    img_array = np.array(img)
+                    ocr_results = _ocr_reader.readtext(img_array)
+                    if ocr_results and len(ocr_results) > 0:
+                        # Cluster OCR text by spatial proximity and extract food keywords
+                        food_keywords_map = {
+                            "cereal": ["cereal", "granola", "oatmeal", "breakfast"],
+                            "rice": ["rice", "jasmine", "basmati", "brown rice"],
+                            "pasta": ["pasta", "spaghetti", "macaroni", "noodles"],
+                            "snacks": ["chips", "crackers", "cookies", "pretzels", "snacks"],
+                            "flour": ["flour", "baking", "sugar"],
+                            "sauce": ["sauce", "tomato", "marinara", "pasta sauce"],
+                            "juice": ["juice", "orange", "apple", "cranberry"],
+                            "soda": ["soda", "cola", "sprite", "ginger ale"]
+                        }
+                        
+                        # Extract all OCR text and find food keywords
+                        all_ocr_text = ' '.join([item[1] if len(item) > 1 else '' for item in ocr_results]).lower()
+                        detected_keywords = []
+                        for food_type, keywords in food_keywords_map.items():
+                            for keyword in keywords:
+                                if keyword in all_ocr_text:
+                                    detected_keywords.append(food_type)
+                                    break
+                        
+                        # If OCR found food keywords, add as hypothesis items
+                        if detected_keywords:
+                            for keyword in detected_keywords[:3]:  # Limit to top 3
+                                items.append({
+                                    "name": f"unknown_food (likely {keyword})",
+                                    "quantity": "1",
+                                    "expirationDate": None,
+                                    "category": validate_category(keyword, "other"),
+                                    "confidence": 0.4,  # Moderate confidence for OCR-based detection
+                                    "detection_method": "ocr_clustering",
+                                    "needs_confirmation": True
+                                })
+                            if VERBOSE_LOGGING:
+                                print(f"   📝 OCR clustering found keywords: {detected_keywords}")
+                except Exception as ocr_cluster_error:
+                    if VERBOSE_LOGGING:
+                        print(f"   ⚠️ OCR clustering error: {ocr_cluster_error}")
+            
+            # 🔥 FIX: Pantry scene fallback - shelf-level context + item hypothesis mode
+            # If YOLO finds nothing, run CLIP on full image with shelf-level labels
+            # Then use shelf type to narrow item candidates (fallback item hypothesis)
+            scene_type = "pantry"
+            shelf_context = None
+            if scene_type == "pantry" and _clip_model and _clip_processor:
+                shelf_labels = [
+                    "cereal shelf",
+                    "snack shelf",
+                    "rice shelf",
+                    "pasta shelf"
+                ]
+                try:
+                    shelf_result = clip_match_open_vocabulary(img, shelf_labels, use_prompt_engineering=True)
+                    if shelf_result and shelf_result.get("score", 0) > 0.20:
+                        shelf_label = shelf_result.get("label", "pantry shelf")
+                        shelf_conf = shelf_result.get("score", 0.0)
+                        shelf_context = shelf_label  # Store as context, not item
+                        
+                        # 🔥 FIX: Use shelf type to narrow item candidates (fallback item hypothesis)
+                        # Map shelf type to likely items
+                        shelf_to_items = {
+                            "cereal shelf": ["cereal", "granola", "oatmeal", "breakfast cereal"],
+                            "snack shelf": ["chips", "crackers", "cookies", "snacks", "pretzels"],
+                            "rice shelf": ["rice", "pasta", "quinoa", "grains"],
+                            "pasta shelf": ["pasta", "spaghetti", "macaroni", "noodles", "rice"]
+                        }
+                        
+                        # Get likely items for this shelf type
+                        likely_items = shelf_to_items.get(shelf_label, ["cereal", "snacks", "rice", "pasta"])
+                        
+                        # Run CLIP on full image with narrowed item candidates
+                        item_result = clip_match_open_vocabulary(img, likely_items, use_prompt_engineering=True)
+                        if item_result and item_result.get("score", 0) > 0.25:
+                            item_label = item_result.get("label", "unknown_food")
+                            item_conf = item_result.get("score", 0.0)
+                            # Return as "unknown_food (likely X)" instead of shelf label
+                            items.append({
+                                "name": f"unknown_food (likely {item_label})",
+                                "quantity": "1",
+                                "expirationDate": None,
+                                "category": validate_category(item_label, "other"),
+                                "confidence": item_conf * 0.7,  # Reduce confidence for hypothesis
+                                "detection_method": "clip_hypothesis",
+                                "needs_confirmation": True,
+                                "shelf_context": shelf_context  # Include context for UI
+                            })
+                            detections_found = True
+                            if VERBOSE_LOGGING:
+                                print(f"   🗂️ Shelf context: {shelf_label} → Item hypothesis: {item_label} (conf: {item_conf:.2f})")
+                        else:
+                            # No confident item match - return generic unknown with shelf context
+                            items.append({
+                                "name": "unknown_food",
+                                "quantity": "1",
+                                "expirationDate": None,
+                                "category": "other",
+                                "confidence": 0.3,
+                                "detection_method": "clip_hypothesis",
+                                "needs_confirmation": True,
+                                "shelf_context": shelf_context
+                            })
+                            detections_found = True
+                            if VERBOSE_LOGGING:
+                                print(f"   🗂️ Shelf context: {shelf_label} → Generic unknown_food")
+                except Exception as shelf_error:
+                    if VERBOSE_LOGGING:
+                        print(f"   ⚠️ Shelf-level CLIP fallback error: {shelf_error}")
         elif detections_found and len(items) == 0:
-            # 🔥 CRITICAL: YOLO found regions but no items passed filters
-            # Don't use full-image CLIP - it will guess wrong (yogurt, olive oil bias)
-            # Instead, mark regions as "unknown_packaged_food" for user confirmation
-            print("⚠️ YOLO found regions but no items - marking as unknown_packaged_food (NOT using full-image CLIP)")
-            # Add unknown items for each region that was filtered
-            # This surfaces uncertainty instead of guessing
+            # 🔥 FIX #1: YOLO found boxes but no label - run CLIP on each crop with restricted vocabulary
+            # Instead of just marking as unknown_packaged_food, try CLIP with narrow pantry vocabulary
+            print("⚠️ YOLO found regions but no items - running CLIP on crops with restricted vocabulary")
+            
+            # Restricted pantry vocabulary for boxes that YOLO found but couldn't classify
+            PANTRY_BOX_VOCAB = [
+                "rice", "pasta", "cereal", "flour", "sugar", "snacks", "chips", "cookies",
+                "crackers", "oats", "quinoa", "bread", "crackers", "granola bar", "protein bar"
+            ]
+            
+            # Try CLIP on each region crop
             for region in regions:
+                try:
+                    bbox = region.get("bbox", [])
+                    if len(bbox) >= 4:
+                        x1, y1, x2, y2 = int(bbox[0]), int(bbox[1]), int(bbox[2]), int(bbox[3])
+                        crop = img.crop((x1, y1, x2, y2))
+                        
+                        # Run CLIP with restricted vocabulary
+                        if _clip_model and _clip_processor:
+                            clip_result = clip_match_open_vocabulary(crop, PANTRY_BOX_VOCAB, use_prompt_engineering=True)
+                            if clip_result and clip_result.get("score", 0) > 0.20:  # Lower threshold for boxes
+                                label = clip_result.get("label", "unknown_packaged_food")
+                                conf = clip_result.get("score", 0.3)
+                                items.append({
+                                    "name": label,
+                                    "quantity": "1",
+                                    "expirationDate": None,
+                                    "category": validate_category(label, "other"),
+                                    "confidence": conf,
+                                    "detection_method": "yolov8+clip",
+                                    "needs_confirmation": conf < 0.5  # Mark for confirmation if low confidence
+                                })
+                                if VERBOSE_LOGGING:
+                                    print(f"   ✅ CLIP identified box as: {label} (conf: {conf:.2f})")
+                                continue
+                
+                except Exception as crop_error:
+                    if VERBOSE_LOGGING:
+                        print(f"   ⚠️ Error processing region crop: {crop_error}")
+                
+                # If CLIP didn't find anything or failed, mark as unknown_packaged_food
                 items.append({
                     "name": "unknown_packaged_food",
                     "quantity": "1",
@@ -3857,6 +4278,7 @@ def detect_food_items_with_ml(img_bytes, user_pantry=None, skip_preprocessing=Fa
                     "detection_method": "yolov8+unknown",
                     "needs_confirmation": True
                 })
+            
             should_run_classifier = False
         else:
             # Items already found - skip full-image classifier to avoid hallucination
@@ -4248,6 +4670,33 @@ def detect_food_items_with_ml(img_bytes, user_pantry=None, skip_preprocessing=Fa
     # Sort by confidence
     result = sorted(unique_items, key=lambda x: x.get("confidence", 0), reverse=True)
     print(f"🔍 After better deduplication: {len(result)} unique items (merged {len(items) - len(result)} duplicates)")
+    
+    # 🔥 FIX #4: Merge multiple unknowns intelligently
+    # Instead of showing "unknown_packaged_food x5", show "5 packaged foods (needs labeling)"
+    unknown_items = [item for item in result if item.get("name", "").lower() in ["unknown_packaged_food", "unknown_food", "unknown_item"]]
+    known_items = [item for item in result if item.get("name", "").lower() not in ["unknown_packaged_food", "unknown_food", "unknown_item"]]
+    
+    if len(unknown_items) > 1:
+        # Merge multiple unknowns into a single item with count
+        total_unknowns = len(unknown_items)
+        avg_conf = sum(item.get("confidence", 0.3) for item in unknown_items) / total_unknowns if unknown_items else 0.3
+        
+        merged_unknown = {
+            "name": f"{total_unknowns} packaged foods (needs labeling)",
+            "quantity": str(total_unknowns),
+            "expirationDate": None,
+            "category": "other",
+            "confidence": avg_conf,
+            "detection_method": "yolov8+unknown",
+            "needs_confirmation": True,
+            "merged_count": total_unknowns,  # Track how many were merged
+            "is_merged_unknown": True  # Flag for UI
+        }
+        
+        # Replace all unknown items with the merged one
+        result = known_items + [merged_unknown]
+        if VERBOSE_LOGGING:
+            print(f"   🔗 FIX #4: Merged {total_unknowns} unknown items into single entry")
     
     # STEP 6: Apply ensemble confidence boosting (if multiple methods detected same item)
     result = apply_ensemble_boosting(result, items)
@@ -7066,125 +7515,145 @@ Return ONLY valid JSON (no markdown, no code blocks, no explanations):
         pantry_items = unique_items
         
         # Add to appropriate pantry based on user authentication
-        if 'user_id' in session and session.get('user_id'):
-            try:
-                user_id = session['user_id']
-                # Add to user's pantry
-                user_pantry = get_user_pantry(user_id)
-                # Validate user_pantry is a list
-                if not isinstance(user_pantry, list):
-                    user_pantry = []
-                
-                # Convert to list of dicts if needed
-                pantry_list = []
-                for item in user_pantry:
-                    try:
-                        if isinstance(item, dict):
-                            pantry_list.append(item)
-                        else:
-                            item_str = str(item).strip() if item else ''
-                            if item_str:
-                                pantry_list.append({
-                                    'id': str(uuid.uuid4()),
-                                    'name': item_str,
-                                    'quantity': '1',
-                                    'expirationDate': None,
-                                    'addedDate': datetime.now().isoformat()
-                                })
-                    except (TypeError, AttributeError):
-                        pass
-                
-                # Add new items (check for duplicates first)
-                existing_names = {item.get('name', '').strip().lower() for item in pantry_list if isinstance(item, dict) and item.get('name')}
-                new_items = []
-                for item in pantry_items:
-                    try:
-                        if not isinstance(item, dict):
-                            pass
-                        item_name = item.get('name', '')
-                        if not isinstance(item_name, str):
-                            item_name = str(item_name) if item_name else ''
-                        item_name = item_name.strip().lower()
-                        if item_name and item_name not in existing_names:
-                            pantry_list.append(item)
-                            existing_names.add(item_name)
-                            new_items.append(item)
-                    except (AttributeError, TypeError):
-                        pass
-                
-                if new_items:
-                    update_user_pantry(user_id, pantry_list)
-            except (KeyError, TypeError, AttributeError) as e:
-                if VERBOSE_LOGGING:
-                    print(f"Error adding items to user pantry: {e}")
-                # Continue with anonymous pantry as fallback
-
-        else:
-            # Add to anonymous web pantry (stored in session for persistence)
-            try:
-                # CRITICAL: Mark session as permanent for anonymous users
-                session.permanent = True
-                
-                if 'web_pantry' not in session:
-                    session['web_pantry'] = []
-                
-                # Validate session['web_pantry'] is a list
-                web_pantry = session.get('web_pantry', [])
-                if not isinstance(web_pantry, list):
-                    web_pantry = []
-                
-                # Convert to list of dicts if needed
-                pantry_list = []
-                for item in web_pantry:
-                    try:
-                        if isinstance(item, dict):
-                            pantry_list.append(item)
-                        else:
-                            item_str = str(item).strip() if item else ''
-                            if item_str:
-                                pantry_list.append({
-                                    'id': str(uuid.uuid4()),
-                                    'name': item_str,
-                                    'quantity': '1',
-                                    'expirationDate': None,
-                                    'addedDate': datetime.now().isoformat()
-                                })
-                    except (TypeError, AttributeError):
-                        pass
-                
-                # Add new items (check for duplicates first)
-                existing_names = {item.get('name', '').strip().lower() for item in pantry_list if isinstance(item, dict) and item.get('name')}
-                new_items = []
-                for item in pantry_items:
-                    try:
-                        if not isinstance(item, dict):
-                            pass
-                        item_name = item.get('name', '')
-                        if not isinstance(item_name, str):
-                            item_name = str(item_name) if item_name else ''
-                        item_name = item_name.strip().lower()
-                        if item_name and item_name not in existing_names:
-                            pantry_list.append(item)
-                            existing_names.add(item_name)
-                            new_items.append(item)
-                    except (AttributeError, TypeError):
-                        pass
-                
-                if new_items:
-                    session['web_pantry'] = pantry_list
-                    # Mark session as modified to ensure it's saved
-                    session.modified = True
-            except (KeyError, TypeError, AttributeError) as e:
-                if VERBOSE_LOGGING:
-                    print(f"Error adding items to anonymous pantry: {e}")
-                # Initialize empty pantry if session is corrupted
-
+        # IMPORTANT:
+        # - For classic (non-AJAX) form submissions, we add all detected items here so they
+        #   immediately appear in the pantry after redirect back to index.
+        # - For modern AJAX uploads from the homepage, we rely on:
+        #     * Auto-add of high-confidence items below, and
+        #     * Explicit user confirmation via /api/confirm_items for low-confidence items.
+        #   In that case we avoid adding everything here to prevent confusing duplicate logic.
+        is_ajax_request = (
+            request.headers.get('X-Requested-With') == 'XMLHttpRequest'
+            or (request.headers.get('Content-Type') or '').startswith('application/json')
+        )
+        
+        if not is_ajax_request:
+            if 'user_id' in session and session.get('user_id'):
                 try:
-                    session['web_pantry'] = pantry_items if pantry_items else []
-                    session.modified = True
-                    pass
-                except Exception:
-                    pass
+                    user_id = session['user_id']
+                    # Add to user's pantry
+                    user_pantry = get_user_pantry(user_id)
+                    # Validate user_pantry is a list
+                    if not isinstance(user_pantry, list):
+                        user_pantry = []
+                    
+                    # Convert to list of dicts if needed
+                    pantry_list = []
+                    for item in user_pantry:
+                        try:
+                            if isinstance(item, dict):
+                                pantry_list.append(item)
+                            else:
+                                item_str = str(item).strip() if item else ''
+                                if item_str:
+                                    pantry_list.append({
+                                        'id': str(uuid.uuid4()),
+                                        'name': item_str,
+                                        'quantity': '1',
+                                        'expirationDate': None,
+                                        'addedDate': datetime.now().isoformat()
+                                    })
+                        except (TypeError, AttributeError):
+                            pass
+                    
+                    # Add new items (check for duplicates first)
+                    existing_names = {
+                        item.get('name', '').strip().lower()
+                        for item in pantry_list
+                        if isinstance(item, dict) and item.get('name')
+                    }
+                    new_items = []
+                    for item in pantry_items:
+                        try:
+                            if not isinstance(item, dict):
+                                continue
+                            item_name = item.get('name', '')
+                            if not isinstance(item_name, str):
+                                item_name = str(item_name) if item_name else ''
+                            item_name = item_name.strip().lower()
+                            if item_name and item_name not in existing_names:
+                                pantry_list.append(item)
+                                existing_names.add(item_name)
+                                new_items.append(item)
+                        except (AttributeError, TypeError):
+                            pass
+                    
+                    if new_items:
+                        update_user_pantry(user_id, pantry_list)
+                except (KeyError, TypeError, AttributeError) as e:
+                    if VERBOSE_LOGGING:
+                        print(f"Error adding items to user pantry: {e}")
+                    # Continue with anonymous pantry as fallback
+                
+            else:
+                # Add to anonymous web pantry (stored in session for persistence)
+                try:
+                    # CRITICAL: Mark session as permanent for anonymous users
+                    session.permanent = True
+                    
+                    if 'web_pantry' not in session:
+                        session['web_pantry'] = []
+                    
+                    # Validate session['web_pantry'] is a list
+                    web_pantry = session.get('web_pantry', [])
+                    if not isinstance(web_pantry, list):
+                        web_pantry = []
+                    
+                    # Convert to list of dicts if needed
+                    pantry_list = []
+                    for item in web_pantry:
+                        try:
+                            if isinstance(item, dict):
+                                pantry_list.append(item)
+                            else:
+                                item_str = str(item).strip() if item else ''
+                                if item_str:
+                                    pantry_list.append({
+                                        'id': str(uuid.uuid4()),
+                                        'name': item_str,
+                                        'quantity': '1',
+                                        'expirationDate': None,
+                                        'addedDate': datetime.now().isoformat()
+                                    })
+                        except (TypeError, AttributeError):
+                            pass
+                    
+                    # Add new items (check for duplicates first)
+                    existing_names = {
+                        item.get('name', '').strip().lower()
+                        for item in pantry_list
+                        if isinstance(item, dict) and item.get('name')
+                    }
+                    new_items = []
+                    for item in pantry_items:
+                        try:
+                            if not isinstance(item, dict):
+                                continue
+                            item_name = item.get('name', '')
+                            if not isinstance(item_name, str):
+                                item_name = str(item_name) if item_name else ''
+                            item_name = item_name.strip().lower()
+                            if item_name and item_name not in existing_names:
+                                pantry_list.append(item)
+                                existing_names.add(item_name)
+                                new_items.append(item)
+                        except (AttributeError, TypeError):
+                            pass
+                    
+                    if new_items:
+                        session['web_pantry'] = pantry_list
+                        # Mark session as modified to ensure it's saved
+                        session.modified = True
+                except (KeyError, TypeError, AttributeError) as e:
+                    if VERBOSE_LOGGING:
+                        print(f"Error adding items to anonymous pantry: {e}")
+                    # Initialize empty pantry if session is corrupted
+
+                    try:
+                        session['web_pantry'] = pantry_items if pantry_items else []
+                        session.modified = True
+                    except Exception:
+                        pass
         
         # Separate high-confidence and low-confidence items
         HIGH_CONFIDENCE_THRESHOLD = 0.7  # Auto-add items with 70%+ confidence
@@ -8377,20 +8846,31 @@ def api_delete_item(item_id):
         
         # Find item by ID (exact match) or name (case-insensitive, trimmed) for backward compatibility
         item_to_delete = None
-        item_id_clean = item_id.strip()
-        item_id_clean_lower = item_id_clean.lower()
+        item_id_clean = item_id.strip() if item_id else ''
+        # Treat 'unknown' as empty ID (frontend sends 'unknown' when item has no ID)
+        if item_id_clean.lower() == 'unknown':
+            item_id_clean = ''
+        item_id_clean_lower = item_id_clean.lower() if item_id_clean else ''
+        
         for i, pantry_item in enumerate(pantry_list):
             if isinstance(pantry_item, dict):
                 item_id_from_dict = pantry_item.get('id', '').strip() if pantry_item.get('id') else ''
                 item_name = pantry_item.get('name', '').strip().lower() if pantry_item.get('name') else ''
-                # Try exact ID match first (case-sensitive), then fallback to name match (case-insensitive)
-                if item_id_from_dict == item_id_clean or item_name == item_id_clean_lower:
+                
+                # 🔥 FIX: Improved matching logic
+                # 1. If we have a valid ID to match, try ID match first (case-sensitive)
+                # 2. If ID matches OR if ID is empty/'unknown' and name matches, delete it
+                id_match = item_id_clean and item_id_from_dict and item_id_from_dict == item_id_clean
+                name_match = item_id_clean_lower and item_name == item_id_clean_lower
+                
+                # Match if: (ID matches) OR (no valid ID provided and name matches)
+                if id_match or (not item_id_clean and name_match):
                     item_to_delete = pantry_list.pop(i)
                     break
             else:
                 # Handle old string format - compare case-insensitively
                 pantry_str = str(pantry_item).strip().lower() if pantry_item else ''
-                if pantry_str == item_id_clean_lower:
+                if item_id_clean_lower and pantry_str == item_id_clean_lower:
                     item_to_delete = pantry_list.pop(i)
                     break
         
@@ -8446,20 +8926,31 @@ def api_delete_item(item_id):
         
         # Find item by ID (exact match) or name (case-insensitive, trimmed) for backward compatibility
         item_to_delete = None
-        item_id_clean = item_id.strip()
-        item_id_clean_lower = item_id_clean.lower()
+        item_id_clean = item_id.strip() if item_id else ''
+        # Treat 'unknown' as empty ID (frontend sends 'unknown' when item has no ID)
+        if item_id_clean.lower() == 'unknown':
+            item_id_clean = ''
+        item_id_clean_lower = item_id_clean.lower() if item_id_clean else ''
+        
         for i, pantry_item in enumerate(pantry_list):
             if isinstance(pantry_item, dict):
                 item_id_from_dict = pantry_item.get('id', '').strip() if pantry_item.get('id') else ''
                 item_name = pantry_item.get('name', '').strip().lower() if pantry_item.get('name') else ''
-                # Try exact ID match first (case-sensitive), then fallback to name match (case-insensitive)
-                if item_id_from_dict == item_id_clean or item_name == item_id_clean_lower:
+                
+                # 🔥 FIX: Improved matching logic for anonymous users
+                # 1. If we have a valid ID to match, try ID match first (case-sensitive)
+                # 2. If ID matches OR if ID is empty/'unknown' and name matches, delete it
+                id_match = item_id_clean and item_id_from_dict and item_id_from_dict == item_id_clean
+                name_match = item_id_clean_lower and item_name == item_id_clean_lower
+                
+                # Match if: (ID matches) OR (no valid ID provided and name matches)
+                if id_match or (not item_id_clean and name_match):
                     item_to_delete = pantry_list.pop(i)
                     break
             else:
                 # Handle old string format - compare case-insensitively
                 pantry_str = str(pantry_item).strip().lower() if pantry_item else ''
-                if pantry_str == item_id_clean_lower:
+                if item_id_clean_lower and pantry_str == item_id_clean_lower:
                     item_to_delete = pantry_list.pop(i)
                     break
         
@@ -8562,9 +9053,13 @@ def api_update_item(item_id):
                     item_id_from_dict = item.get('id', '').strip() if item.get('id') else ''
                     item_name_from_dict = item.get('name', '').strip().lower() if item.get('name') else ''
                     
-                    # Skip the item to delete (match by ID or name)
-                    # If ID is empty or 'unknown', match by name only
-                    if (item_id_clean and item_id_from_dict and item_id_from_dict == item_id_clean) or item_name_from_dict == item_name_lower:
+                    # 🔥 FIX: Improved matching logic for delete (quantity = 0)
+                    # Match by ID if both are valid, otherwise match by name
+                    id_match = item_id_clean and item_id_from_dict and item_id_from_dict == item_id_clean
+                    name_match = item_name_from_dict == item_name_lower
+                    
+                    # Skip the item to delete if: (ID matches) OR (no valid ID and name matches)
+                    if id_match or (not item_id_clean and name_match):
                         item_found = True
                         continue  # Don't add to pantry_list (effectively deletes it)
                     pantry_list.append(item)
@@ -8617,8 +9112,13 @@ def api_update_item(item_id):
                     item_id_from_dict = item.get('id', '').strip() if item.get('id') else ''
                     item_name_from_dict = item.get('name', '').strip().lower() if item.get('name') else ''
                     
-                    # Match by ID or name (if ID is empty or 'unknown', match by name only)
-                    if (item_id_clean and item_id_from_dict and item_id_from_dict == item_id_clean) or item_name_from_dict == item_name_lower:
+                    # 🔥 FIX: Improved matching logic for delete (quantity = 0, anonymous)
+                    # Match by ID if both are valid, otherwise match by name
+                    id_match = item_id_clean and item_id_from_dict and item_id_from_dict == item_id_clean
+                    name_match = item_name_from_dict == item_name_lower
+                    
+                    # Skip the item to delete if: (ID matches) OR (no valid ID and name matches)
+                    if id_match or (not item_id_clean and name_match):
                         item_found = True
                         continue  # Skip adding this item to pantry_list (effectively deletes it)
                     pantry_list.append(item)
@@ -8709,20 +9209,23 @@ def api_update_item(item_id):
                 item_name_from_dict = pantry_item.get('name', '').strip().lower() if pantry_item.get('name') else ''
                 
                 # Try exact ID match first (only if we have a valid ID to match)
+                # This allows updating item name even if it changed
                 if item_id_clean and item_id_from_dict and item_id_from_dict == item_id_clean:
                     # Ensure the updated item retains its original ID
-                    if not updated_item.get('id'):
+                    if not updated_item.get('id') or updated_item.get('id') == 'unknown':
                         updated_item['id'] = item_id_from_dict
                     # Preserve category from original item if not provided in update
                     if 'category' not in updated_item and 'category' in pantry_item:
                         updated_item['category'] = pantry_item['category']
                     pantry_list[i] = updated_item
                     item_found = True
+                    print(f"✅ Matched item by ID: {item_id_clean}")
                     break
                 
                 # Fallback to name match (case-insensitive) if ID doesn't match or is empty
                 # This handles cases where item has no ID or ID is 'unknown'
-                if item_name_from_dict == item_name_lower:
+                # Only match by name if we don't have a valid ID to match
+                if not item_id_clean and item_name_from_dict == item_name_lower:
                     # Preserve existing ID if item has one, otherwise generate new ID
                     if not updated_item.get('id'):
                         updated_item['id'] = item_id_from_dict if item_id_from_dict else str(uuid.uuid4())
@@ -8796,7 +9299,7 @@ def api_update_item(item_id):
         # If ID match fails, fallback to name match (case-insensitive) for backward compatibility
         item_id_clean = item_id.strip() if item_id else ''
         # Treat 'unknown' as empty ID (frontend sends 'unknown' when item has no ID)
-        if item_id_clean == 'unknown':
+        if item_id_clean.lower() == 'unknown':
             item_id_clean = ''
         item_name_lower = item_name.lower().strip()
         
@@ -8805,23 +9308,20 @@ def api_update_item(item_id):
                 item_id_from_dict = pantry_item.get('id', '').strip() if pantry_item.get('id') else ''
                 item_name_from_dict = pantry_item.get('name', '').strip().lower() if pantry_item.get('name') else ''
                 
-                # Try exact ID match first (only if we have a valid ID to match)
-                if item_id_clean and item_id_from_dict and item_id_from_dict == item_id_clean:
-                    # Ensure the updated item retains its original ID
-                    if not updated_item.get('id'):
-                        updated_item['id'] = item_id_from_dict
-                    # Preserve category from original item if not provided in update
-                    if 'category' not in updated_item and 'category' in pantry_item:
-                        updated_item['category'] = pantry_item['category']
-                    pantry_list[i] = updated_item
-                    item_found = True
-                    break
+                # 🔥 FIX: Improved matching logic for updates (anonymous users)
+                # 1. If we have a valid ID to match, try ID match first (case-sensitive)
+                # 2. If ID matches, update that item (even if name changed)
+                # 3. If ID doesn't match or is empty/'unknown', fallback to name match
+                id_match = item_id_clean and item_id_from_dict and item_id_from_dict == item_id_clean
+                # For name match, compare with OLD name (before update) - but we don't have that
+                # So we need to match by ID first, then allow name updates
+                name_match = item_name_from_dict == item_name_lower
                 
-                # Fallback to name match (case-insensitive) if ID doesn't match or is empty
-                # This handles cases where item has no ID or ID is 'unknown'
-                if item_name_from_dict == item_name_lower:
-                    # Preserve existing ID if item has one, otherwise generate new ID
-                    if not updated_item.get('id'):
+                # Match if: (ID matches) OR (no valid ID provided and name matches)
+                # Priority: ID match first (allows name changes), then name match as fallback
+                if id_match or (not item_id_clean and name_match):
+                    # Ensure the updated item retains its original ID
+                    if not updated_item.get('id') or updated_item.get('id') == 'unknown':
                         updated_item['id'] = item_id_from_dict if item_id_from_dict else str(uuid.uuid4())
                     # Preserve category from original item if not provided in update
                     if 'category' not in updated_item and 'category' in pantry_item:

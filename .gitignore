@@ -76,3 +76,17 @@ project.xcworkspace/xcuserdata/
 # Keep only SmartPantryWeb and api/ directory
 # Everything else is personal and should be excluded
 
+# Test images and ML model files
+*.jpg
+*.jpeg
+*.png
+!api/static/*.png
+!api/static/*.jpg
+*.pt
+*.pth
+*.onnx
+ml_test_report.json
+test_*.json
+
+# API utility files (not needed in repo)
+api/failure_analytics.py

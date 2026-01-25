@@ -482,19 +482,19 @@ function getCategoryDisplay(category) {
     category = category.toLowerCase().trim();
     
     const categoryInfo = {
-        'proteins': { name: 'Proteins', icon: 'bi-droplet-fill', color: '#EF4444', gradient: 'linear-gradient(90deg, #EF4444 0%, #DC2626 100%)' },
-        'meat': { name: 'Meat', icon: 'bi-droplet-fill', color: '#EF4444', gradient: 'linear-gradient(90deg, #EF4444 0%, #DC2626 100%)' },
-        'vegetables': { name: 'Vegetables', icon: 'bi-flower1', color: '#10B981', gradient: 'linear-gradient(90deg, #10B981 0%, #059669 100%)' },
-        'produce': { name: 'Produce', icon: 'bi-flower1', color: '#10B981', gradient: 'linear-gradient(90deg, #10B981 0%, #059669 100%)' },
+        'proteins': { name: 'Proteins', icon: 'bi-fire', color: '#EF4444', gradient: 'linear-gradient(90deg, #EF4444 0%, #DC2626 100%)' },
+        'meat': { name: 'Meat', icon: 'bi-fire', color: '#EF4444', gradient: 'linear-gradient(90deg, #EF4444 0%, #DC2626 100%)' },
+        'vegetables': { name: 'Vegetables', icon: 'bi-pepper-hot', color: '#10B981', gradient: 'linear-gradient(90deg, #10B981 0%, #059669 100%)' },
+        'produce': { name: 'Produce', icon: 'bi-pepper-hot', color: '#10B981', gradient: 'linear-gradient(90deg, #10B981 0%, #059669 100%)' },
         'fruits': { name: 'Fruits', icon: 'bi-apple', color: '#F59E0B', gradient: 'linear-gradient(90deg, #F59E0B 0%, #D97706 100%)' },
-        'dairy': { name: 'Dairy', icon: 'bi-cup-straw', color: '#3B82F6', gradient: 'linear-gradient(90deg, #3B82F6 0%, #2563EB 100%)' },
-        'grains': { name: 'Grains', icon: 'bi-wheat', color: '#8B5CF6', gradient: 'linear-gradient(90deg, #8B5CF6 0%, #7C3AED 100%)' },
-        'snacks': { name: 'Snacks', icon: 'bi-bag', color: '#EC4899', gradient: 'linear-gradient(90deg, #EC4899 0%, #DB2777 100%)' },
-        'beverages': { name: 'Beverages', icon: 'bi-cup', color: '#06B6D4', gradient: 'linear-gradient(90deg, #06B6D4 0%, #0891B2 100%)' },
+        'dairy': { name: 'Dairy', icon: 'bi-cup-hot', color: '#3B82F6', gradient: 'linear-gradient(90deg, #3B82F6 0%, #2563EB 100%)' },
+        'grains': { name: 'Grains', icon: 'bi-grid-3x3', color: '#8B5CF6', gradient: 'linear-gradient(90deg, #8B5CF6 0%, #7C3AED 100%)' },
+        'snacks': { name: 'Snacks', icon: 'bi-cookie', color: '#EC4899', gradient: 'linear-gradient(90deg, #EC4899 0%, #DB2777 100%)' },
+        'beverages': { name: 'Beverages', icon: 'bi-cup-straw', color: '#06B6D4', gradient: 'linear-gradient(90deg, #06B6D4 0%, #0891B2 100%)' },
         'bakery': { name: 'Bakery', icon: 'bi-bread-slice', color: '#F59E0B', gradient: 'linear-gradient(90deg, #F59E0B 0%, #D97706 100%)' },
-        'canned_goods': { name: 'Canned Goods', icon: 'bi-box-seam', color: '#F97316', gradient: 'linear-gradient(90deg, #F97316 0%, #EA580C 100%)' },
-        'canned goods': { name: 'Canned Goods', icon: 'bi-box-seam', color: '#F97316', gradient: 'linear-gradient(90deg, #F97316 0%, #EA580C 100%)' },
-        'condiments': { name: 'Condiments', icon: 'bi-droplet', color: '#8B5CF6', gradient: 'linear-gradient(90deg, #8B5CF6 0%, #7C3AED 100%)' },
+        'canned_goods': { name: 'Canned Goods', icon: 'bi-box', color: '#8B5CF6', gradient: 'linear-gradient(90deg, #8B5CF6 0%, #7C3AED 100%)' },
+        'canned goods': { name: 'Canned Goods', icon: 'bi-box', color: '#8B5CF6', gradient: 'linear-gradient(90deg, #8B5CF6 0%, #7C3AED 100%)' },
+        'condiments': { name: 'Condiments', icon: 'bi-droplet-half', color: '#F97316', gradient: 'linear-gradient(90deg, #F97316 0%, #EA580C 100%)' },
         'frozen': { name: 'Frozen', icon: 'bi-snow', color: '#06B6D4', gradient: 'linear-gradient(90deg, #06B6D4 0%, #0891B2 100%)' },
         'other': { name: 'Other', icon: 'bi-box', color: '#64748B', gradient: 'linear-gradient(90deg, #64748B 0%, #475569 100%)' }
     };
