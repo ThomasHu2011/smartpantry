@@ -5,13 +5,14 @@ Pillow==12.0.0
 gunicorn==21.2.0
 firebase-admin==6.5.0
 
-# ML Vision dependencies (OPTIONAL - very large packages)
-# Uncomment these ONLY if you enable ML_VISION_ENABLED=true and have sufficient storage
-# These packages can cause serverless functions to exceed size limits (>2GB)
-# transformers==4.40.0
-# torch==2.2.0
-# torchvision==0.17.0
-# easyocr==1.7.1
-# numpy==1.26.4
-# ultralytics==8.3.0  # YOLOv8 for better object detection (recommended)
+# ML Vision dependencies (CLIP and OCR)
+# Required for ML_VISION_ENABLED=true
+# Note: These packages are large but Vercel supports them with proper configuration
+# Models are downloaded on-demand (lazy loading) to reduce initial function size
+transformers==4.40.0
+torch==2.2.0
+torchvision==0.17.0
+easyocr==1.7.1
+numpy==1.26.4
+ultralytics==8.3.0  # YOLOv8 for better object detection (recommended)
 

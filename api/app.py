@@ -11323,8 +11323,50 @@ if __name__ == "__main__":
     print(f"📊 Initial user count: {len(initial_users)}")
     if initial_users:
         print(f"   User IDs: {list(initial_users.keys())[:5]}...")  # Show first 5
-    print("=" * 60)
+        print("=" * 60)
+
+# Diagnostic endpoint to check installed packages (for debugging Vercel deployment)
+@app.route("/api/debug/packages", methods=["GET"])
+def debug_packages():
+    """Debug endpoint to check what packages are actually installed"""
+    import sys
+    import pkg_resources
     
+    installed_packages = {}
+    ml_packages = ['transformers', 'torch', 'torchvision', 'easyocr', 'ultralytics', 'numpy', 'openai']
+    
+    try:
+        for pkg in pkg_resources.working_set:
+            pkg_name_lower = pkg.project_name.lower()
+            if any(ml_pkg in pkg_name_lower for ml_pkg in ml_packages):
+                installed_packages[pkg.project_name] = pkg.version
+    except Exception as e:
+        return jsonify({"error": str(e), "python_version": sys.version}), 500
+    
+    return jsonify({
+        "python_version": sys.version,
+        "python_executable": sys.executable,
+        "ml_packages_installed": installed_packages,
+        "ml_packages_expected": ml_packages,
+        "all_installed_packages": {pkg.project_name: pkg.version for pkg in pkg_resources.working_set},
+        "ml_models_status": {
+            "clip_model": _clip_model is not None,
+            "clip_processor": _clip_processor is not None,
+            "ocr_reader": _ocr_reader is not None,
+            "yolo_model": _yolo_model is not None,
+            "food_classifier": _food_classifier is not None,
+            "ml_models_loaded": _ml_models_loaded
+        },
+        "environment": {
+            "ML_VISION_ENABLED": ML_VISION_ENABLED,
+            "YOLO_DETECTION_ENABLED": YOLO_DETECTION_ENABLED,
+            "ML_VISION_MODE": ML_VISION_MODE,
+            "IS_VERCEL": IS_VERCEL,
+            "IS_RENDER": IS_RENDER
+        }
+    })
+
+if __name__ == "__main__":
     # Get port from environment variable (Render sets this) or use default
     port = int(os.getenv('PORT', 5050))
     # host='0.0.0.0' allows connections from other devices on the network
