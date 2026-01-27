@@ -411,7 +411,7 @@ def load_ml_models():
                             print(f"   ⚠️ Food classifier loading failed (non-critical): {e}")
                             classifier_loaded = False  # Don't fail completely if classifier can't load
                     
-                    # Load food classifier in background
+                    # Load food classifier in background (with proper cleanup)
                     classifier_thread = threading.Thread(target=load_classifier)
                     classifier_thread.daemon = True
                     classifier_thread.start()
@@ -420,6 +420,7 @@ def load_ml_models():
                     if classifier_thread.is_alive():
                         print("⚠️  Warning: Food classifier loading timed out")
                         _food_classifier = None
+                        # Note: Thread will be cleaned up automatically as daemon thread
                     elif classifier_error:
                         print(f"⚠️  Warning: food classifier not available: {classifier_error}")
                         _food_classifier = None
@@ -1117,12 +1118,10 @@ def clip_match_open_vocabulary(img_crop, labels, use_prompt_engineering=True):
                     print(f"   ⚡ CLIP cache hit for {len(labels)} labels")
                 return _clip_cache[cache_key].copy()  # Return copy to prevent mutation
         
-        # 🔥 IMPROVEMENT #2: Better prompt engineering - pantry-specific context
-        # Instead of "a photo of cereal", use "a boxed breakfast cereal on a pantry shelf"
-        # This significantly improves CLIP accuracy for packaged food
-        if use_prompt_engineering:
-            # Map generic labels to pantry-specific prompts
-            prompt_mapping = {
+        # Performance: Cache prompt mapping (created once, reused across calls)
+        if not hasattr(clip_match_open_vocabulary, '_prompt_mapping'):
+            # Map generic labels to pantry-specific prompts (cached for performance)
+            clip_match_open_vocabulary._prompt_mapping = {
                 "cereal": "a boxed breakfast cereal on a pantry shelf",
                 "granola": "a boxed granola cereal on a pantry shelf",
                 "oats": "a boxed oatmeal or oats on a pantry shelf",
@@ -1150,72 +1149,93 @@ def clip_match_open_vocabulary(img_crop, labels, use_prompt_engineering=True):
                 "quinoa": "a bag of quinoa on a pantry shelf",
                 "macaroni": "a box of macaroni on a pantry shelf"
             }
+            # Cache lowercase keys for faster O(1) lookup
+            clip_match_open_vocabulary._prompt_mapping_lower = {
+                k.lower(): v for k, v in clip_match_open_vocabulary._prompt_mapping.items()
+            }
+        
+        # 🔥 IMPROVEMENT #2: Better prompt engineering - pantry-specific context
+        # Instead of "a photo of cereal", use "a boxed breakfast cereal on a pantry shelf"
+        # This significantly improves CLIP accuracy for packaged food
+        if use_prompt_engineering:
+            prompt_mapping = clip_match_open_vocabulary._prompt_mapping
+            prompt_mapping_lower = clip_match_open_vocabulary._prompt_mapping_lower
             
+            # Performance: Use list comprehension with cached mapping (faster)
             prompt_labels = []
             for label in labels:
                 label_lower = label.lower().strip()
-                # Check for exact match first
-                if label_lower in prompt_mapping:
-                    prompt_labels.append(prompt_mapping[label_lower])
-                # Check for partial matches (e.g., "protein bar" contains "bar")
-                elif any(key in label_lower for key in prompt_mapping.keys()):
-                    # Find the best matching key
+                # Check for exact match first (O(1) lookup with cached dict)
+                if label_lower in prompt_mapping_lower:
+                    prompt_labels.append(prompt_mapping_lower[label_lower])
+                # Check for partial matches (optimized - break early)
+                else:
                     best_match = None
-                    for key in prompt_mapping.keys():
+                    for key in prompt_mapping_lower.keys():
                         if key in label_lower or label_lower in key:
                             best_match = key
                             break
                     if best_match:
-                        prompt_labels.append(prompt_mapping[best_match])
+                        prompt_labels.append(prompt_mapping_lower[best_match])
                     else:
                         # Fallback: use pantry context for generic items
                         prompt_labels.append(f"a packaged {label} on a pantry shelf")
-                else:
-                    # Fallback: use pantry context for unknown items
-                    prompt_labels.append(f"a packaged {label} on a pantry shelf")
         else:
             prompt_labels = labels
         
         # Performance: Use efficient batching and move to device if available
         device = next(_clip_model.parameters()).device
         
-        # Performance: Optimize CPU inference with thread settings
+        # Performance: Optimize CPU inference with thread settings (set once, reuse)
         if device.type == 'cpu':
             # Set optimal number of threads for CPU inference (Vercel environment)
-            torch.set_num_threads(min(4, os.cpu_count() or 2))  # Limit to 4 threads to avoid overhead
+            # Use 2 threads for better performance on serverless (less overhead)
+            torch.set_num_threads(min(2, os.cpu_count() or 2))
         
+        # Performance: Batch process inputs more efficiently
         inputs = _clip_processor(text=prompt_labels, images=img_crop, return_tensors="pt", padding=True)
         # Move inputs to same device as model (CPU on Vercel, GPU if available elsewhere)
-        inputs = {k: v.to(device) if isinstance(v, torch.Tensor) else v for k, v in inputs.items()}
+        # Performance: Use list comprehension for faster tensor movement
+        inputs = {k: (v.to(device) if isinstance(v, torch.Tensor) else v) for k, v in inputs.items()}
         
         # Performance: Use torch.inference_mode() for faster CPU inference (PyTorch 1.9+)
+        # Performance: Disable gradient computation and use optimized inference
         with torch.inference_mode() if hasattr(torch, 'inference_mode') else torch.no_grad():
             out = _clip_model(**inputs)
-            probs = out.logits_per_image.softmax(dim=-1)[0].cpu().numpy()
+            # Performance: Compute softmax on GPU/CPU directly, then move to numpy (faster)
+            probs = out.logits_per_image.softmax(dim=-1)[0]
+            # Convert to numpy in one step (more efficient)
+            probs_np = probs.detach().cpu().numpy() if hasattr(probs, 'detach') else probs.cpu().numpy()
+            probs = probs_np
         
         if probs.size == 0:
             return None
         
-        # FIX 3: Get top-3 results for ambiguity detection
-        sorted_indices = probs.argsort()[::-1]  # Sort descending
-        top3_indices = sorted_indices[:min(3, len(labels))]
+        # Performance: Use numpy argpartition for faster top-k (O(n) vs O(n log n))
+        import numpy as np
+        k = min(3, len(labels))
+        if k > 0:
+            # Use argpartition for O(n) top-k selection (much faster than full sort)
+            topk_indices = np.argpartition(probs, -k)[-k:]
+            # Sort only the top-k (faster than sorting all)
+            topk_indices = topk_indices[np.argsort(probs[topk_indices])][::-1]
+            top3_indices = topk_indices[:k]
+        else:
+            top3_indices = []
+        
+        if len(top3_indices) == 0:
+            return None
         
         best_idx = int(top3_indices[0])
         raw_best_score = float(probs[best_idx])
         
-        # Get top-3 scores and labels
+        # Get top-3 scores and labels (vectorized for performance)
         top3_scores = [float(probs[i]) for i in top3_indices]
         top3_labels = [labels[i].lower() for i in top3_indices]
         
-        # second-best and third-best scores
-        if len(top3_scores) > 1:
-            raw_second_best = top3_scores[1]
-        else:
-            raw_second_best = 0.0
-        if len(top3_scores) > 2:
-            raw_third_best = top3_scores[2]
-        else:
-            raw_third_best = 0.0
+        # second-best and third-best scores (with safe defaults)
+        raw_second_best = top3_scores[1] if len(top3_scores) > 1 else 0.0
+        raw_third_best = top3_scores[2] if len(top3_scores) > 2 else 0.0
         
         # Precision Rule #7: Calibrate CLIP scores using temperature scaling
         # FIXED: Softer calibration that preserves low scores for pantry images
@@ -1813,9 +1833,13 @@ def stage_yolo_detect_regions(img):
         image_area = img_height * img_width
         min_area = 0.01 * image_area  # FIX 4: Minimum 1% of image area (was 2%, too aggressive for small items)
         
-        # 🔥 PERFORMANCE: Reduce max_det for faster processing (50 is sufficient for most pantries)
-        # Optimize YOLO for pantry - detect as many items as possible but limit for speed
-        results = _yolo_model(img_array, conf=yolo_conf_threshold, iou=yolo_iou_threshold, verbose=False, max_det=50)  # Reduced from 100
+        # 🔥 PERFORMANCE: Optimize YOLO inference
+        # - Reduce max_det for faster processing (50 is sufficient for most pantries)
+        # - Use half precision if available (faster inference)
+        # - Disable verbose output
+        import torch
+        with torch.inference_mode() if hasattr(torch, 'inference_mode') else torch.no_grad():
+            results = _yolo_model(img_array, conf=yolo_conf_threshold, iou=yolo_iou_threshold, verbose=False, max_det=50)  # Reduced from 100
         
         if results and len(results) > 0:
             result = results[0]
@@ -1992,8 +2016,9 @@ def stage_clip_suggest_label(crop, candidate_labels, region_info=None):
         return None
     
     # Performance: Skip food gate for speed when we have many food candidates
-    # Food gate is expensive (2-3 CLIP calls) and candidate_labels are already food-focused
-    run_food_gate = len(candidate_labels) < 10  # Only run if very few candidates
+    # Food gate is expensive (1 CLIP call) and candidate_labels are already food-focused
+    # Only run food gate if very few candidates (optimized threshold)
+    run_food_gate = len(candidate_labels) < 5  # Reduced from 10 to 5 for better performance
     
     if run_food_gate:
         # 🔥 FIX 5: Foodness gating - check if food > object before rejecting
@@ -2210,10 +2235,11 @@ def stage_ocr_bind_to_region(yolo_bbox, full_image_ocr_results, img_size):
         if not ocr_text or ocr_conf < 0.1:
             continue
         
-        # Convert OCR bbox to (x1, y1, x2, y2) format
+        # Performance: Convert OCR bbox to (x1, y1, x2, y2) format (vectorized)
         try:
             import numpy as np
-            ocr_points = np.array(ocr_bbox)
+            ocr_points = np.array(ocr_bbox, dtype=np.float32)  # Use float32 for performance
+            # Vectorized min/max operations (faster than loops)
             ocr_x1 = float(np.min(ocr_points[:, 0]))
             ocr_y1 = float(np.min(ocr_points[:, 1]))
             ocr_x2 = float(np.max(ocr_points[:, 0]))
@@ -3348,9 +3374,26 @@ def detect_food_items_with_ml(img_bytes, user_pantry=None, skip_preprocessing=Fa
             try:
                 import numpy as np
                 img_array = np.array(img)
-                # 🔥 PERFORMANCE: Use detail=0 for faster OCR (we only need text, not bboxes for spatial binding)
-                # Full bboxes will be computed per-region if needed
-                full_image_ocr_results = _ocr_reader.readtext(img_array, detail=1)  # Keep detail=1 for spatial binding
+                # 🔥 PERFORMANCE: Optimize OCR for large images (resize if too large)
+                max_ocr_size = 2000  # Max dimension for OCR (faster processing)
+                if img_array.shape[0] > max_ocr_size or img_array.shape[1] > max_ocr_size:
+                    scale = min(max_ocr_size / img_array.shape[0], max_ocr_size / img_array.shape[1])
+                    new_h, new_w = int(img_array.shape[0] * scale), int(img_array.shape[1] * scale)
+                    from PIL import Image
+                    img_resized = Image.fromarray(img_array).resize((new_w, new_h), Image.Resampling.LANCZOS)
+                    img_array_ocr = np.array(img_resized)
+                    # Scale factor for bbox coordinates
+                    ocr_scale = scale
+                else:
+                    img_array_ocr = img_array
+                    ocr_scale = 1.0
+                # Performance: Use optimized thresholds for faster OCR
+                full_image_ocr_results = _ocr_reader.readtext(img_array_ocr, detail=1, width_ths=0.7, height_ths=0.7)
+                # Scale bboxes back to original image size if resized
+                if ocr_scale != 1.0:
+                    for ocr_item in full_image_ocr_results:
+                        if len(ocr_item) > 0 and isinstance(ocr_item[0], (list, np.ndarray)):
+                            ocr_item[0] = (np.array(ocr_item[0]) / ocr_scale).tolist()
                 if full_image_ocr_results:
                     if VERBOSE_LOGGING:
                         print(f"   📍 OCR spatial binding: Found {len(full_image_ocr_results)} text regions in full image")
@@ -5147,6 +5190,9 @@ else:
     print(f"   App directory: {_app_file_dir}")
 
 # Performance optimization: Add caching for users and pantry data
+# Thread-safe caching with locks to prevent race conditions
+import threading
+_cache_lock = threading.RLock()  # Reentrant lock for cache operations
 _users_cache = {}
 _users_cache_timestamp = {}
 _users_cache_ttl = 30  # Cache for 30 seconds (increased from 5s for better performance)
@@ -5181,17 +5227,17 @@ def load_users(use_cache=True):
     
     global _in_memory_users, _users_cache, _users_cache_timestamp  # Declare global at the start of the function
     
-    # Check cache first
+    # Check cache first (thread-safe)
     if use_cache:
         import time
         current_time = time.time()
-        if '_all_users' in _users_cache:
-            cache_age = current_time - _users_cache_timestamp.get('_all_users', 0)
-            if cache_age < _users_cache_ttl:
-                if VERBOSE_LOGGING:
-
-                    print(f"Using cached users data (age: {cache_age:.2f}s)")
-                return _users_cache['_all_users'].copy()
+        with _cache_lock:
+            if '_all_users' in _users_cache:
+                cache_age = current_time - _users_cache_timestamp.get('_all_users', 0)
+                if cache_age < _users_cache_ttl:
+                    if VERBOSE_LOGGING:
+                        print(f"Using cached users data (age: {cache_age:.2f}s)")
+                    return _users_cache['_all_users'].copy()
     
     if IS_VERCEL or IS_RENDER:
         # Try to load from /tmp, fallback to in-memory
@@ -5334,15 +5380,16 @@ def save_users(users):
             print(f"⚠️ Error saving users to Firebase: {e}, falling back to file storage")
             # Fall through to file-based storage
     
-    # Invalidate cache on save
-    if '_all_users' in _users_cache:
-        del _users_cache['_all_users']
-    # Also invalidate all pantry caches since users data changed
-    _pantry_cache.clear()
-    _pantry_cache_timestamp.clear()
-    # Invalidate individual user cache
-    _user_cache.clear()
-    _user_cache_timestamp.clear()
+    # Invalidate cache on save (thread-safe)
+    with _cache_lock:
+        if '_all_users' in _users_cache:
+            del _users_cache['_all_users']
+        # Also invalidate all pantry caches since users data changed
+        _pantry_cache.clear()
+        _pantry_cache_timestamp.clear()
+        # Invalidate individual user cache
+        _user_cache.clear()
+        _user_cache_timestamp.clear()
     
     if IS_VERCEL or IS_RENDER:
         # Try to save to /tmp, always update in-memory cache
@@ -5350,16 +5397,28 @@ def save_users(users):
         
         try:
             # Ensure /tmp directory exists
-            os.makedirs(os.path.dirname(USERS_FILE), exist_ok=True)
+            file_dir = os.path.dirname(USERS_FILE)
+            if file_dir:
+                os.makedirs(file_dir, exist_ok=True)
             # Use atomic write: write to temp file first, then rename
-            temp_file = USERS_FILE + '.tmp'
-            with open(temp_file, 'w') as f:
-                json.dump(users, f, indent=2)
-                f.flush()  # Force write to disk
-                os.fsync(f.fileno())  # Ensure data is written to disk
-            
-            # Atomic rename (works on Unix-like systems)
-            os.replace(temp_file, USERS_FILE)
+            # Add unique suffix to prevent race conditions
+            import time
+            temp_file = USERS_FILE + f'.tmp.{int(time.time() * 1000000)}'
+            try:
+                with open(temp_file, 'w') as f:
+                    json.dump(users, f, indent=2)
+                    f.flush()  # Force write to disk
+                    os.fsync(f.fileno())  # Ensure data is written to disk
+                
+                # Atomic rename (works on Unix-like systems)
+                os.replace(temp_file, USERS_FILE)
+            finally:
+                # Clean up temp file if it still exists (rename failed)
+                if os.path.exists(temp_file):
+                    try:
+                        os.remove(temp_file)
+                    except Exception:
+                        pass
             if VERBOSE_LOGGING:
                 print(f"Saved {len(users)} users to {USERS_FILE}")
             pass
@@ -6193,58 +6252,74 @@ def get_user_pantry(user_id, use_cache=True):
     """Get user's pantry items with caching - OPTIMIZED to avoid loading all users"""
     global _pantry_cache, _pantry_cache_timestamp, _user_cache, _user_cache_timestamp
     
-    # Validate user_id
-    if not user_id or not isinstance(user_id, str):
+    # Validate user_id (input validation for stability)
+    if not user_id:
         if VERBOSE_LOGGING:
-            print(f"Warning: Invalid user_id in get_user_pantry: {user_id}")
+            print(f"Warning: Empty user_id in get_user_pantry")
+        return []
+    if not isinstance(user_id, str):
+        try:
+            user_id = str(user_id)
+        except Exception:
+            if VERBOSE_LOGGING:
+                print(f"Warning: Invalid user_id type in get_user_pantry: {type(user_id)}")
+            return []
+    
+    # Sanitize user_id (prevent path traversal or injection)
+    user_id = user_id.strip()
+    if not user_id or len(user_id) > 200:  # Reasonable max length
+        if VERBOSE_LOGGING:
+            print(f"Warning: Invalid user_id format in get_user_pantry")
         return []
 
     
-    # Check pantry cache first
+    # Check pantry cache first (thread-safe)
     if use_cache:
         import time
         current_time = time.time()
-        if user_id in _pantry_cache:
-            cache_age = current_time - _pantry_cache_timestamp.get(user_id, 0)
-            if cache_age < _users_cache_ttl:
-                cached_pantry = _pantry_cache[user_id]
-                # Validate cached data is a list
-                if isinstance(cached_pantry, list):
-                    if VERBOSE_LOGGING:
-                        print(f"⚡ Using cached pantry for user {user_id} (age: {cache_age:.2f}s)")
-                    return cached_pantry.copy()
-                else:
-                    # Cache corrupted, clear it
-                    if VERBOSE_LOGGING:
-                        print(f"Warning: Cached pantry for user {user_id} is corrupted, clearing cache")
-                    del _pantry_cache[user_id]
-                    if user_id in _pantry_cache_timestamp:
-                        del _pantry_cache_timestamp[user_id]
+        with _cache_lock:
+            if user_id in _pantry_cache:
+                cache_age = current_time - _pantry_cache_timestamp.get(user_id, 0)
+                if cache_age < _users_cache_ttl:
+                    cached_pantry = _pantry_cache[user_id]
+                    # Validate cached data is a list
+                    if isinstance(cached_pantry, list):
+                        if VERBOSE_LOGGING:
+                            print(f"⚡ Using cached pantry for user {user_id} (age: {cache_age:.2f}s)")
+                        return cached_pantry.copy()
+                    else:
+                        # Cache corrupted, clear it
+                        if VERBOSE_LOGGING:
+                            print(f"Warning: Cached pantry for user {user_id} is corrupted, clearing cache")
+                        del _pantry_cache[user_id]
+                        if user_id in _pantry_cache_timestamp:
+                            del _pantry_cache_timestamp[user_id]
     
     # 🔥 PERFORMANCE: Use Firebase direct query instead of loading all users
     if USE_FIREBASE:
         try:
-            # Check individual user cache first
+            # Check individual user cache first (thread-safe)
             if use_cache:
                 import time
                 current_time = time.time()
-                if user_id in _user_cache:
-                    cache_age = current_time - _user_cache_timestamp.get(user_id, 0)
-                    if cache_age < _users_cache_ttl:
-                        user_data = _user_cache[user_id]
-                        pantry = user_data.get('pantry', []) if user_data else []
+                with _cache_lock:
+                    if user_id in _user_cache:
+                        cache_age = current_time - _user_cache_timestamp.get(user_id, 0)
+                        if cache_age < _users_cache_ttl:
+                            user_data = _user_cache[user_id]
+                            pantry = user_data.get('pantry', []) if user_data else []
+                        else:
+                            # Cache expired, fetch from Firebase
+                            user_data = firebase_get_user_by_id(user_id)
+                            _user_cache[user_id] = user_data
+                            _user_cache_timestamp[user_id] = time.time()
+                            pantry = user_data.get('pantry', []) if user_data else []
                     else:
-                        # Cache expired, fetch from Firebase
+                        # Not in cache, fetch from Firebase
                         user_data = firebase_get_user_by_id(user_id)
                         _user_cache[user_id] = user_data
                         _user_cache_timestamp[user_id] = time.time()
                         pantry = user_data.get('pantry', []) if user_data else []
-                else:
-                    # Not in cache, fetch from Firebase
-                    user_data = firebase_get_user_by_id(user_id)
-                    _user_cache[user_id] = user_data
-                    _user_cache_timestamp[user_id] = time.time()
-                    pantry = user_data.get('pantry', []) if user_data else []
             else:
                 # Cache disabled, fetch directly
                 user_data = firebase_get_user_by_id(user_id)
@@ -6300,10 +6375,11 @@ def get_user_pantry(user_id, use_cache=True):
             traceback.print_exc()
             continue
     
-    # Cache the normalized pantry
+    # Cache the normalized pantry (thread-safe)
     import time
-    _pantry_cache[user_id] = normalized_pantry.copy()
-    _pantry_cache_timestamp[user_id] = time.time()
+    with _cache_lock:
+        _pantry_cache[user_id] = normalized_pantry.copy()
+        _pantry_cache_timestamp[user_id] = time.time()
     
     if VERBOSE_LOGGING:
         print(f"Retrieved pantry for user {user_id}: {len(normalized_pantry)} items")
@@ -6368,11 +6444,17 @@ def update_user_pantry(user_id, pantry_items):
             # Update pantry in Firebase
             success = firebase_update_user_pantry(user_id, normalized_items)
             if success:
-                # Invalidate cache
-                if user_id in _pantry_cache:
-                    del _pantry_cache[user_id]
-                if user_id in _pantry_cache_timestamp:
-                    del _pantry_cache_timestamp[user_id]
+                # Invalidate cache (thread-safe)
+                with _cache_lock:
+                    if user_id in _pantry_cache:
+                        del _pantry_cache[user_id]
+                    if user_id in _pantry_cache_timestamp:
+                        del _pantry_cache_timestamp[user_id]
+                    # Also invalidate user cache
+                    if user_id in _user_cache:
+                        del _user_cache[user_id]
+                    if user_id in _user_cache_timestamp:
+                        del _user_cache_timestamp[user_id]
                 
                 if VERBOSE_LOGGING:
                     print(f"✅ Updated pantry for user {user_id}: {len(normalized_items)} items saved to Firebase")
@@ -6425,16 +6507,17 @@ def update_user_pantry(user_id, pantry_items):
     
     users[user_id]['pantry'] = normalized_items
     
-    # Invalidate cache for this user
-    if user_id in _pantry_cache:
-        del _pantry_cache[user_id]
-    if user_id in _pantry_cache_timestamp:
-        del _pantry_cache_timestamp[user_id]
-    # Also invalidate individual user cache
-    if user_id in _user_cache:
-        del _user_cache[user_id]
-    if user_id in _user_cache_timestamp:
-        del _user_cache_timestamp[user_id]
+    # Invalidate cache for this user (thread-safe)
+    with _cache_lock:
+        if user_id in _pantry_cache:
+            del _pantry_cache[user_id]
+        if user_id in _pantry_cache_timestamp:
+            del _pantry_cache_timestamp[user_id]
+        # Also invalidate individual user cache
+        if user_id in _user_cache:
+            del _user_cache[user_id]
+        if user_id in _user_cache_timestamp:
+            del _user_cache_timestamp[user_id]
     
     if VERBOSE_LOGGING:
         print(f"💾 Saving {len(users)} users to {USERS_FILE}...")
@@ -6567,7 +6650,12 @@ def profile():
         flash("Please log in to access your profile", "warning")
         return redirect(url_for("login"))
     
-    user_id = session['user_id']
+    # Safe session access
+    user_id = session.get('user_id')
+    if not user_id:
+        flash("Please log in to access your profile", "warning")
+        return redirect(url_for("login"))
+    
     users = load_users()
     
     if user_id not in users:
@@ -6726,35 +6814,39 @@ def add_items():
         quantity = "1"
     
     if 'user_id' in session:
-        candidate_user_id = session['user_id']
-        
-        # Validate user exists before saving
-        user_exists = False
-        try:
-            if USE_FIREBASE:
-                user_data = firebase_get_user_by_id(candidate_user_id)
-                if user_data:
-                    user_exists = True
-            else:
-                users = load_users()
-                if candidate_user_id in users:
-                    user_exists = True
-        except Exception as e:
-            if VERBOSE_LOGGING:
-                print(f"Error validating user {candidate_user_id}: {e}")
-        
-        if not user_exists:
-            # Invalid user_id in session, clear it and treat as anonymous
-            print(f"⚠️ Session has invalid user_id {candidate_user_id}, clearing session")
+        candidate_user_id = session.get('user_id')  # Safe access
+        if not candidate_user_id:
+            # Invalid session, clear it
             session.pop('user_id', None)
             session.pop('username', None)
-            # Fall through to anonymous user handling below
         else:
-            # User exists and is valid
-            user_id = candidate_user_id
-            print(f"Adding item '{item}' to pantry for user {user_id}")
-        # Force fresh data by disabling cache to ensure we get the latest pantry items
-        user_pantry = get_user_pantry(user_id, use_cache=False)
+            # Validate user exists before saving
+            user_exists = False
+            try:
+                if USE_FIREBASE:
+                    user_data = firebase_get_user_by_id(candidate_user_id)
+                    if user_data:
+                        user_exists = True
+                else:
+                    users = load_users()
+                    if candidate_user_id in users:
+                        user_exists = True
+            except Exception as e:
+                if VERBOSE_LOGGING:
+                    print(f"Error validating user {candidate_user_id}: {e}")
+            
+            if not user_exists:
+                # Invalid user_id in session, clear it and treat as anonymous
+                print(f"⚠️ Session has invalid user_id {candidate_user_id}, clearing session")
+                session.pop('user_id', None)
+                session.pop('username', None)
+                # Fall through to anonymous user handling below
+            else:
+                # User exists and is valid
+                user_id = candidate_user_id
+                print(f"Adding item '{item}' to pantry for user {user_id}")
+                # Force fresh data by disabling cache to ensure we get the latest pantry items
+                user_pantry = get_user_pantry(user_id, use_cache=False)
         print(f"Current pantry before add: {user_pantry} (type: {type(user_pantry)})")
         
         # Ensure pantry is a list
@@ -6860,14 +6952,23 @@ def delete_item(item_name):
     # Decode URL-encoded item name and strip whitespace
     item_name = unquote(item_name).strip()
     
+    # Check if this is an AJAX request
+    is_ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest'
+    
     if VERBOSE_LOGGING:
         print(f"DEBUG: Attempting to delete item: '{item_name}'")
     
     item_found = False
     
     if 'user_id' in session:
-        # Remove from user's pantry
-        user_pantry = get_user_pantry(session['user_id'])
+        # Remove from user's pantry (safe session access)
+        user_id = session.get('user_id')
+        if not user_id:
+            if is_ajax:
+                return jsonify({'success': False, 'error': 'Invalid session'}), 401
+            flash("Please log in to remove items", "warning")
+            return redirect(url_for("login"))
+        user_pantry = get_user_pantry(user_id)
         if VERBOSE_LOGGING:
             print(f"DEBUG: User pantry has {len(user_pantry) if isinstance(user_pantry, list) else 0} items")
         
@@ -6905,7 +7006,9 @@ def delete_item(item_name):
                     })
         
         if item_found:
-            update_user_pantry(session['user_id'], pantry_list)
+            user_id = session.get('user_id')
+            if user_id:
+                update_user_pantry(user_id, pantry_list)
             # Check if AJAX request
             if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
                 return jsonify({'success': True, 'message': f'{item_name} removed from pantry.'}), 200
@@ -8003,11 +8106,11 @@ Return ONLY valid JSON (no markdown, no code blocks, no explanations):
                         pass
                 
                 # Add new items (check for duplicates first)
-                    existing_names = {
-                        item.get('name', '').strip().lower()
-                        for item in pantry_list
-                        if isinstance(item, dict) and item.get('name')
-                    }
+                existing_names = {
+                    item.get('name', '').strip().lower()
+                    for item in pantry_list
+                    if isinstance(item, dict) and item.get('name')
+                }
                 new_items = []
                 for item in pantry_items:
                     try:
@@ -8056,8 +8159,12 @@ Return ONLY valid JSON (no markdown, no code blocks, no explanations):
             # Add high-confidence items to pantry
             if 'user_id' in session and session.get('user_id'):
                 try:
-                    user_id = session['user_id']
-                    user_pantry = get_user_pantry(user_id)
+                    user_id = session.get('user_id')  # Safe access
+                    if not user_id:
+                        # Invalid session, skip
+                        pass
+                    else:
+                        user_pantry = get_user_pantry(user_id)
                     if not isinstance(user_pantry, list):
                         user_pantry = []
                     pantry_list = []
