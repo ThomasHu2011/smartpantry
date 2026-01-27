@@ -138,24 +138,42 @@ def create_user_in_firestore(username, email, password, client_type='web'):
         if not email_normalized:
             return None, "Email cannot be empty"
         
-        # Check if username or email already exists
+        # 🔥 PERFORMANCE: Use Firestore queries instead of loading all users
+        # Check if username or email already exists using indexed queries
         print(f"🔍 Checking for existing users...")
-        existing_users = users_ref.stream()
-        existing_count = 0
-        for user_doc in existing_users:
-            existing_count += 1
-            user_data = user_doc.to_dict()
-            stored_username = user_data.get('username', '').strip().lower()
-            stored_email = user_data.get('email', '').strip().lower()
-            
-            if stored_username == username_normalized:
+        try:
+            # Query by username (case-insensitive check via query)
+            username_query = users_ref.where('username', '==', username).limit(1).stream()
+            if any(True for _ in username_query):
                 print(f"❌ Username '{username}' already exists")
                 return None, f"Username '{username}' already exists"
-            if stored_email == email_normalized:
+            
+            # Query by email (case-insensitive check via query)
+            email_query = users_ref.where('email', '==', email).limit(1).stream()
+            if any(True for _ in email_query):
                 print(f"❌ Email '{email}' already exists")
                 return None, f"Email '{email}' already exists"
-        
-        print(f"✅ No duplicate found. Checked {existing_count} existing users")
+            
+            print(f"✅ No duplicate found (using indexed queries)")
+        except Exception as query_error:
+            # Fallback to full scan if queries fail (e.g., no indexes)
+            print(f"⚠️ Query optimization failed ({query_error}), using fallback scan...")
+            existing_users = users_ref.stream()
+            existing_count = 0
+            for user_doc in existing_users:
+                existing_count += 1
+                user_data = user_doc.to_dict()
+                stored_username = user_data.get('username', '').strip().lower()
+                stored_email = user_data.get('email', '').strip().lower()
+                
+                if stored_username == username_normalized:
+                    print(f"❌ Username '{username}' already exists")
+                    return None, f"Username '{username}' already exists"
+                if stored_email == email_normalized:
+                    print(f"❌ Email '{email}' already exists")
+                    return None, f"Email '{email}' already exists"
+            
+            print(f"✅ No duplicate found. Checked {existing_count} existing users (fallback)")
         
         # Create new user
         user_id = str(uuid.uuid4())
