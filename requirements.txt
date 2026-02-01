@@ -22,43 +22,31 @@ gunicorn==21.2.0
 # Firebase (optional - only needed if USE_FIREBASE=true)
 firebase-admin==6.5.0
 
-# ML Vision dependencies (CLIP and OCR)
-# Required for ML_VISION_ENABLED=true
-# Note: These packages are large but Vercel supports them with proper configuration
-# Models are downloaded on-demand (lazy loading) to reduce initial function size
+# ML Vision dependencies (CLIP and OCR) - OPTIONAL
+# ⚠️ COMMENTED OUT FOR VERCEL: These packages are too large (>3GB) for Vercel's function size limit
+# The app will automatically fall back to OpenAI Vision API when ML packages are not available
+# 
+# To enable ML features (requires alternative hosting like Railway, Render, or AWS Lambda):
+# 1. Uncomment the packages below
+# 2. Set ML_VISION_ENABLED=true in environment variables
+# 3. Deploy to a platform that supports large functions (>3GB)
+#
+# For Vercel: Keep these commented and use OpenAI API fallback (already implemented)
 
 # Core ML dependencies
-numpy>=1.26.0,<2.0.0  # Required by torch, transformers, easyocr, ultralytics (flexible for Python 3.13 compatibility)
+# numpy>=1.26.0,<2.0.0  # Required by torch, transformers, easyocr, ultralytics
 
 # PyTorch ecosystem (for CLIP and other transformers)
-torch==2.2.0
-torchvision==0.17.0
-accelerate==1.0.0  # Required for proper CLIP model loading and performance
+# torch==2.2.0
+# torchvision==0.17.0
+# accelerate==1.0.0  # Required for proper CLIP model loading and performance
 
 # HuggingFace transformers (for CLIP)
-transformers==4.40.0
-# transformers dependencies (auto-installed but listed for clarity):
-# - tokenizers
-# - safetensors
-# - huggingface-hub
+# transformers==4.40.0
 
 # YOLOv8 for object detection
-ultralytics==8.3.0  # YOLOv8 for better object detection (recommended)
-# ultralytics dependencies (auto-installed):
-# - opencv-python-headless
-# - pyyaml
-# - requests
-# - tqdm
-# - pandas
+# ultralytics==8.3.0  # YOLOv8 for better object detection (recommended)
 
 # OCR
-easyocr==1.7.1
-# easyocr dependencies (auto-installed):
-# - opencv-python-headless
-# - scipy
-# - scikit-image
-# - python-bidi
-# - pyclipper
-# - shapely
-# - imutils
+# easyocr==1.7.1
 
