@@ -9876,37 +9876,60 @@ def api_delete_item(item_id):
             item_id_clean = ''
         item_id_clean_lower = item_id_clean.lower() if item_id_clean else ''
         
-        for i, pantry_item in enumerate(pantry_list):
+        # 🔥 FIX: Build new list without the item to delete (safer than popping during iteration)
+        # This handles cases where ID might not match but name does
+        pantry_list_before = len(pantry_list)
+        item_to_delete = None
+        new_pantry_list = []
+        
+        for pantry_item in pantry_list:
             if isinstance(pantry_item, dict):
                 item_id_from_dict = pantry_item.get('id', '').strip() if pantry_item.get('id') else ''
                 item_name = pantry_item.get('name', '').strip().lower() if pantry_item.get('name') else ''
                 
-                # 🔥 FIX: Improved matching logic
-                # 1. If we have a valid ID to match, try ID match first (case-sensitive)
-                # 2. If ID matches OR if ID is empty/'unknown' and name matches, delete it
-                id_match = item_id_clean and item_id_from_dict and item_id_from_dict == item_id_clean
-                name_match = item_id_clean_lower and item_name == item_id_clean_lower
+                # Try ID match first (if ID is provided)
+                id_match = False
+                if item_id_clean and item_id_from_dict:
+                    id_match = item_id_from_dict == item_id_clean
+                    if VERBOSE_LOGGING and id_match:
+                        print(f"   ✅ ID match found: '{item_id_clean}' == '{item_id_from_dict}'")
                 
-                # Match if: (ID matches) OR (no valid ID provided and name matches)
-                if id_match or (not item_id_clean and name_match):
-                    # Safe pop with bounds checking
-                    if 0 <= i < len(pantry_list):
-                        item_to_delete = pantry_list.pop(i)
-                        break
-                    else:
-                        if VERBOSE_LOGGING:
-                            print(f"Warning: Index {i} out of bounds for pantry_list (length: {len(pantry_list)})")
-                        break
+                # Try name match (always check as fallback)
+                name_match = False
+                if item_id_clean_lower and item_name:
+                    name_match = item_name == item_id_clean_lower
+                    if VERBOSE_LOGGING and name_match:
+                        print(f"   ✅ Name match found: '{item_id_clean_lower}' == '{item_name}'")
+                
+                # Match if: ID matches OR name matches (prefer ID, but allow name fallback)
+                # This allows fallback to name matching if ID doesn't match or isn't provided
+                if id_match or name_match:
+                    # Found the item to delete - don't add it to new list
+                    if not item_to_delete:  # Only set once (first match)
+                        item_to_delete = pantry_item
+                        print(f"   🎯 Matched item by {'ID' if id_match else 'name'}: {pantry_item}")
+                    # Skip adding this item to new_pantry_list (effectively deletes it)
+                else:
+                    # Not a match - keep this item
+                    new_pantry_list.append(pantry_item)
             else:
                 # Handle old string format - compare case-insensitively
                 pantry_str = str(pantry_item).strip().lower() if pantry_item else ''
                 if item_id_clean_lower and pantry_str == item_id_clean_lower:
-                    item_to_delete = pantry_list.pop(i)
-                    break
+                    # Found the item to delete
+                    if not item_to_delete:
+                        item_to_delete = pantry_item
+                        print(f"   🎯 Matched old format item by name: {pantry_str}")
+                    # Skip adding this item to new_pantry_list (effectively deletes it)
+                else:
+                    # Not a match - keep this item
+                    new_pantry_list.append(pantry_item)
         
         if item_to_delete:
             print(f"✅ Found item to delete: {item_to_delete}")
-            print(f"   Pantry before delete: {len(pantry_list)} items")
+            print(f"   Pantry before delete: {pantry_list_before} items")
+            # Update pantry_list to the new list without the deleted item
+            pantry_list = new_pantry_list
             update_user_pantry(user_id, pantry_list)
             item_name = item_to_delete.get('name', item_id) if isinstance(item_to_delete, dict) else item_to_delete
             print(f"✅ Successfully deleted item '{item_name}' from user {user_id}'s pantry")
@@ -9923,8 +9946,15 @@ def api_delete_item(item_id):
             print(f"   Pantry has {len(pantry_list)} items")
             if pantry_list:
                 print(f"   Available item IDs: {[item.get('id', 'unknown') if isinstance(item, dict) else str(item) for item in pantry_list[:5]]}")
+                print(f"   Available item names: {[item.get('name', 'unknown') if isinstance(item, dict) else str(item) for item in pantry_list[:5]]}")
+                # Show detailed comparison for first few items
+                for idx, item in enumerate(pantry_list[:3]):
+                    if isinstance(item, dict):
+                        item_id_check = item.get('id', '').strip()
+                        item_name_check = item.get('name', '').strip().lower()
+                        print(f"   Item {idx}: id='{item_id_check}' (match: {item_id_check == item_id_clean}), name='{item_name_check}' (match: {item_name_check == item_id_clean_lower})")
             print(f"{'='*60}\n")
-            return jsonify({'success': False, 'error': f'Item not found in pantry'}), 404
+            return jsonify({'success': False, 'error': f'Item not found in pantry. Searched for ID: "{item_id_clean}", Name: "{item_id_clean_lower}"'}), 404
     else:
         # Use anonymous pantry
         # For web clients, get from session first (session persists across requests)
@@ -9962,35 +9992,60 @@ def api_delete_item(item_id):
             item_id_clean = ''
         item_id_clean_lower = item_id_clean.lower() if item_id_clean else ''
         
-        for i, pantry_item in enumerate(pantry_list):
+        # 🔥 FIX: Build new list without the item to delete (safer than popping during iteration)
+        # This handles cases where ID might not match but name does
+        pantry_list_before = len(pantry_list)
+        item_to_delete = None
+        new_pantry_list = []
+        
+        for pantry_item in pantry_list:
             if isinstance(pantry_item, dict):
                 item_id_from_dict = pantry_item.get('id', '').strip() if pantry_item.get('id') else ''
                 item_name = pantry_item.get('name', '').strip().lower() if pantry_item.get('name') else ''
                 
-                # 🔥 FIX: Improved matching logic for anonymous users
-                # 1. If we have a valid ID to match, try ID match first (case-sensitive)
-                # 2. If ID matches OR if ID is empty/'unknown' and name matches, delete it
-                id_match = item_id_clean and item_id_from_dict and item_id_from_dict == item_id_clean
-                name_match = item_id_clean_lower and item_name == item_id_clean_lower
+                # Try ID match first (if ID is provided)
+                id_match = False
+                if item_id_clean and item_id_from_dict:
+                    id_match = item_id_from_dict == item_id_clean
+                    if VERBOSE_LOGGING and id_match:
+                        print(f"   ✅ ID match found: '{item_id_clean}' == '{item_id_from_dict}'")
                 
-                # Match if: (ID matches) OR (no valid ID provided and name matches)
-                if id_match or (not item_id_clean and name_match):
-                    # Safe pop with bounds checking
-                    if 0 <= i < len(pantry_list):
-                        item_to_delete = pantry_list.pop(i)
-                        break
-                    else:
-                        if VERBOSE_LOGGING:
-                            print(f"Warning: Index {i} out of bounds for pantry_list (length: {len(pantry_list)})")
-                        break
+                # Try name match (always check as fallback)
+                name_match = False
+                if item_id_clean_lower and item_name:
+                    name_match = item_name == item_id_clean_lower
+                    if VERBOSE_LOGGING and name_match:
+                        print(f"   ✅ Name match found: '{item_id_clean_lower}' == '{item_name}'")
+                
+                # Match if: ID matches OR name matches (prefer ID, but allow name fallback)
+                # This allows fallback to name matching if ID doesn't match or isn't provided
+                if id_match or name_match:
+                    # Found the item to delete - don't add it to new list
+                    if not item_to_delete:  # Only set once (first match)
+                        item_to_delete = pantry_item
+                        print(f"   🎯 Matched item by {'ID' if id_match else 'name'}: {pantry_item}")
+                    # Skip adding this item to new_pantry_list (effectively deletes it)
+                else:
+                    # Not a match - keep this item
+                    new_pantry_list.append(pantry_item)
             else:
                 # Handle old string format - compare case-insensitively
                 pantry_str = str(pantry_item).strip().lower() if pantry_item else ''
                 if item_id_clean_lower and pantry_str == item_id_clean_lower:
-                    item_to_delete = pantry_list.pop(i)
-                    break
+                    # Found the item to delete
+                    if not item_to_delete:
+                        item_to_delete = pantry_item
+                        print(f"   🎯 Matched old format item by name: {pantry_str}")
+                    # Skip adding this item to new_pantry_list (effectively deletes it)
+                else:
+                    # Not a match - keep this item
+                    new_pantry_list.append(pantry_item)
         
         if item_to_delete:
+            print(f"✅ Found item to delete: {item_to_delete}")
+            print(f"   Pantry before delete: {pantry_list_before} items")
+            # Update pantry_list to the new list without the deleted item
+            pantry_list = new_pantry_list
             if client_type == 'mobile':
                 mobile_pantry = pantry_list
             else:

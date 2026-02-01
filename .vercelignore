@@ -1,0 +1,37 @@
+# Vercel ignore file - files listed here won't be deployed to Vercel
+# This helps hide your ML model implementation from deployment
+
+# Standalone ML model files (not needed - code is in app.py)
+pantry_detection_algorithm.py
+pantry_detection_algorithm_yolo_only.py
+
+# Test files
+test_*.py
+test_*.json
+ml_test_report.json
+
+# Documentation files (optional - hide implementation details)
+*.md
+!README.md
+
+# Development files
+.env.local
+.env.development
+
+# Model weights (if you have local copies)
+*.pt
+*.pth
+*.onnx
+*.h5
+*.pb
+
+# Training data
+*.jpg
+*.jpeg
+*.png
+!api/static/*.png
+!api/static/*.jpg
+
+# Logs and debug files
+*.log
+debug/

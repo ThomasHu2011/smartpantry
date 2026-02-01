@@ -1,19 +1,64 @@
+# Core Flask dependencies
 Flask==3.1.2
+Werkzeug==3.1.2  # Required by Flask, explicitly specified for compatibility
+Jinja2==3.1.4  # Required by Flask for templates
+MarkupSafe==3.0.2  # Required by Jinja2
+itsdangerous==2.2.0  # Required by Flask for sessions
+click==8.1.8  # Required by Flask CLI
+blinker==1.9.0  # Required by Flask for signals
+
+# OpenAI API
 openai==2.8.1
+
+# Environment variables
 python-dotenv==1.2.1
+
+# Image processing
 Pillow==12.0.0
+
+# Server (for local development and Render)
 gunicorn==21.2.0
+
+# Firebase (optional - only needed if USE_FIREBASE=true)
 firebase-admin==6.5.0
 
 # ML Vision dependencies (CLIP and OCR)
 # Required for ML_VISION_ENABLED=true
 # Note: These packages are large but Vercel supports them with proper configuration
 # Models are downloaded on-demand (lazy loading) to reduce initial function size
-transformers==4.40.0
+
+# Core ML dependencies
+numpy>=1.26.0,<2.0.0  # Required by torch, transformers, easyocr, ultralytics (flexible for Python 3.13 compatibility)
+
+# PyTorch ecosystem (for CLIP and other transformers)
 torch==2.2.0
 torchvision==0.17.0
-easyocr==1.7.1
-numpy==1.26.4
-ultralytics==8.3.0  # YOLOv8 for better object detection (recommended)
 accelerate==1.0.0  # Required for proper CLIP model loading and performance
+
+# HuggingFace transformers (for CLIP)
+transformers==4.40.0
+# transformers dependencies (auto-installed but listed for clarity):
+# - tokenizers
+# - safetensors
+# - huggingface-hub
+
+# YOLOv8 for object detection
+ultralytics==8.3.0  # YOLOv8 for better object detection (recommended)
+# ultralytics dependencies (auto-installed):
+# - opencv-python-headless
+# - pyyaml
+# - requests
+# - tqdm
+# - pandas
+
+# OCR
+easyocr==1.7.1
+# easyocr dependencies (auto-installed):
+# - opencv-python-headless
+# - scipy
+# - scikit-image
+# - python-bidi
+# - pyclipper
+# - shapely
+# - imutils
 
