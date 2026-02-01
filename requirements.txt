@@ -15,4 +15,5 @@ torchvision==0.17.0
 easyocr==1.7.1
 numpy==1.26.4
 ultralytics==8.3.0  # YOLOv8 for better object detection (recommended)
+accelerate==1.0.0  # Required for proper CLIP model loading and performance
 

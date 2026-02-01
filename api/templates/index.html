@@ -2523,33 +2523,6 @@
                                 <div class="pantry-card-content">
                                     <!-- Item Header -->
                                     <div class="item-header">
-                                        <div class="item-icon-wrapper">
-                                            {% if item_category == 'dairy' %}
-                                            <i class="bi bi-cup" style="color: #3B82F6;"></i>
-                                            {% elif item_category == 'vegetables' or item_category == 'produce' %}
-                                            <i class="bi bi-flower" style="color: #10B981;"></i>
-                                            {% elif item_category == 'fruits' %}
-                                            <i class="bi bi-apple" style="color: #F59E0B;"></i>
-                                            {% elif item_category == 'meat' or item_category == 'proteins' %}
-                                            <i class="bi bi-circle-fill" style="color: #EF4444;"></i>
-                                            {% elif item_category == 'beverages' %}
-                                            <i class="bi bi-cup-straw" style="color: #06B6D4;"></i>
-                                            {% elif item_category == 'bakery' %}
-                                            <i class="bi bi-bread-slice" style="color: #D97706;"></i>
-                                            {% elif item_category == 'canned goods' or item_category == 'canned_goods' %}
-                                            <i class="bi bi-box" style="color: #8B5CF6;"></i>
-                                            {% elif item_category == 'snacks' %}
-                                            <i class="bi bi-cookie" style="color: #EC4899;"></i>
-                                            {% elif item_category == 'condiments' %}
-                                            <i class="bi bi-circle" style="color: #F97316;"></i>
-                                            {% elif item_category == 'grains' %}
-                                            <i class="bi bi-grid-3x3" style="color: #A855F7;"></i>
-                                            {% elif item_category == 'frozen' %}
-                                            <i class="bi bi-snow" style="color: #06B6D4;"></i>
-                                            {% else %}
-                                            <i class="bi bi-question-circle" style="color: #64748B;"></i>
-                                            {% endif %}
-                                            </div>
                                         <div class="item-info">
                                             <h6 class="item-name" title="{{ item_name }}">{{ item_name }}</h6>
                                             </div>
@@ -7991,9 +7964,6 @@
                                     </span>
                                     ` : ''}
                                     <div class="d-flex align-items-center mb-3">
-                                        <div class="me-3 item-icon-wrapper" style="width: 52px; height: 52px; background: linear-gradient(135deg, rgba(139, 92, 246, 0.15) 0%, rgba(59, 130, 246, 0.15) 100%); border-radius: 14px; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
-                                            ${getCategoryIcon(category)}
-                                        </div>
                                         <div class="flex-grow-1" style="min-width: 120px; flex: 1 1 auto; max-width: 100%; overflow: visible;">
                                             <h6 class="mb-0 fw-bold text-dark" style="font-size: 1.1rem; line-height: 1.5; word-wrap: break-word; overflow-wrap: break-word; word-break: break-word; white-space: normal; display: block; overflow: visible; text-overflow: unset; max-width: 100%;" title="${itemName}">
                                                 ${itemName}
@@ -8601,9 +8571,6 @@
                                         <div class="category-indicator category-${itemCategory}" data-category="${itemCategory}"></div>
                                         <div class="pantry-card-content">
                                             <div class="item-header">
-                                                <div class="item-icon-wrapper">
-                                                    <i class="bi ${categoryIcon}" style="color: ${categoryColor};"></i>
-                                                    </div>
                                                 <div class="item-info">
                                                     <h6 class="item-name" title="${itemName}">${itemName}</h6>
                                                 </div>

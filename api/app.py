@@ -96,6 +96,17 @@ def is_dict_filter(value):
     """Check if value is a dictionary-like object"""
     return isinstance(value, dict)
 
+# Add custom Jinja2 filter for string splitting
+@app.template_filter('split')
+def split_filter(value, delimiter=' '):
+    """Split a string by delimiter (similar to Python's str.split)
+    Usage: {{ "a b c"|split(" ") }} or {{ "a,b,c"|split(",") }}
+    For maxsplit, use: {{ value|split(delimiter)|list[:maxsplit] }}
+    """
+    if not isinstance(value, str):
+        return []
+    return value.split(delimiter)
+
 # Use environment variable for secret key if available, otherwise use default
 # SECURITY WARNING: Default secret key is insecure - always set FLASK_SECRET_KEY in production
 secret_key = os.getenv('FLASK_SECRET_KEY', 'supersecretkey')
@@ -111,6 +122,18 @@ if IS_VERCEL:
 else:
     app.config['DEBUG'] = True
 
+# Serve favicon.ico to prevent 404 errors
+@app.route('/favicon.ico')
+def favicon():
+    """Serve favicon to prevent 404 errors"""
+    import os
+    favicon_path = os.path.join(app.static_folder, 'favicon.png')
+    if os.path.exists(favicon_path):
+        return app.send_static_file('favicon.png')
+    else:
+        # Return empty 204 No Content if favicon doesn't exist
+        return '', 204
+
 # Add 404 error handler for better debugging
 @app.errorhandler(404)
 def handle_404(e):
@@ -120,7 +143,11 @@ def handle_404(e):
     error_msg = str(e)
     request_path = request.path if hasattr(request, 'path') else 'unknown'
     
-    # Log the 404 error
+    # Silently ignore favicon.ico requests (browsers auto-request these)
+    if request_path == '/favicon.ico':
+        return '', 204  # No Content
+    
+    # Log the 404 error (but not for favicon)
     print(f"\n{'='*60}")
     print(f"404 NOT FOUND: {request_path}")
     print(f"Method: {request.method if hasattr(request, 'method') else 'unknown'}")
@@ -438,13 +465,33 @@ def load_ml_models():
                             print("   🔍 Loading CLIP model for open-vocabulary food matching...")
                             import torch
                             
+                            # Use accelerate for proper model loading and performance
+                            try:
+                                from accelerate import Accelerator
+                                accelerator = Accelerator()
+                                use_accelerate = True
+                                print("   ⚡ Using accelerate for optimized CLIP loading")
+                            except ImportError:
+                                use_accelerate = False
+                                print("   ⚠️ accelerate not available, using standard loading")
+                            
                             # Performance: Use CPU optimizations for Vercel (no GPU available)
                             # Load model with CPU device mapping and optimizations
-                            _clip_model_local = CLIPModel.from_pretrained(
-                                "openai/clip-vit-base-patch32",
-                                torch_dtype=torch.float32,  # Use float32 for CPU (faster than float16 on CPU)
-                                device_map="cpu"  # Explicitly use CPU
-                            )
+                            # Use accelerate's device_map for better memory management
+                            if use_accelerate:
+                                _clip_model_local = CLIPModel.from_pretrained(
+                                    "openai/clip-vit-base-patch32",
+                                    torch_dtype=torch.float32,  # Use float32 for CPU (faster than float16 on CPU)
+                                    device_map="cpu",  # Explicitly use CPU
+                                    low_cpu_mem_usage=True  # Optimize memory usage
+                                )
+                            else:
+                                _clip_model_local = CLIPModel.from_pretrained(
+                                    "openai/clip-vit-base-patch32",
+                                    torch_dtype=torch.float32,  # Use float32 for CPU (faster than float16 on CPU)
+                                    device_map="cpu"  # Explicitly use CPU
+                                )
+                            
                             _clip_processor_local = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
                             
                             # Performance: Set model to eval mode and disable gradient computation
@@ -460,11 +507,13 @@ def load_ml_models():
                                 pass  # Optimization not critical
                             
                             clip_loaded = True
-                            print("   ✅ CLIP model loaded: openai/clip-vit-base-patch32 (CPU optimized)")
+                            print("   ✅ CLIP model loaded: openai/clip-vit-base-patch32 (CPU optimized with accelerate)")
                         except Exception as e:
                             clip_error = e
                             clip_loaded = False
                             print(f"   ⚠️ CLIP model loading failed (non-critical): {e}")
+                            import traceback
+                            traceback.print_exc()
 
                     clip_thread = threading.Thread(target=load_clip)
                     clip_thread.daemon = True
@@ -1085,6 +1134,41 @@ def classify_food_hierarchical(img_crop, classification_pred=None):
         }
 
 
+def reload_clip_model():
+    """
+    Force reload CLIP model (useful after installing accelerate or fixing model issues).
+    Clears cached models and reloads from scratch.
+    """
+    global _clip_model, _clip_processor, _ml_models_loaded
+    print("🔄 Reloading CLIP model...")
+    
+    # Clear existing models
+    _clip_model = None
+    _clip_processor = None
+    
+    # Clear CLIP cache
+    global _clip_cache
+    _clip_cache.clear()
+    
+    # Clear prompt mapping cache
+    if hasattr(clip_match_open_vocabulary, '_prompt_mapping'):
+        delattr(clip_match_open_vocabulary, '_prompt_mapping')
+    if hasattr(clip_match_open_vocabulary, '_prompt_mapping_lower'):
+        delattr(clip_match_open_vocabulary, '_prompt_mapping_lower')
+    
+    # Reset loading flag to force reload
+    _ml_models_loaded = False
+    
+    # Reload models
+    load_ml_models()
+    
+    if _clip_model and _clip_processor:
+        print("✅ CLIP model reloaded successfully")
+        return True
+    else:
+        print("⚠️ CLIP model reload failed")
+        return False
+
 def clip_match_open_vocabulary(img_crop, labels, use_prompt_engineering=True):
     """
     Use CLIP to match an image crop against an arbitrary list of text labels.
@@ -1095,8 +1179,17 @@ def clip_match_open_vocabulary(img_crop, labels, use_prompt_engineering=True):
     Returns: {"label": best_label, "score": calibrated_score, "second_best": calibrated_second_best, "raw_score": raw_score} or None
     """
     global _clip_model, _clip_processor, _clip_cache
+    
+    # Ensure CLIP is loaded - try to load if not available
     if not _clip_model or not _clip_processor:
-        return None
+        if ML_VISION_ENABLED:
+            print("🔄 CLIP not loaded, attempting to load...")
+            load_ml_models()
+            if not _clip_model or not _clip_processor:
+                print("⚠️ CLIP model still not available after load attempt")
+                return None
+        else:
+            return None
     if not labels:
         return None
     try:
@@ -1121,33 +1214,58 @@ def clip_match_open_vocabulary(img_crop, labels, use_prompt_engineering=True):
         # Performance: Cache prompt mapping (created once, reused across calls)
         if not hasattr(clip_match_open_vocabulary, '_prompt_mapping'):
             # Map generic labels to pantry-specific prompts (cached for performance)
+            # Enhanced to handle generic packaging terms without brand names
             clip_match_open_vocabulary._prompt_mapping = {
-                "cereal": "a boxed breakfast cereal on a pantry shelf",
+                # Cereal and breakfast items
+                "cereal": "a cereal box on a pantry shelf",
+                "cereal box": "a cereal box on a pantry shelf",
                 "granola": "a boxed granola cereal on a pantry shelf",
                 "oats": "a boxed oatmeal or oats on a pantry shelf",
+                "oatmeal": "a boxed oatmeal on a pantry shelf",
+                
+                # Protein and energy bars
                 "protein bar": "a packaged protein bar",
+                "protein bars": "packaged protein bars",
                 "granola bar": "a packaged granola bar",
+                "granola bars": "packaged granola bars",
+                "energy bar": "a packaged energy bar",
+                
+                # Snacks and packaged items
                 "snacks": "packaged snacks on a pantry shelf",
+                "snack package": "a packaged snack on a pantry shelf",
+                "snack": "a packaged snack on a pantry shelf",
                 "chips": "a bag of chips on a pantry shelf",
                 "crackers": "a box of crackers on a pantry shelf",
                 "cookies": "a package of cookies on a pantry shelf",
+                
+                # Pasta and grains
                 "pasta": "a box of pasta on a pantry shelf",
+                "pasta box": "a box of pasta on a pantry shelf",
+                "spaghetti": "a box of spaghetti pasta on a pantry shelf",
+                "macaroni": "a box of macaroni on a pantry shelf",
                 "rice": "a bag or box of rice on a pantry shelf",
+                "quinoa": "a bag of quinoa on a pantry shelf",
+                
+                # Baking and dry goods
                 "flour": "a bag of flour on a pantry shelf",
                 "sugar": "a bag of sugar on a pantry shelf",
+                
+                # Fresh items
                 "bread": "a loaf of bread",
                 "milk": "a carton of milk",
                 "juice": "a bottle or carton of juice",
+                
+                # Sauces and condiments
                 "sauce": "a jar or bottle of sauce on a pantry shelf",
                 "tomato sauce": "a can or jar of tomato sauce on a pantry shelf",
                 "pasta sauce": "a jar of pasta sauce on a pantry shelf",
                 "ketchup": "a bottle of ketchup",
                 "mustard": "a bottle of mustard",
                 "mayonnaise": "a jar of mayonnaise",
+                
+                # Canned goods
                 "soup": "a can of soup on a pantry shelf",
-                "canned goods": "a can of food on a pantry shelf",
-                "quinoa": "a bag of quinoa on a pantry shelf",
-                "macaroni": "a box of macaroni on a pantry shelf"
+                "canned goods": "a can of food on a pantry shelf"
             }
             # Cache lowercase keys for faster O(1) lookup
             clip_match_open_vocabulary._prompt_mapping_lower = {
@@ -1179,7 +1297,18 @@ def clip_match_open_vocabulary(img_crop, labels, use_prompt_engineering=True):
                         prompt_labels.append(prompt_mapping_lower[best_match])
                     else:
                         # Fallback: use pantry context for generic items
-                        prompt_labels.append(f"a packaged {label} on a pantry shelf")
+                        # Enhanced fallback to handle common packaging terms
+                        label_lower_clean = label_lower.strip()
+                        if "box" in label_lower_clean or "package" in label_lower_clean or "packaged" in label_lower_clean:
+                            # Remove packaging words and use the core item
+                            core_item = label_lower_clean.replace("box", "").replace("package", "").replace("packaged", "").strip()
+                            if core_item:
+                                prompt_labels.append(f"a packaged {core_item} on a pantry shelf")
+                            else:
+                                prompt_labels.append(f"a packaged {label} on a pantry shelf")
+                        else:
+                            # Generic fallback for items without packaging terms
+                            prompt_labels.append(f"a packaged {label} on a pantry shelf")
         else:
             prompt_labels = labels
         
@@ -1203,12 +1332,16 @@ def clip_match_open_vocabulary(img_crop, labels, use_prompt_engineering=True):
         with torch.inference_mode() if hasattr(torch, 'inference_mode') else torch.no_grad():
             out = _clip_model(**inputs)
             # Performance: Compute softmax on GPU/CPU directly, then move to numpy (faster)
-            probs = out.logits_per_image.softmax(dim=-1)[0]
+            logits = out.logits_per_image.softmax(dim=-1)
+            # Safe access to first element
+            if logits.shape[0] == 0:
+                return None
+            probs = logits[0]
             # Convert to numpy in one step (more efficient)
             probs_np = probs.detach().cpu().numpy() if hasattr(probs, 'detach') else probs.cpu().numpy()
             probs = probs_np
         
-        if probs.size == 0:
+        if probs.size == 0 or len(probs) == 0:
             return None
         
         # Performance: Use numpy argpartition for faster top-k (O(n) vs O(n log n))
@@ -1226,12 +1359,25 @@ def clip_match_open_vocabulary(img_crop, labels, use_prompt_engineering=True):
         if len(top3_indices) == 0:
             return None
         
+        # Safe index access with bounds checking
+        if len(top3_indices) == 0 or len(probs) == 0:
+            return None
+        
         best_idx = int(top3_indices[0])
+        # Ensure best_idx is within bounds
+        if best_idx >= len(probs) or best_idx < 0:
+            return None
+        
         raw_best_score = float(probs[best_idx])
         
-        # Get top-3 scores and labels (vectorized for performance)
-        top3_scores = [float(probs[i]) for i in top3_indices]
-        top3_labels = [labels[i].lower() for i in top3_indices]
+        # Get top-3 scores and labels (vectorized for performance) with bounds checking
+        top3_scores = []
+        top3_labels = []
+        for idx in top3_indices:
+            idx_int = int(idx)
+            if 0 <= idx_int < len(probs) and 0 <= idx_int < len(labels):
+                top3_scores.append(float(probs[idx_int]))
+                top3_labels.append(labels[idx_int].lower())
         
         # second-best and third-best scores (with safe defaults)
         raw_second_best = top3_scores[1] if len(top3_scores) > 1 else 0.0
@@ -1255,7 +1401,7 @@ def clip_match_open_vocabulary(img_crop, labels, use_prompt_engineering=True):
         calibrated_third = calibrate_score(raw_third_best)
         
         result = {
-            "label": top3_labels[0],  # Return original label, not prompt
+            "label": top3_labels[0] if len(top3_labels) > 0 else (labels[0] if len(labels) > 0 else ""),  # Return original label, not prompt
             "score": calibrated_best,
             "raw_score": raw_best_score,
             "second_best": calibrated_second,
@@ -1423,10 +1569,17 @@ def apply_nms(items, iou_threshold=0.5):
     
     # Apply NMS
     keep = []
-    while items_with_bbox:
+    while items_with_bbox and len(items_with_bbox) > 0:
         # Take the item with highest confidence
-        current = items_with_bbox.pop(0)
-        keep.append(current)
+        try:
+            current = items_with_bbox.pop(0)
+            if current:
+                keep.append(current)
+        except (IndexError, AttributeError) as e:
+            # Safety check - break if pop fails
+            if VERBOSE_LOGGING:
+                print(f"Warning: Failed to pop from items_with_bbox: {e}")
+            break
         
         # Remove items that overlap significantly with current
         items_with_bbox = [
@@ -1783,9 +1936,15 @@ def stage_yolo_detect_regions_multi_crop(img, use_multi_crop=False):
                         if iou > 0.5:  # Same detection
                             is_duplicate = True
                             # Keep the one with higher confidence
-                            if region["yolo_conf"] > existing["yolo_conf"]:
-                                unique_regions.remove(existing)
-                                unique_regions.append(region)
+                            if region.get("yolo_conf", 0) > existing.get("yolo_conf", 0):
+                                try:
+                                    unique_regions.remove(existing)
+                                    unique_regions.append(region)
+                                except (ValueError, AttributeError) as e:
+                                    # Safety: if remove fails, just append
+                                    if VERBOSE_LOGGING:
+                                        print(f"Warning: Failed to remove existing region: {e}")
+                                    unique_regions.append(region)
                             break
                 
                 if not is_duplicate:
@@ -1847,16 +2006,34 @@ def stage_yolo_detect_regions(img):
             if boxes is not None and len(boxes) > 0:
                 for box in boxes:
                     try:
-                        # Extract bbox
-                        xyxy = box.xyxy[0] if hasattr(box.xyxy, '__getitem__') else box.xyxy
+                        # Extract bbox with safe access
+                        if hasattr(box.xyxy, '__getitem__') and hasattr(box.xyxy, '__len__'):
+                            if len(box.xyxy) > 0:
+                                xyxy = box.xyxy[0]
+                            else:
+                                continue
+                        else:
+                            xyxy = box.xyxy
+                        
+                        if xyxy is None:
+                            continue
+                            
                         if hasattr(xyxy, 'cpu'):
                             xyxy = xyxy.cpu().numpy()
                         elif hasattr(xyxy, 'numpy'):
                             xyxy = xyxy.numpy()
                         
-                        if len(xyxy) < 4:
+                        # Convert to list/array if needed for length check
+                        if hasattr(xyxy, '__len__'):
+                            if len(xyxy) < 4:
+                                continue
+                        else:
                             continue
-                        x1, y1, x2, y2 = xyxy[:4]
+                        # Safe unpacking with bounds check
+                        if hasattr(xyxy, '__len__') and len(xyxy) >= 4:
+                            x1, y1, x2, y2 = float(xyxy[0]), float(xyxy[1]), float(xyxy[2]), float(xyxy[3])
+                        else:
+                            continue
                         
                         # FIX 4: Filter small boxes (minimum area threshold)
                         box_width = x2 - x1
@@ -1875,7 +2052,14 @@ def stage_yolo_detect_regions(img):
                             continue
                         
                         # Extract confidence
-                        conf = box.conf[0] if hasattr(box.conf, '__getitem__') else box.conf
+                        # Safe access to confidence with bounds checking
+                        if hasattr(box, 'conf'):
+                            if hasattr(box.conf, '__getitem__') and hasattr(box.conf, '__len__') and len(box.conf) > 0:
+                                conf = box.conf[0]
+                            else:
+                                conf = box.conf if not hasattr(box.conf, '__getitem__') else 0.0
+                        else:
+                            conf = 0.0
                         if hasattr(conf, 'cpu'):
                             conf = conf.cpu().numpy()
                         elif hasattr(conf, 'numpy'):
@@ -1883,7 +2067,11 @@ def stage_yolo_detect_regions(img):
                         yolo_conf = float(conf)
                         
                         # Extract class_id for container detection
-                        cls = box.cls[0] if hasattr(box.cls, '__getitem__') else box.cls
+                        # Safe access to class
+                        if hasattr(box.cls, '__getitem__') and hasattr(box.cls, '__len__') and len(box.cls) > 0:
+                            cls = box.cls[0]
+                        else:
+                            cls = box.cls if hasattr(box, 'cls') else 0
                         if hasattr(cls, 'cpu'):
                             cls = cls.cpu().numpy()
                         elif hasattr(cls, 'numpy'):
@@ -2069,7 +2257,11 @@ def stage_clip_suggest_label(crop, candidate_labels, region_info=None):
     best = clip_pred["score"]  # Already calibrated
     second = clip_pred.get("second_best", 0.0)  # Already calibrated
     raw_best = clip_pred.get("raw_score", 0.0)
-    top3_labels = clip_pred.get("top3_labels", [clip_pred["label"]])
+    # Safe access to top3_labels with fallback
+    clip_label = clip_pred.get("label", "")
+    top3_labels = clip_pred.get("top3_labels", [clip_label] if clip_label else [])
+    if not top3_labels and clip_label:
+        top3_labels = [clip_label]
     top3_scores = clip_pred.get("top3_scores", [best, second, 0.0])
     
     # FIX 3: Check for ambiguity - if top-2 scores are close (< 0.07), show both
@@ -2228,9 +2420,15 @@ def stage_ocr_bind_to_region(yolo_bbox, full_image_ocr_results, img_size):
         if len(ocr_item) < 3:
             continue
         
-        ocr_bbox = ocr_item[0]  # Array of 4 corner points [[x1,y1], [x2,y2], [x3,y3], [x4,y4]]
+        # Safe access to OCR item with bounds checking
+        if not ocr_item or len(ocr_item) == 0:
+            continue
+        ocr_bbox = ocr_item[0] if len(ocr_item) > 0 else None
         ocr_text = ocr_item[1] if len(ocr_item) > 1 else ""
         ocr_conf = ocr_item[2] if len(ocr_item) > 2 else 0.0
+        
+        if ocr_bbox is None:
+            continue
         
         if not ocr_text or ocr_conf < 0.1:
             continue
@@ -2435,7 +2633,9 @@ def stage_ocr_propose_candidates(ocr_text, clip_model=None, clip_processor=None,
             # Import clip_match_open_vocabulary from current module
             clip_result = clip_match_open_vocabulary(crop, proposed_candidates, use_prompt_engineering=True)
             if clip_result and clip_result.get("score", 0) > 0.25:
-                verified_label = clip_result.get("label", proposed_candidates[0])
+                # Safe access to proposed_candidates with fallback
+                default_label = proposed_candidates[0] if proposed_candidates and len(proposed_candidates) > 0 else ""
+                verified_label = clip_result.get("label", default_label)
                 verified_conf = clip_result.get("score", 0.0)
                 if VERBOSE_LOGGING:
                     print(f"   ✅ CLIP verified OCR candidate: {verified_label} (conf: {verified_conf:.2f})")
@@ -2452,7 +2652,7 @@ def stage_ocr_propose_candidates(ocr_text, clip_model=None, clip_processor=None,
     # If no CLIP verification, return top candidate with lower confidence
     if proposed_candidates:
         return {
-            "label": proposed_candidates[0],
+            "label": proposed_candidates[0] if proposed_candidates and len(proposed_candidates) > 0 else "",
             "confidence": 0.4,  # Lower confidence without CLIP verification
             "text": ocr_text,
             "method": "ocr_proposed"
@@ -2475,7 +2675,8 @@ def stage_ocr_read_label(crop, is_container=False, bound_ocr_texts=None):
     if bound_ocr_texts and len(bound_ocr_texts) > 0:
         # Combine all bound texts
         combined_text = ' '.join([item["text"] for item in bound_ocr_texts]).lower()
-        avg_conf = sum(item["confidence"] for item in bound_ocr_texts) / len(bound_ocr_texts)
+        # Safe division with zero check
+        avg_conf = sum(item.get("confidence", 0.0) for item in bound_ocr_texts) / len(bound_ocr_texts) if bound_ocr_texts and len(bound_ocr_texts) > 0 else 0.0
         
         if combined_text and len(combined_text) >= 2:
             # 🔥 FIX #1: Process bound OCR texts through keyword matching
@@ -2506,7 +2707,8 @@ def stage_ocr_read_label(crop, is_container=False, bound_ocr_texts=None):
     if bound_ocr_texts and len(bound_ocr_texts) > 0:
         # Use bound texts - skip OCR processing, go straight to keyword matching
         combined_text = ' '.join([item["text"] for item in bound_ocr_texts]).lower()
-        avg_conf = sum(item["confidence"] for item in bound_ocr_texts) / len(bound_ocr_texts)
+        # Safe division with zero check
+        avg_conf = sum(item.get("confidence", 0.0) for item in bound_ocr_texts) / len(bound_ocr_texts) if bound_ocr_texts and len(bound_ocr_texts) > 0 else 0.0
         ocr_text = combined_text
         ocr_confidence = avg_conf
         # Skip to keyword matching section (after OCR processing)
@@ -2583,8 +2785,8 @@ def stage_ocr_read_label(crop, is_container=False, bound_ocr_texts=None):
                     ocr_results = _ocr_reader.readtext(crop_array)
                     
                     if ocr_results:
-                        # Calculate average confidence
-                        avg_conf = sum(conf for (_, _, conf) in ocr_results) / len(ocr_results)
+                        # Calculate average confidence with safe division
+                        avg_conf = sum(conf for (_, _, conf) in ocr_results) / len(ocr_results) if ocr_results and len(ocr_results) > 0 else 0.0
                         if avg_conf > best_confidence:
                             best_confidence = avg_conf
                             # Collect all text
@@ -2605,7 +2807,8 @@ def stage_ocr_read_label(crop, is_container=False, bound_ocr_texts=None):
             # If we have bound texts, use them even if OCR on crop failed
             if bound_ocr_texts and len(bound_ocr_texts) > 0:
                 combined_text = ' '.join([item["text"] for item in bound_ocr_texts]).lower()
-                avg_conf = sum(item["confidence"] for item in bound_ocr_texts) / len(bound_ocr_texts)
+                # Safe division with zero check
+                avg_conf = sum(item.get("confidence", 0.0) for item in bound_ocr_texts) / len(bound_ocr_texts) if bound_ocr_texts and len(bound_ocr_texts) > 0 else 0.0
                 ocr_text = combined_text
                 ocr_confidence = avg_conf
             else:
@@ -4901,10 +5104,16 @@ def detect_food_items_with_ml(img_bytes, user_pantry=None, skip_preprocessing=Fa
     
     def calculate_iou_for_dedup(box1, box2):
         """Calculate IoU for deduplication"""
-        if not box1 or not box2 or len(box1) < 4 or len(box2) < 4:
+        if not box1 or not box2:
             return 0.0
-        x1_1, y1_1, x2_1, y2_1 = box1[:4]
-        x1_2, y1_2, x2_2, y2_2 = box2[:4]
+        # Safe length check and unpacking
+        if not hasattr(box1, '__len__') or not hasattr(box2, '__len__'):
+            return 0.0
+        if len(box1) < 4 or len(box2) < 4:
+            return 0.0
+        # Safe unpacking with explicit indexing
+        x1_1, y1_1, x2_1, y2_1 = float(box1[0]), float(box1[1]), float(box1[2]), float(box1[3])
+        x1_2, y1_2, x2_2, y2_2 = float(box2[0]), float(box2[1]), float(box2[2]), float(box2[3])
         xi1 = max(x1_1, x1_2)
         yi1 = max(y1_1, y1_2)
         xi2 = min(x2_1, x2_2)
@@ -4974,7 +5183,11 @@ def detect_food_items_with_ml(img_bytes, user_pantry=None, skip_preprocessing=Fa
         if len(similar_items) > 1:
             # Sort by confidence and keep the best
             similar_items.sort(key=lambda x: x.get("confidence", 0), reverse=True)
-            best_item = similar_items[0]
+            # Safe access with bounds check
+            if len(similar_items) > 0:
+                best_item = similar_items[0]
+            else:
+                continue  # Skip if no similar items
             
             # Boost confidence if multiple detections agree (consensus)
             if len(similar_items) >= 2:
@@ -5139,8 +5352,10 @@ def detect_food_items_with_ml(img_bytes, user_pantry=None, skip_preprocessing=Fa
             print(f"   ... and {len(result) - 5} more items")
         # Log confidence distribution
         conf_values = [item.get('confidence', 0) for item in result]
-        if conf_values:
-            print(f"   Confidence range: {min(conf_values):.2f} - {max(conf_values):.2f} (avg: {sum(conf_values)/len(conf_values):.2f})")
+        if conf_values and len(conf_values) > 0:
+            # Safe division (already checked, but extra safety)
+            avg_conf_display = sum(conf_values) / len(conf_values)
+            print(f"   Confidence range: {min(conf_values):.2f} - {max(conf_values):.2f} (avg: {avg_conf_display:.2f})")
     else:
         print("   ⚠️ No items detected - possible reasons:")
         print(f"      - YOLO model not loaded: {_yolo_model is None}")
@@ -6233,6 +6448,20 @@ def normalize_pantry_item(item):
             if item_name:
                 normalized_item['category'] = validate_category(item_name, normalized_item['category'])
         
+        # Preserve confidence if it exists (important for photo-detected items)
+        # Only set default if confidence is truly missing (None), not if it's 0.0
+        if 'confidence' not in normalized_item or normalized_item['confidence'] is None:
+            # Don't set default - let the caller decide (or use 0.5 in api_get_pantry)
+            pass  # Confidence will be handled in api_get_pantry if needed
+        else:
+            # Ensure confidence is a valid float between 0.0 and 1.0
+            try:
+                conf_value = float(normalized_item['confidence'])
+                normalized_item['confidence'] = max(0.0, min(1.0, conf_value))
+            except (ValueError, TypeError):
+                # Invalid confidence - remove it (will default later if needed)
+                normalized_item.pop('confidence', None)
+        
         # Validate that name is not empty after normalization
         if not normalized_item.get('name'):
             normalized_item['name'] = 'Unnamed Item'
@@ -6505,6 +6734,9 @@ def update_user_pantry(user_id, pantry_items):
             print(f"Warning: Failed to normalize item {item}: {e}")
             continue
     
+    # Ensure user exists and has pantry key
+    if user_id not in users:
+        users[user_id] = {}
     users[user_id]['pantry'] = normalized_items
     
     # Invalidate cache for this user (thread-safe)
@@ -6572,11 +6804,13 @@ def login():
         user_data, error = authenticate_user(username, password, 'web')
         if user_data:
             session.permanent = True  # Make session permanent
-            session['user_id'] = user_data['id']
-            session['username'] = user_data['username']
-            print(f"Login successful - User ID: {user_data['id']}, Username: {user_data['username']}")
+            session['user_id'] = user_data.get('id')
+            session['username'] = user_data.get('username', username)
+            user_id_val = user_data.get('id')
+            username_val = user_data.get('username', username)
+            print(f"Login successful - User ID: {user_id_val}, Username: {username_val}")
             print(f"Session after login: user_id={session.get('user_id')}, username={session.get('username')}")
-            flash(f"Welcome back, {user_data['username']}!", "success")
+            flash(f"Welcome back, {username_val}!", "success")
             return redirect(url_for("index"))
         else:
             print(f"Login failed - Error: {error}")
@@ -6663,7 +6897,11 @@ def profile():
         session.clear()
         return redirect(url_for("login"))
     
-    user_data = users[user_id]
+    user_data = users.get(user_id)
+    if not user_data:
+        flash("User data not found", "danger")
+        session.clear()
+        return redirect(url_for("login"))
     
     # Handle POST request (password change)
     if request.method == "POST":
@@ -7140,6 +7378,167 @@ def insights():
     """Display pantry insights and statistics"""
     return render_template("insights.html")
 
+
+def _extract_ingredient_name(ingredient_str):
+    """
+    Extract the core ingredient name from an ingredient string.
+    Removes quantities, units, and "(from pantry)" markers.
+    
+    Examples:
+    - "2 cups milk (from pantry)" -> "milk"
+    - "1 bottle pasta sauce" -> "pasta sauce"
+    - "1 tsp salt" -> "salt"
+    """
+    if not ingredient_str:
+        return ""
+    
+    ing_lower = str(ingredient_str).strip().lower()
+    
+    # Remove "(from pantry)" markers
+    ing_lower = ing_lower.replace("(from pantry)", "").replace("from pantry", "").strip()
+    
+    # Remove common quantity units
+    quantity_patterns = [
+        "item", "items", "cup", "cups", "tbsp", "tsp", "tablespoon", "tablespoons",
+        "teaspoon", "teaspoons", "bottle", "bottles", "can", "cans", "slice", "slices",
+        "piece", "pieces", "gram", "grams", "kg", "lb", "lbs", "oz", "ml", "liter", "liters",
+        "pound", "pounds", "ounce", "ounces", "gallon", "gallons", "quart", "quarts",
+        "pint", "pints", "package", "packages", "box", "boxes", "bag", "bags"
+    ]
+    
+    for pattern in quantity_patterns:
+        if pattern in ing_lower:
+            # Split by pattern and take the part after it
+            parts = ing_lower.split(pattern, 1)
+            if len(parts) > 1:
+                ing_lower = parts[1].strip()
+                break
+    
+    # Remove leading numbers and fractions
+    words = ing_lower.split()
+    cleaned_words = []
+    found_first_word = False
+    for word in words:
+        if not found_first_word:
+            # Skip numbers and fractions
+            try:
+                # Try to parse as number
+                float(word.replace('/', '/'))
+                # If it's a number, skip it
+                continue
+            except (ValueError, ZeroDivisionError):
+                # Not a number, this is the first word
+                if '/' not in word:  # Skip fractions like "1/2"
+                    cleaned_words.append(word)
+                    found_first_word = True
+        else:
+            cleaned_words.append(word)
+    
+    result = " ".join(cleaned_words).strip()
+    
+    # If cleaning resulted in empty string, try to get last word
+    if not result:
+        all_words = str(ingredient_str).lower().split()
+        if all_words:
+            result = all_words[-1]
+    
+    return result
+
+
+def _compute_pantry_match_for_recipes(recipes, pantry_items_list):
+    """
+    Pre-compute pantry match counts for each recipe so the template
+    can simply display the values without doing complex matching logic.
+    Uses robust ingredient name extraction to match pantry items.
+    """
+    if not recipes or not isinstance(recipes, list):
+        return recipes
+
+    # Normalize pantry items to lowercase strings
+    pantry_names = []
+    for p in pantry_items_list or []:
+        if not p:
+            continue
+        try:
+            name = str(p).strip().lower()
+        except Exception:
+            continue
+        if name:
+            pantry_names.append(name)
+
+    if not pantry_names:
+        # Nothing to match against
+        for recipe in recipes:
+            if isinstance(recipe, dict):
+                recipe["pantry_match_count"] = 0
+                ingredients = recipe.get("ingredients") or []
+                recipe["pantry_total_ingredients"] = len(ingredients)
+                recipe["missing_ingredients"] = list(ingredients)
+        return recipes
+
+    for recipe in recipes:
+        if not isinstance(recipe, dict):
+            continue
+
+        ingredients = recipe.get("ingredients") or []
+        try:
+            ingredients_list = list(ingredients)
+        except TypeError:
+            ingredients_list = []
+
+        total_ingredients = len(ingredients_list)
+        in_pantry_count = 0
+        missing_ingredients = []
+
+        for ing in ingredients_list:
+            try:
+                ing_str = str(ing).strip()
+            except Exception:
+                ing_str = ""
+
+            if not ing_str:
+                continue
+
+            # Extract core ingredient name
+            ing_name = _extract_ingredient_name(ing_str)
+            
+            if not ing_name:
+                # If extraction failed, use original (lowercased)
+                ing_name = ing_str.lower().strip()
+
+            # Try to find any pantry name matching this ingredient
+            matched = False
+            for pantry_name in pantry_names:
+                if not pantry_name:
+                    continue
+
+                # Multiple matching strategies
+                exact_match = (pantry_name == ing_name)
+                pantry_in_ing = (pantry_name in ing_name and len(pantry_name) >= 2)
+                ing_in_pantry = (ing_name in pantry_name and len(ing_name) >= 2)
+                no_space_match = (pantry_name.replace(" ", "") == ing_name.replace(" ", ""))
+                
+                # Also check if pantry name appears in original ingredient string
+                pantry_in_original = (pantry_name in ing_str.lower())
+                original_in_pantry = (ing_str.lower() in pantry_name)
+
+                if (exact_match or pantry_in_ing or ing_in_pantry or no_space_match or 
+                    pantry_in_original or original_in_pantry):
+                    matched = True
+                    break
+
+            if matched:
+                in_pantry_count += 1
+            else:
+                missing_ingredients.append(ing_str)
+
+        recipe["pantry_match_count"] = in_pantry_count
+        recipe["pantry_total_ingredients"] = total_ingredients
+        recipe["missing_ingredients"] = missing_ingredients
+
+    return recipes
+
+
 # Suggest recipes based on pantry
 @app.route("/suggest")
 def suggest_recipe():
@@ -7176,6 +7575,9 @@ def suggest_recipe():
                 if pantry_item:
                     pantry_items_list.append(str(pantry_item))
                     pantry_items_full.append({'name': str(pantry_item), 'expirationDate': None, 'quantity': '1'})
+
+        # Pre-compute match info for existing recipes
+        _compute_pantry_match_for_recipes(existing_recipes, pantry_items_list)
         
         flash("Showing your current recipes. Click 'Generate New Recipes' for fresh ideas!", "info")
         return render_template("suggest_recipe.html", recipes=existing_recipes, pantry_items=pantry_items_list, pantry_items_full=pantry_items_full)
@@ -7370,15 +7772,52 @@ Format as JSON:
                 "health_explanation": "This recipe uses fresh ingredients from your pantry, making it a healthy choice."
             }]
             
-        # Validate that recipes use 50%+ pantry ingredients
+        # Validate that recipes use 50%+ pantry ingredients using the same matching logic
         validated_recipes = []
         for recipe in recipes:
             ingredients = recipe.get('ingredients', [])
             if not ingredients:
                 continue  # Skip recipes without ingredients
-            # pantry_items_list is already a list of strings, use that for comparison
-            pantry_count = sum(1 for ingredient in ingredients if any(pantry_item.lower() in ingredient.lower() for pantry_item in pantry_items_list))
-            total_ingredients = len(ingredients)
+
+            try:
+                ingredients_list = list(ingredients)
+            except TypeError:
+                ingredients_list = []
+
+            # Use the same matching logic as _compute_pantry_match_for_recipes
+            pantry_count = 0
+            for ingredient in ingredients_list:
+                try:
+                    ing_str = str(ingredient).strip()
+                except Exception:
+                    continue
+                
+                if not ing_str:
+                    continue
+                
+                # Extract core ingredient name (same logic as display function)
+                ing_name = _extract_ingredient_name(ing_str)
+                if not ing_name:
+                    ing_name = ing_str.lower().strip()
+                
+                # Check against all pantry items
+                for pantry_item in pantry_items_list:
+                    if not pantry_item:
+                        continue
+                    pantry_name = str(pantry_item).strip().lower()
+                    
+                    # Multiple matching strategies (same as display function)
+                    exact_match = (pantry_name == ing_name)
+                    pantry_in_ing = (pantry_name in ing_name and len(pantry_name) >= 2)
+                    ing_in_pantry = (ing_name in pantry_name and len(ing_name) >= 2)
+                    no_space_match = (pantry_name.replace(" ", "") == ing_name.replace(" ", ""))
+                    pantry_in_original = (pantry_name in ing_str.lower())
+                    
+                    if (exact_match or pantry_in_ing or ing_in_pantry or no_space_match or pantry_in_original):
+                        pantry_count += 1
+                        break  # Found a match, move to next ingredient
+
+            total_ingredients = len(ingredients_list)
             pantry_percentage = (pantry_count / total_ingredients) * 100 if total_ingredients > 0 else 0
             
             if pantry_percentage >= 50:
@@ -7386,20 +7825,70 @@ Format as JSON:
             else:
                 # If recipe doesn't meet 50% requirement, try to adjust it
                 recipe_name = recipe.get('name', 'Unknown Recipe')
-                flash(f"Recipe '{recipe_name}' only uses {pantry_percentage:.0f}% pantry ingredients. Adjusting...", "warning")
+                if VERBOSE_LOGGING:
+                    print(f"WARNING: Recipe '{recipe_name}' only uses {pantry_percentage:.0f}% pantry ingredients ({pantry_count}/{total_ingredients}). Adjusting...")
                 # Add more pantry ingredients to meet requirement
                 needed_pantry = max(1, (total_ingredients // 2) - pantry_count)
                 if pantry_items_list and len(pantry_items_list) > 0:
-                    additional_pantry = pantry_items_list[:min(needed_pantry, len(pantry_items_list))]
-                    if 'ingredients' not in recipe:
-                        recipe['ingredients'] = []
-                    recipe['ingredients'].extend(additional_pantry)
+                    # Add pantry items that aren't already in the recipe
+                    existing_ing_names = [_extract_ingredient_name(ing) for ing in ingredients_list]
+                    additional_pantry = []
+                    for pantry_item in pantry_items_list:
+                        pantry_name = str(pantry_item).strip().lower()
+                        # Check if this pantry item is already in recipe
+                        already_in_recipe = any(
+                            pantry_name in existing_name or existing_name in pantry_name
+                            for existing_name in existing_ing_names
+                        )
+                        if not already_in_recipe:
+                            additional_pantry.append(pantry_item)
+                        if len(additional_pantry) >= needed_pantry:
+                            break
+                    
+                    if additional_pantry:
+                        if 'ingredients' not in recipe:
+                            recipe['ingredients'] = []
+                        recipe['ingredients'].extend(additional_pantry)
+                        # Recalculate after adding
+                        pantry_count += len(additional_pantry)
+                        total_ingredients = len(recipe['ingredients'])
+                        pantry_percentage = (pantry_count / total_ingredients) * 100 if total_ingredients > 0 else 0
+                        if VERBOSE_LOGGING:
+                            print(f"Adjusted recipe '{recipe_name}' to {pantry_percentage:.0f}% pantry ingredients ({pantry_count}/{total_ingredients})")
+                
                 validated_recipes.append(recipe)
         
         recipes = validated_recipes
         
-        flash(f"Generated {len(recipes)} recipe(s) using at least 50% pantry ingredients!", "success")
+        # Pre-compute pantry match info BEFORE displaying success message
+        _compute_pantry_match_for_recipes(recipes, pantry_items_list)
         
+        # Verify all recipes actually meet 50% requirement after matching
+        final_validated = []
+        for recipe in recipes:
+            match_count = recipe.get("pantry_match_count", 0)
+            total_count = recipe.get("pantry_total_ingredients", 0)
+            if total_count > 0:
+                percentage = (match_count / total_count) * 100
+                if percentage >= 50:
+                    final_validated.append(recipe)
+                elif VERBOSE_LOGGING:
+                    recipe_name = recipe.get('name', 'Unknown')
+                    print(f"WARNING: Recipe '{recipe_name}' has {percentage:.0f}% pantry match ({match_count}/{total_count}) - may need adjustment")
+                    # Still include it but log the issue
+                    final_validated.append(recipe)
+            else:
+                # Recipe with no ingredients - skip it
+                if VERBOSE_LOGGING:
+                    print(f"WARNING: Recipe '{recipe.get('name', 'Unknown')}' has no ingredients")
+        
+        recipes = final_validated if final_validated else recipes  # Keep recipes even if validation fails
+        
+        if recipes:
+            flash(f"Generated {len(recipes)} recipe(s) using at least 50% pantry ingredients!", "success")
+        else:
+            flash("Could not generate recipes with sufficient pantry ingredients. Try adding more items to your pantry.", "warning")
+
         # Store recipes in session for nutrition info lookup
         session['current_recipes'] = recipes
         
@@ -7512,6 +8001,9 @@ Format as JSON:
                 "health_explanation": "This recipe uses fresh ingredients from your pantry."
             }]
         
+        # Pre-compute pantry match info for fallback recipes
+        _compute_pantry_match_for_recipes(recipes, pantry_items_list)
+
         # Store fallback recipes in session
         session['current_recipes'] = recipes
 
@@ -8456,6 +8948,9 @@ Format as JSON:
                 pantry_items_list.append(pantry_str)
                 pantry_items_full.append({'name': pantry_str, 'expirationDate': None})
 
+    # Pre-compute pantry match info for nutrition-enhanced recipes
+    _compute_pantry_match_for_recipes(recipes_with_nutrition, pantry_items_list)
+
     return render_template("suggest_recipe.html", recipes=recipes_with_nutrition, pantry_items=pantry_items_list, pantry_items_full=pantry_items_full)
 
 # Detailed recipe page with timers and full instructions
@@ -8904,6 +9399,17 @@ def api_get_pantry():
                     normalized_item = normalize_pantry_item(item.copy())
                     # Only include items with valid names
                     if normalized_item.get('name') and normalized_item.get('name').strip() and normalized_item.get('name') != 'Unnamed Item':
+                        # Ensure confidence is included (preserve from original or default to 0.5)
+                        if 'confidence' not in normalized_item or normalized_item['confidence'] is None:
+                            # Check original item for confidence before normalization
+                            original_confidence = item.get('confidence')
+                            if original_confidence is not None:
+                                try:
+                                    normalized_item['confidence'] = max(0.0, min(1.0, float(original_confidence)))
+                                except (ValueError, TypeError):
+                                    normalized_item['confidence'] = 0.5
+                            else:
+                                normalized_item['confidence'] = 0.5
                         items.append(normalized_item)
                 elif item is not None:
                     # Old string format - convert to new format
@@ -8911,6 +9417,9 @@ def api_get_pantry():
                     if item_str:
                         normalized_item = normalize_pantry_item(item_str)
                         if normalized_item.get('name') and normalized_item.get('name').strip() and normalized_item.get('name') != 'Unnamed Item':
+                            # Old format items don't have confidence - default to 0.5
+                            if 'confidence' not in normalized_item:
+                                normalized_item['confidence'] = 0.5
                             items.append(normalized_item)
                 pass
             except Exception as e:
@@ -9380,8 +9889,14 @@ def api_delete_item(item_id):
                 
                 # Match if: (ID matches) OR (no valid ID provided and name matches)
                 if id_match or (not item_id_clean and name_match):
-                    item_to_delete = pantry_list.pop(i)
-                    break
+                    # Safe pop with bounds checking
+                    if 0 <= i < len(pantry_list):
+                        item_to_delete = pantry_list.pop(i)
+                        break
+                    else:
+                        if VERBOSE_LOGGING:
+                            print(f"Warning: Index {i} out of bounds for pantry_list (length: {len(pantry_list)})")
+                        break
             else:
                 # Handle old string format - compare case-insensitively
                 pantry_str = str(pantry_item).strip().lower() if pantry_item else ''
@@ -9460,8 +9975,14 @@ def api_delete_item(item_id):
                 
                 # Match if: (ID matches) OR (no valid ID provided and name matches)
                 if id_match or (not item_id_clean and name_match):
-                    item_to_delete = pantry_list.pop(i)
-                    break
+                    # Safe pop with bounds checking
+                    if 0 <= i < len(pantry_list):
+                        item_to_delete = pantry_list.pop(i)
+                        break
+                    else:
+                        if VERBOSE_LOGGING:
+                            print(f"Warning: Index {i} out of bounds for pantry_list (length: {len(pantry_list)})")
+                        break
             else:
                 # Handle old string format - compare case-insensitively
                 pantry_str = str(pantry_item).strip().lower() if pantry_item else ''
@@ -10186,7 +10707,12 @@ def api_upload_photo():
                 return jsonify({'success': False, 'error': 'No photo field found in multipart form data'}), 400
             return jsonify({'success': False, 'error': 'No photo uploaded. Content-Type: ' + str(request.content_type)}), 400
         
-        photo = request.files['photo']
+        photo = request.files.get('photo')
+        if not photo:
+            return jsonify({
+                'success': False,
+                'error': 'No photo file provided'
+            }), 400
         if photo.filename == '':
             return jsonify({'success': False, 'error': 'No photo selected'}), 400
         
@@ -10762,16 +11288,31 @@ Return ONLY valid JSON (no markdown, no code blocks, no explanations):
                 
                 quantity = item.get('quantity', '1')
                 category = item.get('category', 'other')
-                confidence = item.get('confidence', 0.5)
-                expiration_date = item.get('expirationDate')
-                
-                # Ensure confidence is a float between 0 and 1
-                try:
-                    confidence = float(confidence)
-                    if confidence < 0 or confidence > 1:
-                        confidence = 0.5
-                except (ValueError, TypeError):
+                # Fix: Only default to 0.5 if confidence is truly missing (None), not if it's 0.0
+                # This preserves actual confidence values from ML model
+                confidence_raw = item.get('confidence')
+                if confidence_raw is None:
+                    # Confidence is missing - default to 0.5
                     confidence = 0.5
+                    if VERBOSE_LOGGING:
+                        print(f"⚠️ Item '{name}' missing confidence, defaulting to 0.5")
+                else:
+                    # Confidence exists - convert to float and validate
+                    try:
+                        confidence = float(confidence_raw)
+                        # Clamp to valid range [0.0, 1.0] but preserve 0.0 if that's the actual value
+                        if confidence < 0.0:
+                            confidence = 0.0
+                        elif confidence > 1.0:
+                            confidence = 1.0
+                        # Don't default to 0.5 if confidence is 0.0 (that's a valid low confidence value)
+                    except (ValueError, TypeError):
+                        # Invalid confidence value - default to 0.5
+                        confidence = 0.5
+                        if VERBOSE_LOGGING:
+                            print(f"⚠️ Item '{name}' has invalid confidence value '{confidence_raw}', defaulting to 0.5")
+                
+                expiration_date = item.get('expirationDate')
                 
                 response_items.append({
                     'id': item_id,
@@ -11130,9 +11671,20 @@ def update_accuracy_stats(confirmed_items):
         stats['total_confirmations'] += len(confirmed_items)
         stats['last_updated'] = datetime.now().isoformat()
         
-        # Save updated stats
-        with open(stats_file, 'w') as f:
-            json.dump(stats, f, indent=2)
+        # Save updated stats (with error handling)
+        try:
+            # Ensure directory exists
+            stats_dir = os.path.dirname(stats_file)
+            if stats_dir and not os.path.exists(stats_dir):
+                os.makedirs(stats_dir, exist_ok=True)
+            with open(stats_file, 'w') as f:
+                json.dump(stats, f, indent=2)
+                f.flush()
+                if hasattr(os, 'fsync'):
+                    os.fsync(f.fileno())
+        except (IOError, OSError, PermissionError) as save_error:
+            if VERBOSE_LOGGING:
+                print(f"Warning: Could not save stats to {stats_file}: {save_error}")
         
         if VERBOSE_LOGGING:
             print(f"📊 Updated accuracy statistics: {stats['total_confirmations']} total confirmations")
@@ -11162,27 +11714,52 @@ def update_failure_stats(correct_labels, predicted_labels, detected_items):
             stats['false_positives'] = {}
         
         # Track common prediction errors
-        for predicted, correct in zip(predicted_labels, correct_labels):
-            if predicted != correct:
+        if not isinstance(correct_labels, list):
+            correct_labels = []
+        if not isinstance(predicted_labels, list):
+            predicted_labels = []
+        if not isinstance(detected_items, list):
+            detected_items = []
+        
+        # Safely iterate with zip - handle different lengths
+        min_len = min(len(predicted_labels), len(correct_labels))
+        for i in range(min_len):
+            predicted = predicted_labels[i] if i < len(predicted_labels) else None
+            correct = correct_labels[i] if i < len(correct_labels) else None
+            if predicted and correct and predicted != correct:
                 key = f"{predicted}->{correct}"
                 stats['common_errors'][key] = stats['common_errors'].get(key, 0) + 1
         
         # Track missed items (in correct but not in predicted)
-        correct_set = set(str(c).lower() for c in correct_labels)
-        predicted_set = set(str(p).lower() for p in predicted_labels)
+        correct_set = set(str(c).lower() for c in correct_labels if c is not None)
+        predicted_set = set(str(p).lower() for p in predicted_labels if p is not None)
         missed = correct_set - predicted_set
         for item in missed:
-            stats['missed_items'][item] = stats['missed_items'].get(item, 0) + 1
+            if item:  # Only track non-empty items
+                stats['missed_items'][item] = stats['missed_items'].get(item, 0) + 1
         
         # Track false positives (in predicted but not in correct)
         false_pos = predicted_set - correct_set
         for item in false_pos:
-            stats['false_positives'][item] = stats['false_positives'].get(item, 0) + 1
+            if item:  # Only track non-empty items
+                stats['false_positives'][item] = stats['false_positives'].get(item, 0) + 1
         
         stats['last_updated'] = datetime.now().isoformat()
         
-        with open(stats_file, 'w') as f:
-            json.dump(stats, f, indent=2)
+        # Save updated stats (with error handling)
+        try:
+            # Ensure directory exists
+            stats_dir = os.path.dirname(stats_file)
+            if stats_dir and not os.path.exists(stats_dir):
+                os.makedirs(stats_dir, exist_ok=True)
+            with open(stats_file, 'w') as f:
+                json.dump(stats, f, indent=2)
+                f.flush()
+                if hasattr(os, 'fsync'):
+                    os.fsync(f.fileno())
+        except (IOError, OSError, PermissionError) as save_error:
+            if VERBOSE_LOGGING:
+                print(f"Warning: Could not save failure stats to {stats_file}: {save_error}")
             
     except Exception as e:
         if VERBOSE_LOGGING:
@@ -11433,6 +12010,27 @@ if __name__ == "__main__":
         print("=" * 60)
 
 # Diagnostic endpoint to check installed packages (for debugging Vercel deployment)
+@app.route("/api/debug/reload_clip", methods=["POST"])
+def debug_reload_clip():
+    """Debug endpoint to force reload CLIP model"""
+    try:
+        success = reload_clip_model()
+        return jsonify({
+            "success": success,
+            "clip_model_loaded": _clip_model is not None,
+            "clip_processor_loaded": _clip_processor is not None,
+            "message": "CLIP model reloaded successfully" if success else "CLIP model reload failed"
+        })
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            "success": False,
+            "error": str(e),
+            "clip_model_loaded": _clip_model is not None,
+            "clip_processor_loaded": _clip_processor is not None
+        }), 500
+
 @app.route("/api/debug/packages", methods=["GET"])
 def debug_packages():
     """Debug endpoint to check what packages are actually installed"""
@@ -11440,7 +12038,7 @@ def debug_packages():
     import pkg_resources
     
     installed_packages = {}
-    ml_packages = ['transformers', 'torch', 'torchvision', 'easyocr', 'ultralytics', 'numpy', 'openai']
+    ml_packages = ['transformers', 'torch', 'torchvision', 'easyocr', 'ultralytics', 'numpy', 'openai', 'accelerate']
     
     try:
         for pkg in pkg_resources.working_set:

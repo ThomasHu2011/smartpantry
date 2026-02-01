@@ -25,7 +25,7 @@ An intelligent kitchen management application that uses AI to help you track you
 ## 🚀 Quick Start
 
 ### Prerequisites
-- Python 3.13+
+- Python 3.11+ (3.13 recommended)
 - OpenAI API key (for AI features)
 - Node.js (optional, for development)
 
@@ -34,26 +34,63 @@ An intelligent kitchen management application that uses AI to help you track you
 1. **Clone the repository**
    ```bash
    git clone https://github.com/ThomasHu2011/smartpantry
-   cd code
+   cd smartpantry
    ```
 
-2. **Install dependencies**
+2. **Create and activate a virtual environment (recommended)**
+   ```bash
+   # Create virtual environment
+   python3 -m venv venv
+   
+   # Activate virtual environment
+   # On macOS/Linux:
+   source venv/bin/activate
+   # On Windows:
+   venv\Scripts\activate
+   ```
+
+3. **Install dependencies**
    ```bash
    pip install -r requirements.txt
    ```
+   
+   **Note:** ML packages (torch, transformers, etc.) are large (~2GB+). Installation may take several minutes.
 
-3. **Set up environment variables**
+4. **Set up environment variables**
    Create a `.env` file in the root directory:
    ```env
    OPENAI_API_KEY=your_openai_api_key_here
    FLASK_SECRET_KEY=your_secret_key_here
+   
+   # Optional: Firebase configuration (if using Firebase)
+   USE_FIREBASE=false
+   GOOGLE_APPLICATION_CREDENTIALS=./firebase-credentials.json
+   
+   # Optional: ML Vision settings (enabled by default locally)
+   ML_VISION_ENABLED=true
+   YOLO_DETECTION_ENABLED=true
+   ML_VISION_MODE=classify_only
    ```
 
-4. **Run the application**
+5. **Run the application**
    ```bash
+   # From the root directory
    python api/app.py
+   
+   # Or specify a custom port
+   PORT=8080 python api/app.py
    ```
-   The app will be available at `http://localhost:5000`
+   
+   The app will be available at:
+   - **Default:** `http://localhost:5050`
+   - **Custom port:** `http://localhost:PORT`
+
+### Local Development Tips
+
+- **ML Models**: ML models are enabled by default locally. They will download automatically on first use (may take a few minutes).
+- **Debug Mode**: Debug mode is enabled by default when running locally (not on Vercel/Render).
+- **File Storage**: User data is stored in `api/users.json` by default. For production, use Firebase by setting `USE_FIREBASE=true`.
+- **Hot Reload**: Flask's debug mode enables automatic reloading when you change code.
 
 ### Deployment
 
